@@ -1,0 +1,25 @@
+SENSORES:
+- Flujo FS3000 - LISTO
+- Temp/Misc BME280 - LISTO
+- Flujo AFM07 - LISTO
+- PM Plantower - LISTO
+MOTORES - LISTO
+
+Escenas:
+- Inicio - LISTO (NO REWORKEADO)
+- Flujo - LISTO (NO REWORKEADO) 
+- Hora - CASI LISTO (bugs de tiempo y dia) (NO REWORKEADO)
+- Dashboard/Espera - INCOMPLETO (No tiene menu y falta coordinar con la hora)
+- Menu durante sesion - NO PROBADO
+- Menu final - NO PROBADO
+
+- DEBO REALIZAR UN REWORK MASIVO AL SISTEMA. Los módulos independientes de los sensores/effectors serán reutilizados.
+  Los siguientes sistemas serán rehechos de cero
+
+- AppContext
+- Escenas
+
+
+El rework masivo está en progreso
+el app context nuevo está MUCHO más trabajable (separado en componentes y sesión para evitar confusión)
+el input fue mejorado para hacer debounce y evitar problemas de input
