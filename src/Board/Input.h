@@ -1,12 +1,12 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#define SERIAL_INPUT true
-#if SERIAL_INPUT == false
+#include "../Config.h"
+
+#if BAREBONES == false
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "Config.h"
 
 // Clase para manejar el input del encoder con botón
 class Input
@@ -151,7 +151,7 @@ class Input{
     bool buttonPressed = false;
 
     void begin() {
-        // 
+        Serial.println("Input simulado iniciado");
     }
 
     void poll() {

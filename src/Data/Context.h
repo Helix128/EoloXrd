@@ -27,7 +27,6 @@ public:
 
     void begin()
     {
-        u8g2.setI2CAddress(0x3C * 2);
         u8g2.begin();
         components.begin();
         Serial.println("Contexto inicializado");
@@ -40,7 +39,9 @@ public:
     }
 
     int getCurrentSeconds()
-    {
+    {   
+        if(components.rtc.ok==false)
+            return 0;
         return components.rtc.now().unixtime();
     }
 

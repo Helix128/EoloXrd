@@ -12,7 +12,7 @@ class Plantower
 {
 private:
     unsigned char bufferRTT[32] = {}; // Buffer para datos recibidos
-
+    
     bool validateChecksum()
     {
         unsigned int CR1 = (bufferRTT[30] << 8) + bufferRTT[31];

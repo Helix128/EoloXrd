@@ -15,10 +15,12 @@ public:
     float humidity = 0.0;
     float pressure = 0.0;
 
+    bool ok = false;
     void begin()
     {
         if(!bme.begin(0x76)){
             Serial.println("Fallo al inicializar BME280");
+            ok = false;
             return;
         }
 #if CHECK_SENSORS
@@ -43,7 +45,14 @@ public:
         }
     }
     void readData()
-    {
+    {   
+        if(!ok)
+        {
+            temperature = -1000;
+            humidity = -1;
+            pressure = -1;
+            return;
+        }
         temperature = bme.readTemperature();
         humidity = bme.readHumidity();
         pressure = bme.readPressure() / 100.0F; // Convertir Pa a hPa

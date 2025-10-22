@@ -17,9 +17,9 @@ class InicioScene : public IScene
 {
 private:
     MenuOption menuOptions[3] = {
-        {"Continuar sesion", "continuar"},
-        {"Nueva sesion", "setup"},
-        {"Captura inmediata", "setup"}
+        {"Continuar", "continuar"},
+        {"Nueva sesion", "flujo"},
+        {"Captura ahora", "flujo"}
     };
 public:
 
@@ -41,12 +41,17 @@ public:
             ctx.components.input.resetCounter();
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
         }
+        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         for (int i = 0; i < 3; i++)
         {   
             if(selectIndex==i){
-            ctx.u8g2.drawFrame(10, 20 + i * 10 - 10, 120, 10);
+                ctx.u8g2.drawBox(-1, 28 + i * 16 - 14, 131, 16);
+                ctx.u8g2.setDrawColor(0);
+            } else {
+                ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.drawStr(10, 20 + i * 10, menuOptions[i].label);
+            ctx.u8g2.drawStr(2, 28 + i * 16, menuOptions[i].label);
+            ctx.u8g2.setDrawColor(1);
         }
 
         ctx.u8g2.sendBuffer();
