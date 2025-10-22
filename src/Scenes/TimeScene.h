@@ -33,6 +33,21 @@ public:
         if(delta!=0){
             Serial.println("Delta tiempo: "+String(delta));
             Serial.println("Hora objetivo: "+String(targetHour)+":"+String(targetMinute)+" Dia offset: "+String(targetDay));
+            DateTime now = ctx.components.rtc.now();
+            DateTime targetTime(
+                now.year(),
+                now.month(),
+                now.day() + targetDay,
+                targetHour,
+                targetMinute,
+                0
+            );
+            if (targetTime.unixtime() < now.unixtime()) {
+                Serial.println("La hora objetivo debe ser mayor o igual a la hora actual.");
+                targetMinute = now.minute();
+                targetHour = now.hour();
+                targetDay = 0;
+            }
         }
         
         targetMinute += delta;

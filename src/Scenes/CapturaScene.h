@@ -1,0 +1,122 @@
+#ifndef CAPTURA_SCENE_H
+#define CAPTURA_SCENE_H
+
+#include "IScene.h"
+#include "../Data/Context.h"
+#include "../Drawing/SceneManager.h"
+#include "../Drawing/GUI.h"
+
+// Escena de logo/splash al iniciar la app
+class CapturaScene : public IScene
+{
+private:
+public:
+
+    void enter(Context &ctx) override
+    {
+    }
+
+    void update(Context &ctx) override
+    {
+        ctx.u8g2.clearBuffer();
+        GUI::displayHeader(ctx);
+
+        int delta = ctx.components.input.encoderDelta;
+        bool button = ctx.components.input.buttonPressed;
+
+        if(delta!=0){
+            cycleFooter = (cycleFooter + delta) % 5;
+        }
+
+        footer(ctx);
+        mainPanel(ctx);
+
+        ctx.u8g2.sendBuffer();
+    }
+
+    void mainPanel(Context &ctx)
+    {
+        float lmin = ctx.components.flowSensor.flow;
+        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        char lminStr[10];
+        snprintf(lminStr, sizeof(lminStr), "%.1f", lmin);
+        ctx.u8g2.drawStr(50, 30, lminStr);
+
+        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.drawStr(48, 39, "L/min");
+    }
+
+    int cycleFooter = 0;
+    void footer(Context &ctx)
+    {
+        ctx.u8g2.drawHLine(0, 40, 128);
+
+        switch (cycleFooter)
+        {
+        case 0 : // temp hum presion
+        { 
+            float temp = ctx.components.bme.temperature;
+            float hum = ctx.components.bme.humidity;
+            float presAtm = ctx.components.bme.pressure;
+
+            char tempStr[5];
+            char humStr[5];
+            char presStr[5];
+            snprintf(tempStr, sizeof(tempStr), "%.1f", temp);
+            snprintf(humStr, sizeof(humStr), "%.1f", hum);
+            snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
+
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.drawStr(0, 50, "Temp");
+            ctx.u8g2.drawStr(0, 60, tempStr);
+            ctx.u8g2.drawStr(20, 60, " C");
+
+            ctx.u8g2.drawStr(45, 50, "Hum");
+            ctx.u8g2.drawStr(45, 60, humStr);
+            ctx.u8g2.drawStr(65, 60, " %");
+
+            ctx.u8g2.drawStr(80, 50, "Pres");
+            ctx.u8g2.drawStr(80, 60, presStr);
+            ctx.u8g2.drawStr(100, 60, " hPa");
+            break;
+        }
+        case 1: // pm1 pm2.5 pm10
+        {
+            if (!ctx.session.usePlantower) {
+                cycleFooter++;
+                break;
+            }
+            float pm1 = ctx.components.plantower.pm1;
+            float pm25 = ctx.components.plantower.pm25;
+            float pm10 = ctx.components.plantower.pm10;
+
+            pm1 = 512;
+            pm25 = 512;
+            pm10 = 512;
+
+            char pm1Str[5];
+            char pm25Str[5];
+            char pm10Str[5];
+
+            snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
+            snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
+            snprintf(pm10Str, sizeof(pm10Str), "%.0f", pm10);
+
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.drawStr(0, 50, "PM1.0");
+            ctx.u8g2.drawStr(0, 60, pm1Str);
+            ctx.u8g2.drawStr(14, 60, "ugm2");
+
+            ctx.u8g2.drawStr(45, 50, "PM2.5");
+            ctx.u8g2.drawStr(45, 60, pm25Str);
+            ctx.u8g2.drawStr(59, 60, "ugm2");
+
+            ctx.u8g2.drawStr(88, 50, "PM10");
+            ctx.u8g2.drawStr(88, 60, pm10Str);
+            ctx.u8g2.drawStr(102, 60, "ugm2");
+            break;
+        }
+        }
+    }
+};
+#endif

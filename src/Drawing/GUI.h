@@ -22,8 +22,13 @@ public:
         //ctx.u8g2.drawStr(108, 8, batteryStr);
 
         // Tiempo
-        String timeStr = ctx.components.rtc.getTimeString();
-        //ctx.u8g2.drawStr(x, y, timeStr.c_str());
+        DateTime now = ctx.components.rtc.now();
+        int nowSec = now.second();
+        int nowMin = now.minute();
+        int nowHr = now.hour();
+        char timeStr[9];
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", nowHr, nowMin, nowSec);
+        ctx.u8g2.drawStr(10, 9, timeStr);
 
         // Nombre del dispositivo
         ctx.u8g2.setFont(u8g2_font_TimesNewPixel_tr);

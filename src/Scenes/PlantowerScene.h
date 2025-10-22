@@ -9,7 +9,7 @@
 class PlantowerScene : public IScene
 {
 private:
-    bool enablePM = false;
+    bool enablePM = true;
 public:
     void enter(Context &ctx) override
     {

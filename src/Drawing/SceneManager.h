@@ -30,6 +30,8 @@ public:
             currentScene = it->second;
             currentSceneName = name;
             currentScene->enter(ctx); // Llamar método enter de la nueva escena
+            Serial.print("Cambiando a escena: ");
+            Serial.println(name.c_str());
         }
         else
         {

@@ -28,30 +28,28 @@ public:
         }
         
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-        ctx.u8g2.drawStr(10, 25, "Esperando...");
-        ctx.u8g2.drawStr(10, 34, "Hora de inicio:");
+        //ctx.u8g2.drawStr(10, 25, "Esperando");
+
+        ctx.u8g2.drawStr(10, 26, "Flujo actual:");
+        
+     
+        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        char flowStr[10];
+        snprintf(flowStr, sizeof(flowStr), "%.1f", ctx.components.flowSensor.flow);
+        ctx.u8g2.drawStr(33, 36, "L/min");
+        ctx.u8g2.drawStr(10, 36, flowStr);
+        
+        ctx.u8g2.drawStr(10, 46, "Hora de inicio:");
+
+        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         char timeStr[20];
         DateTime startTime = DateTime(ctx.session.startTime);
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d %02d/%02d/%04d",
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d",
             startTime.hour(),
-            startTime.minute(),
-            startTime.second(),
-            startTime.day(),
-            startTime.month(),
-            startTime.year()
+            startTime.minute()
         );
-        ctx.u8g2.drawStr(10, 43, timeStr);
-        ctx.u8g2.drawStr(10, 52, "Hora actual:");
-        char nowStr[20];
-        snprintf(nowStr, sizeof(nowStr), "%02d:%02d:%02d %02d/%02d/%04d",
-            now.hour(),
-            now.minute(),
-            now.second(),
-            now.day(),
-            now.month(),
-            now.year()
-        );
-        ctx.u8g2.drawStr(10, 61, nowStr);
+        ctx.u8g2.drawStr(10, 60, timeStr);
+
         ctx.u8g2.sendBuffer();
     }
 };

@@ -39,7 +39,9 @@ public:
 
         int xPos = smoothstep(-64,32, (elapsedTime*1000)/ANIM_DURATION);
         xPos = constrain(xPos,-64,32);
+        ctx.u8g2.setBitmapMode(1);
         ctx.u8g2.drawXBM((int)xPos, 0, 128, 64, cmas);
+        ctx.u8g2.drawXBM(64-(int)xPos, 0, 128, 64, cmas);
         ctx.u8g2.sendBuffer();
         // Cambiar de escena después de la duración del splash
         if (elapsedTime > SPLASH_DURATION+ANIM_DURATION)
