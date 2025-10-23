@@ -19,6 +19,8 @@ public:
 
     void update(Context &ctx) override
     {
+        updateCapture(ctx);
+
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
@@ -27,7 +29,11 @@ public:
 
         if (delta != 0)
         {
-            cycleFooter = (cycleFooter + delta) % 5;
+            cycleFooter = (cycleFooter + delta);
+            if(cycleFooter<0)
+                cycleFooter = 4;
+            else if(cycleFooter>4)
+                cycleFooter = 0;
         }
 
         footer(ctx);
@@ -36,6 +42,48 @@ public:
         ctx.u8g2.sendBuffer();
     }
 
+    void updateCapture(Context &ctx)
+    {
+        if (!ctx.isCapturing)
+            return;
+
+        unsigned long now = ctx.getCurrentSeconds();
+
+        if (now > ctx.session.endTime)
+        {
+            ctx.isCapturing = false;
+            ctx.isEnd = true;
+            SceneManager::setScene("end", ctx);
+            return;
+        }
+
+        # if !BAREBONES
+        ctx.components.flowSensor.readData();
+        // adjustMotorPower();
+        # endif
+
+        if (now - ctx.lastCapture >= ctx.CAPTURE_INTERVAL)
+        {
+            ctx.lastCapture = now;
+            ctx.elapsedTime += ctx.CAPTURE_INTERVAL;
+
+            # if !BAREBONES
+            ctx.components.logger.capture(
+                now,
+                ctx.components.flowSensor.flow,
+                ctx.session.targetFlow,
+                ctx.components.bme.temperature,
+                ctx.components.bme.humidity,
+                ctx.components.bme.pressure,
+                ctx.components.plantower.pm1,
+                ctx.components.plantower.pm25,
+                ctx.components.plantower.pm10,
+                ctx.components.battery.getPct());
+            # else
+            Serial.println("Capturando datos... (modo barebones, solo serial)");
+            # endif
+        }
+    }
     void mainPanel(Context &ctx)
     {
         float lmin = ctx.components.flowSensor.flow;
@@ -61,11 +109,11 @@ public:
             float hum = ctx.components.bme.humidity;
             float presAtm = ctx.components.bme.pressure;
 
-            #if BAREBONES == true // valores inventados para testing
+#if BAREBONES == true // valores inventados para testing
             temp = 25.0;
             hum = 50.0;
             presAtm = 1013.0;
-            #endif
+#endif
 
             char tempStr[5];
             char humStr[5];
@@ -104,11 +152,11 @@ public:
             float pm25 = ctx.components.plantower.pm25;
             float pm10 = ctx.components.plantower.pm10;
 
-            #if BAREBONES == true
+#if BAREBONES == true
             pm1 = 512;
             pm25 = 512;
             pm10 = 512;
-            #endif
+#endif
 
             char pm1Str[5];
             char pm25Str[5];
@@ -137,7 +185,8 @@ public:
             ctx.u8g2.drawStr(106, 60, "ugm2");
             break;
         }
-        case 2 : { // flujo configurado
+        case 2:
+        { // flujo configurado
 
             float targetFlow = ctx.session.targetFlow;
             char targetFlowStr[10];
@@ -147,8 +196,10 @@ public:
             ctx.u8g2.drawStr(42, 60, targetFlowStr);
             ctx.u8g2.setFont(u8g2_font_4x6_tf);
             ctx.u8g2.drawStr(62, 60, "L/min");
+            break;
         }
-        case 3: { // tiempo transcurrido
+        case 3:
+        { // tiempo transcurrido
             unsigned long elapsed = ctx.elapsedTime;
             unsigned long hours = elapsed / 3600;
             unsigned long minutes = (elapsed % 3600) / 60;
@@ -157,8 +208,8 @@ public:
             char timeStr[9];
             snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.drawStr(35, 50, "Tiempo transcurrido");
-            ctx.u8g2.drawStr(50, 60, timeStr);
+            ctx.u8g2.drawStr(15, 50, "Tiempo transcurrido");
+            ctx.u8g2.drawStr(35, 60, timeStr);
             break;
         }
         }
