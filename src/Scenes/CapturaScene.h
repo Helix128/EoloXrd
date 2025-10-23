@@ -11,7 +11,6 @@ class CapturaScene : public IScene
 {
 private:
 public:
-
     void enter(Context &ctx) override
     {
     }
@@ -24,7 +23,8 @@ public:
         int delta = ctx.components.input.encoderDelta;
         bool button = ctx.components.input.buttonPressed;
 
-        if(delta!=0){
+        if (delta != 0)
+        {
             cycleFooter = (cycleFooter + delta) % 5;
         }
 
@@ -53,8 +53,8 @@ public:
 
         switch (cycleFooter)
         {
-        case 0 : // temp hum presion
-        { 
+        case 0: // temp hum presion
+        {
             float temp = ctx.components.bme.temperature;
             float hum = ctx.components.bme.humidity;
             float presAtm = ctx.components.bme.pressure;
@@ -82,7 +82,8 @@ public:
         }
         case 1: // pm1 pm2.5 pm10
         {
-            if (!ctx.session.usePlantower) {
+            if (!ctx.session.usePlantower)
+            {
                 cycleFooter++;
                 break;
             }
@@ -105,16 +106,31 @@ public:
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(0, 50, "PM1.0");
             ctx.u8g2.drawStr(0, 60, pm1Str);
-            ctx.u8g2.drawStr(14, 60, "ugm2");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(18, 60, "ugm2");
 
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(45, 50, "PM2.5");
             ctx.u8g2.drawStr(45, 60, pm25Str);
-            ctx.u8g2.drawStr(59, 60, "ugm2");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(63, 60, "ugm2");
 
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(88, 50, "PM10");
             ctx.u8g2.drawStr(88, 60, pm10Str);
-            ctx.u8g2.drawStr(102, 60, "ugm2");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(106, 60, "ugm2");
             break;
+        }
+        case 2 : { // flujo configurado
+
+            float targetFlow = ctx.session.targetFlow;
+            char targetFlowStr[10];
+            snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", targetFlow);
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.drawStr(25, 50, "Flujo configurado");
+            ctx.u8g2.drawStr(42, 60, targetFlowStr);
+            ctx.u8g2.drawStr(62, 60, " L/min");
         }
         }
     }
