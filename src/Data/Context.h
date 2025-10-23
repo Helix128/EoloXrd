@@ -48,13 +48,59 @@ public:
         ctx.session.elapsedTime = 0;
         ctx.isCapturing = true;
         ctx.session.capturedVolume = 0.0; 
+        
+        SceneManager::setScene("captura", ctx);
     }
+
+    void pauseCapture()
+    {
+        Context &ctx = *this;
+         
+        ctx.components.input.resetCounter();
+        if (!ctx.isCapturing || ctx.isPaused)
+            return;
+        ctx.isPaused = true;
+        unsigned long now = ctx.getCurrentSeconds();
+        ctx.remainingTime = ctx.session.endTime - now;
+    }
+
+    void resumeCapture()
+    {
+        Context &ctx = *this;
+         
+        ctx.components.input.resetCounter();
+        if (!ctx.isCapturing || !ctx.isPaused)
+            return;
+        ctx.isPaused = false;
+        unsigned long now = ctx.getCurrentSeconds();
+        ctx.session.endTime = now + ctx.remainingTime;
+    }
+
     void endCapture()
     {
         Context &ctx = *this;
         ctx.isCapturing = false;
         ctx.isEnd = true;
+        ctx.resetCapture();
+         
+        ctx.components.input.resetCounter();
         SceneManager::setScene("end", ctx);
+    }
+
+    void resetCapture(){
+        Context &ctx = *this;
+        ctx.isCapturing = false;
+        ctx.isPaused = false;
+        ctx.remainingTime = 0;
+        ctx.session = Session();
+    }
+
+    void updateMotors(){
+        Context &ctx = *this;
+        float currentFlow = ctx.components.flowSensor.flow;
+        float targetFlow = ctx.session.targetFlow;
+        float error = targetFlow - currentFlow;
+        ctx.components.motor.setPowerPct(ctx.components.motor.getPowerPct() + error * 0.1f);
     }
 
     void updateCapture()
@@ -75,7 +121,7 @@ public:
 
 #if !BAREBONES
         ctx.components.flowSensor.readData();
-// adjustMotorPower();
+        updateMotors();
 #else
         ctx.components.flowSensor.flow = ctx.session.targetFlow + millis() % 2;
 #endif
@@ -85,6 +131,11 @@ public:
             ctx.session.lastLog = now;
 
 #if !BAREBONES
+            ctx.components.bme.readData();
+
+            ctx.components.plantower.setPower(ctx.session.usePlantower);
+            ctx.components.plantower.readData();
+
             ctx.components.logger.capture(
                 now,
                 ctx.components.flowSensor.flow,

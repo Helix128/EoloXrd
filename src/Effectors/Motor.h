@@ -15,6 +15,7 @@ public:
   static const int freq = 1000;
   static const int resolution = 13;
   int pwmValues[sizeof(motors) / sizeof(motors[0])];
+  bool isReady = false;
 
   // Constructor
   MotorManager()
@@ -30,6 +31,12 @@ public:
   // Inicializa pines
   void begin()
   {
+    if (isReady)
+    {
+      Serial.println("Motores ya inicializados, skipping...");
+      return;
+    }
+
     for (int i = 0; i < motorCount; i++)
     {
       pinMode(motors[i], OUTPUT);
@@ -40,6 +47,8 @@ public:
 #if CHECK_SENSORS
     testMotors();
 #endif
+
+    isReady = true;
   }
 
   void testMotors()

@@ -25,7 +25,9 @@ public:
         DateTime now = ctx.components.rtc.now();
         unsigned long int nowUnix = ctx.components.rtc.now().unixtime();
         if(nowUnix >= ctx.session.startTime){
-            SceneManager::setScene("captura",ctx);
+             
+            ctx.components.input.resetCounter();
+            ctx.beginCapture();
         }
         
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);

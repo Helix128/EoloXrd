@@ -22,11 +22,25 @@ public:
         scenes[name] = scene;
     }
 
-    static void setScene(const std::string &name, Context &ctx)
+    static bool parseSceneCmd(const std::string &cmd, Context &ctx)
     {
+        if(cmd=="RESET"){
+            Serial.println("Reiniciando EOLO...");
+            ESP.restart();
+            return false;
+        } 
+        return true;
+
+    }
+    static void setScene(const std::string &name, Context &ctx)
+    {   
+        if(!parseSceneCmd(name, ctx)){
+            return;
+        }
+        
         auto it = scenes.find(name);
         if (it != scenes.end())
-        {
+        {   
             currentScene = it->second;
             currentSceneName = name;
             currentScene->enter(ctx); // Llamar método enter de la nueva escena

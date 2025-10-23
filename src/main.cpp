@@ -8,6 +8,7 @@
 #include "Drawing/SceneRegistry.h"
 #include "Config.h" 
 
+#include "Testing/I2CUtil.h"
 #include "Testing/FlowMotor.h"
 
 // Instancias globales
@@ -23,12 +24,17 @@ void setup()
   while(!Serial){
     delay(50);
   }
+  
+  I2CUtility i2c;
+  i2c.begin();
+  i2c.scan();
+  
   // Inicialización del contexto de la app
   ctx.begin();
   
   // Registrar todas las escenas (SceneRegistry)
   registerAllScenes();
-  
+
   // testFlowMotor(ctx);
 
   // Carga la escena inicial (splash)

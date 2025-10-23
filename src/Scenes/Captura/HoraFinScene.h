@@ -1,12 +1,12 @@
-#ifndef TIME_SCENE_H
-#define TIME_SCENE_H
+#ifndef TIME_END_SCENE_H
+#define TIME_END_SCENE_H
 
 #include "../IScene.h"
 #include "../../Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
 
-class TimeScene : public IScene
+class TimeEndScene : public IScene
 {
 public:
     bool isEndTime = false;
@@ -15,7 +15,8 @@ public:
     int targetDay = 0;
 
     void enter(Context &ctx) override
-    {
+    {   
+        isEndTime = true;
         DateTime now = ctx.components.rtc.now();
         int nowUnix = ctx.components.rtc.now().unixtime();
         targetMinute = now.minute();
@@ -106,7 +107,7 @@ public:
             {   
                 ctx.components.input.resetCounter();
                 ctx.session.endTime = targetTime.unixtime();
-                SceneManager::setScene("plantower", ctx);
+                SceneManager::setScene("captura", ctx);
             }
             else
             {

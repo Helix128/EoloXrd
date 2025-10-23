@@ -14,7 +14,9 @@ private:
 public:
     void enter(Context &ctx) override
     {
-        ctx.beginCapture();
+        if(!ctx.isCapturing) {
+            ctx.beginCapture();
+        }
     }
 
     void update(Context &ctx) override
@@ -37,8 +39,7 @@ public:
         }
 
         if(button){
-            // TODO: MENU, por ahora solo termina la sesión forzosamente
-            ctx.endCapture();
+            SceneManager::setScene("captura_menu", ctx);
         }
 
         footer(ctx);
@@ -143,14 +144,14 @@ public:
             ctx.u8g2.drawStr(80, 50, "Pres");
             ctx.u8g2.drawStr(80, 60, presStr);
             ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            ctx.u8g2.drawStr(102, 60, "hPa");
+            ctx.u8g2.drawStr(104, 60, "hPa");
             break;
         }
         case 1: // pm1 pm2.5 pm10
         {
             if (!ctx.session.usePlantower)
             {
-                cycleFooter-=ctx.components.input.encoderDelta;
+                cycleFooter +=ctx.components.input.encoderDelta;
                 break;
             }
             float pm1 = ctx.components.plantower.pm1;
@@ -213,8 +214,8 @@ public:
             char timeStr[9];
             snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.drawStr(15, 50, "Tiempo transcurrido");
-            ctx.u8g2.drawStr(35, 60, timeStr);
+            ctx.u8g2.drawStr(12, 50, "Tiempo transcurrido");
+            ctx.u8g2.drawStr(45, 60, timeStr);
             break;
         }
         case 4: {
@@ -228,8 +229,8 @@ public:
             char remainingStr[9];
             snprintf(remainingStr, sizeof(remainingStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.drawStr(15, 50, "Tiempo restante");
-            ctx.u8g2.drawStr(35, 60, remainingStr);
+            ctx.u8g2.drawStr(20, 50, "Tiempo restante");
+            ctx.u8g2.drawStr(45, 60, remainingStr);
             break;
         }
         }

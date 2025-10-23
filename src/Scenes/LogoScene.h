@@ -5,14 +5,15 @@
 #include "../Data/Context.h"
 #include "../Drawing/Logos.h"
 #include "../Drawing/SceneManager.h"
+#include "../Testing/I2CUtil.h"
 
 // Escena de logo/splash al iniciar la app
 class LogoScene : public IScene
 {
 private:
     unsigned long startTime;
-    static const unsigned long ANIM_DURATION = 450;  // 0.45 segundos
-    static const unsigned long FADE_DURATION = 350;  // 0.35 segundos
+    static const unsigned long ANIM_DURATION = 450;   // 0.45 segundos
+    static const unsigned long FADE_DURATION = 400;   // 0.40 segundos
     static const unsigned long SPLASH_DURATION = 950; // 0.95 segundos
 
 public:
@@ -35,7 +36,7 @@ public:
     void drawAnimatedFill(Context &ctx, unsigned long elapsedTime)
     {
         float t = constrain((elapsedTime) / ((float)FADE_DURATION), 0.0f, 1.0f);
-        t*=16;  
+        t *= 16;
         static const uint8_t bayerPattern[4][4] = {
             {0, 8, 2, 10},
             {12, 4, 14, 6},
@@ -48,7 +49,7 @@ public:
             for (int y = 0; y < 64; y++)
             {
                 uint8_t threshold = bayerPattern[x % 4][y % 4];
-    
+
                 if (threshold > t)
                 {
                     ctx.u8g2.drawPixel(x, y);
@@ -76,7 +77,21 @@ public:
         // Cambiar de escena después de la duración del splash
         if (elapsedTime > SPLASH_DURATION + ANIM_DURATION)
         {
+            Serial.println("Reinicializando I2C y componentes...");
+            ctx.components.input.resetCounter();
+            I2CUtility i2c;
+            i2c.begin();
+            i2c.scan(); 
+            
+            delay(150);
+
+            ctx.begin();
+
+            delay(150);
             SceneManager::setScene("inicio", ctx);
+            
+            
+            
         }
     }
 };

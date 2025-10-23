@@ -36,6 +36,8 @@ public:
             startTime.hour(),
             startTime.minute()
         );
+        startTime.toString(startStr);
+   
         ctx.u8g2.drawStr(10, 34, "Inicio: ");
         ctx.u8g2.drawStr(60, 34, startStr);
 
@@ -44,6 +46,8 @@ public:
             endTime.hour(),
             endTime.minute()
         );
+        endTime.toString(endStr);
+        
         ctx.u8g2.drawStr(10, 44, "Fin: ");
         ctx.u8g2.drawStr(60, 44, endStr);
 
@@ -60,7 +64,8 @@ public:
         ctx.u8g2.sendBuffer();
 
         if (ctx.components.input.buttonPressed)
-        {
+        {    
+            ctx.components.input.resetCounter();
             SceneManager::setScene("end_menu",ctx);
         }
         

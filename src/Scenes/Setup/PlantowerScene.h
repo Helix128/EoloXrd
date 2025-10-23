@@ -27,7 +27,8 @@ public:
         }
 
         if(ctx.components.input.buttonPressed){
-            ctx.components.input.resetButton();
+             
+            ctx.components.input.resetCounter();
             ctx.session.usePlantower = enablePM;
             SceneManager::setScene("wait",ctx);
         }

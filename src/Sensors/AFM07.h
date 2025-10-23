@@ -38,9 +38,15 @@ public:
 
     float velocity = 0.0; // m/s
     float flow = 0.0;    // L/min
+    bool isReady = false;
 
     void begin()
     {
+        if (isReady) {
+            Serial.println("AFM07 ya inicializado, skipping...");
+            return;
+        }
+
         pinMode(RS485_DE_RE_PIN, OUTPUT);
         digitalWrite(RS485_DE_RE_PIN, LOW); // Configura módulo RS485 en modo recepción
 
@@ -49,6 +55,9 @@ public:
         node.begin(AFM07_ID, ModbusSerial);
         node.preTransmission(preTransmission);
         node.postTransmission(postTransmission);
+        
+        Serial.println("AFM07 inicializado");
+        isReady = true;
     }
 
     void readData()

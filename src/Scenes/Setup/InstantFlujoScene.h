@@ -23,10 +23,11 @@ public:
 
         float delta = ctx.components.input.encoderDelta;
         targetFlow += delta * 0.1f;
-        targetFlow = constrain(targetFlow, 0.0f, 20.0f);
+        targetFlow = constrain(targetFlow, 0.0f, 8.0f);
 
         if(ctx.components.input.buttonPressed){
-            ctx.components.input.resetButton();
+             
+            ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
             ctx.session.startTime = ctx.getCurrentSeconds();
             ctx.session.endTime = ctx.session.startTime + 3600; 

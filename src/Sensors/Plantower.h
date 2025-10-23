@@ -23,23 +23,44 @@ private:
     }
 
 public:
-    float pm1 = 0.0;
-    float pm25 = 0.0;
-    float pm10 = 0.0;
+    float pm1 = -1.0;
+    float pm25 = -1.0;
+    float pm10 = -1.0;
+    bool isReady = false;
+    bool isActive = false;
 
     void begin()
-    {
+    {   
+        if (isReady) {
+            Serial.println("Plantower ya inicializado, skipping...");
+            return;
+        }
+
         Serial2.begin(9600, SERIAL_8N1, PT_RX, PT_TX);
         pinMode(PT_PWR, OUTPUT);
         setPower(false);
 #if CHECK_SENSORS
         testSensor();
 #endif
+        
+        isReady = true;
     }
 
     void setPower(bool active)
-    {
+    {   
+        if(isActive == active)
+            return;
+        Serial.print("Plantower power ");
+        Serial.println(active ? "ON" : "OFF");
+        isActive = active;
         digitalWrite(PT_PWR, active ? HIGH : LOW); // Controla la alimentación
+        delay(50);
+        while(pm25<0 && isActive) {
+            Serial.print(".");
+            readData();
+            delay(50);
+        }
+        Serial.println("OK!");
     }
 
     void testSensor()
@@ -77,6 +98,7 @@ public:
     {
         if (!Serial2.available())
         {   
+            Serial.println("No hay datos disponibles del Plantower.");
             // Si el sensor está apagado no hay datos
             pm1 = -1;
             pm25 = -1;

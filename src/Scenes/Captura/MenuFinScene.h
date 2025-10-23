@@ -18,7 +18,7 @@ class EndMenuScene : public IScene
 {
 private:
     EndMenuOption menuOptions[2] = {
-        {"Reiniciar EOLO", "inicio"},
+        {"Reiniciar EOLO", "RESET"},
         {"Regresar", "end"}
     };
 public:
@@ -38,6 +38,7 @@ public:
         selectIndex += ctx.components.input.encoderDelta;
         selectIndex = constrain(selectIndex, 0, 1);
         if(ctx.components.input.buttonPressed){
+             
             ctx.components.input.resetCounter();
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
         }

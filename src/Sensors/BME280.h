@@ -15,14 +15,23 @@ public:
     float humidity = 0.0;
     float pressure = 0.0;
 
-    bool ok = false;
+    bool isReady = false;
+    
     void begin()
     {
-        if(!bme.begin(0x76)){
-            Serial.println("Fallo al inicializar BME280");
-            ok = false;
+        if (isReady) {
+            Serial.println("BME280 ya inicializado, skipping...");
             return;
         }
+
+        if(!bme.begin(0x76)){
+            Serial.println("Fallo al inicializar BME280");
+            isReady = false;
+            return;
+        }
+        
+        Serial.println("BME280 inicializado");
+        isReady = true;
 #if CHECK_SENSORS
         testSensor();
 #endif
@@ -46,7 +55,7 @@ public:
     }
     void readData()
     {   
-        if(!ok)
+        if(!isReady)
         {
             temperature = -1000;
             humidity = -1;

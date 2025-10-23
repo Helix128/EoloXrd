@@ -10,23 +10,29 @@ public:
 
     float velocity = 0.0; // m/s
     float flow = 0.0;     // L/min
-    bool ok = false;    
+    bool isReady = false;    
+    
     void begin()
     {
+        if (isReady) {
+            Serial.println("FS3000 ya inicializado, skipping...");
+            return;
+        }
+
         if(!sensor.begin())
         {
             Serial.println("Fallo al inicializar FS3000");
-            ok = false;
+            isReady = false;
         }
         else
         {
             Serial.println("FS3000 inicializado");
-            ok = true;
+            sensor.setRange(AIRFLOW_RANGE_7_MPS);
+            isReady = true;
 #if CHECK_SENSORS
             testSensor();
 #endif
         }
-        sensor.setRange(AIRFLOW_RANGE_7_MPS);
     }
     
     void testSensor()
@@ -45,7 +51,7 @@ public:
     }
     void readData()
     {   
-        if(!ok)
+        if(!isReady)
         {
             velocity = -1;
             flow = -1;

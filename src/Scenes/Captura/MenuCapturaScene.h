@@ -9,14 +9,36 @@
 
 typedef struct CaptureMenuOption{
     const char* label;
-    std::function<void()> action;
+    std::function<void(Context&)> action;
 } CaptureMenuOption;
 
 // Escena de logo/splash al iniciar la app
 class MenuCapturaScene : public IScene
 {
 private:
-
+    int selectIndex = 0;
+    CaptureMenuOption menuOptions[8] = {
+        {"Continuar captura", [](Context &ctx) {
+            ctx.resumeCapture();
+            SceneManager::setScene("captura", ctx);
+        }},
+        {"Finalizar captura", [](Context &ctx) {
+            ctx.endCapture();
+        }},
+        {"Modificar flujo", [](Context &ctx) {
+            SceneManager::setScene("flujo_now", ctx);
+        }},
+        {"Cambiar hora fin.", [](Context &ctx) {
+            SceneManager::setScene("time_end", ctx);
+        }},
+        {"Probar bombas", [](Context &ctx) {
+            SceneManager::setScene("captura_bombas", ctx);
+        }},
+        {"Reiniciar EOLO", [](Context &ctx) {
+            ctx.endCapture();
+            ESP.restart();
+        }}
+    };
 public:
     void enter(Context &ctx) override
     {
@@ -28,6 +50,41 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
         ctx.updateCapture();
+
+        int delta = ctx.components.input.encoderDelta;
+        bool button = ctx.components.input.buttonPressed;
+
+        if (delta != 0)
+        {
+            selectIndex += delta;
+            selectIndex = constrain(selectIndex, 0, 5);
+        }
+
+        if(button){
+            ctx.components.input.resetCounter();
+            menuOptions[selectIndex].action(ctx);
+        }
+
+        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+
+
+        int offset = selectIndex > 2 ? 3:0;
+        for (int i = offset; i < 3+offset; i++)
+        {   
+            int e = i-offset;
+            if(selectIndex==i){
+                ctx.u8g2.drawBox(2, 32 + e * 14 - 14, 131, 14);
+                ctx.u8g2.setDrawColor(0);
+            } else {
+                ctx.u8g2.setDrawColor(1);
+            }
+            ctx.u8g2.drawStr(2, 30 + e * 14, menuOptions[i].label);
+            ctx.u8g2.setDrawColor(1);
+        }
+
+        int scrollHeight = 48 / 12; 
+        int scrollY = selectIndex * scrollHeight*2 + 18; 
+        ctx.u8g2.drawVLine(0, scrollY, scrollHeight);
 
         ctx.u8g2.sendBuffer();
     }

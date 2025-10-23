@@ -15,12 +15,18 @@ public:
 
   bool buttonPressed = false;
   int encoderDelta = 0;
+  bool isReady = false;
 
   // Constructor
   Input() {}
 
   void begin()
   {
+    if (isReady) {
+      Serial.println("Input ya inicializado, skipping...");
+      return;
+    }
+
     Wire.begin(SDA_PIN, SCL_PIN); // Inicializa Wire para comunicación I2C
     Wire.setClock(100000);        // 100kHz
     Serial.println("Encoder inicializado");
@@ -33,6 +39,8 @@ public:
     prevRawCounter = rawCounter;
     prevButtonRaw = rawButton;
     lastButtonMs = millis();
+    
+    isReady = true;
   }
 
   // Actualizar lecturas desde el driver
@@ -81,7 +89,8 @@ private:
   volatile bool rawButton = false; // Estado del botón (raw)
   volatile bool prevButtonRaw = false;
 
-  const int BUTTON_DEBOUNCE_MS = 50; 
+  const bool FLIP_ENCODER = true; // Poner a true si el encoder va invertido
+  const int BUTTON_DEBOUNCE_MS = 0; 
   const int ENCODER_DEBOUNCE_MS = 25;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
@@ -103,8 +112,21 @@ private:
     if(rawCounter!=prevRawCounter){
       unsigned long currentMs = millis();
       if(currentMs - lastEncoderMs > ENCODER_DEBOUNCE_MS){
-        encoderDelta += (rawCounter - prevRawCounter);
+       
+        if(FLIP_ENCODER){
+          encoderDelta -= (rawCounter - prevRawCounter);
+        }
+        else{
+          encoderDelta += (rawCounter - prevRawCounter);
+        }
+        if(encoderDelta>127){
+          encoderDelta -= 256;
+        }
+        else if(encoderDelta<-127){
+          encoderDelta += 256;
+        }
         prevRawCounter = rawCounter;
+        
         lastEncoderMs = currentMs;
         Serial.print("Encoder delta cambiado a: ");
         Serial.println(encoderDelta);
@@ -124,7 +146,7 @@ private:
       rawDirection = Wire.read();
       rawCounter = Wire.read();
       rawButton = (Wire.read() == 1);
-
+      
       if (rawCounter != prevCounter)
       {
         Serial.print("Encoder: Contador cambio a ");
@@ -149,9 +171,15 @@ class Input{
     public:
     int encoderDelta = 0;
     bool buttonPressed = false;
+    bool isReady = false;
 
     void begin() {
+        if (isReady) {
+            Serial.println("Input simulado ya inicializado, skipping...");
+            return;
+        }
         Serial.println("Input simulado iniciado");
+        isReady = true;
     }
 
     void poll() {

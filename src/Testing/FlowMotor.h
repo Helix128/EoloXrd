@@ -79,7 +79,7 @@ void testFlowMotor(Context &ctx)
     Serial.print(calFlows[10]);
     Serial.println(" L/min");
 
-    Serial.println("Ingresa valor de flujo (0-20 L/min) via Serial");
+    Serial.println("Ingresa valor de flujo (0-8 L/min) via Serial");
     Serial.println("Escribe 'exit' para salir");
     Serial.println();
     
@@ -114,7 +114,7 @@ void testFlowMotor(Context &ctx)
                     }
                     
                     float newTarget = inputBuffer.toFloat();
-                    if (newTarget >= 0.0 && newTarget <= 20.0)
+                    if (newTarget >= 0.0 && newTarget <= 8.0)
                     {
                         ctx.session.targetFlow = newTarget;
                         Serial.print("Nuevo flujo objetivo: ");
@@ -123,7 +123,7 @@ void testFlowMotor(Context &ctx)
                     }
                     else
                     {
-                        Serial.println("Valor inválido. Ingresa 0-20 L/min o 'exit'");
+                        Serial.println("Valor inválido. Ingresa 0-8 L/min o 'exit'");
                     }
                     
                     inputBuffer = "";

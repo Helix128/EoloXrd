@@ -10,6 +10,8 @@
 #include "../Scenes/Setup/PlantowerScene.h"
 #include "../Scenes/Captura/WaitScene.h"
 #include "../Scenes/Captura/CapturaScene.h"
+#include "../Scenes/Captura/MenuCapturaScene.h"
+#include "../Scenes/Captura/HoraFinScene.h"
 #include "../Scenes/Captura/FinScene.h"
 #include "../Scenes/Captura/MenuFinScene.h"
 
@@ -25,6 +27,8 @@ void registerAllScenes()
     SceneManager::addScene("plantower", new PlantowerScene());
     SceneManager::addScene("wait", new WaitScene());
     SceneManager::addScene("captura", new CapturaScene());
+    SceneManager::addScene("captura_menu", new MenuCapturaScene());
+    SceneManager::addScene("time_end", new TimeEndScene());
     SceneManager::addScene("end", new FinScene());
     SceneManager::addScene("end_menu", new EndMenuScene());
     
