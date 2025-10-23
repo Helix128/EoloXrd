@@ -1,18 +1,19 @@
-#ifndef LOGO_SCENE_H
-#define LOGO_SCENE_H
+#ifndef CAPTURE_MENU_SCENE_H
+#define CAPTURE_MENU_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/SceneManager.h"
-#include "../Drawing/GUI.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/SceneManager.h"
+#include "../../Drawing/GUI.h"
+#include "../../Config.h"
 
-typedef struct MenuOption{
+typedef struct CaptureMenuOption{
     const char* label;
     std::function<void()> action;
-} MenuOption;
+} CaptureMenuOption;
 
 // Escena de logo/splash al iniciar la app
-class TemplateScene : public IScene
+class MenuCapturaScene : public IScene
 {
 private:
 

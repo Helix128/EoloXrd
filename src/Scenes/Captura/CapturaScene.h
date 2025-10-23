@@ -14,14 +14,12 @@ private:
 public:
     void enter(Context &ctx) override
     {
-        ctx.session.elapsedTime = 0;
-        ctx.isCapturing = true;
-        ctx.session.capturedVolume = 0.0; 
+        ctx.beginCapture();
     }
 
     void update(Context &ctx) override
     {
-        updateCapture(ctx);
+        ctx.updateCapture();
 
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
@@ -36,6 +34,11 @@ public:
                 cycleFooter = 4;
             else if(cycleFooter>4)
                 cycleFooter = 0;
+        }
+
+        if(button){
+            // TODO: MENU, por ahora solo termina la sesión forzosamente
+            ctx.endCapture();
         }
 
         footer(ctx);
@@ -54,9 +57,7 @@ public:
 
         if (now > ctx.session.endTime)
         {
-            ctx.isCapturing = false;
-            ctx.isEnd = true;
-            SceneManager::setScene("end", ctx);
+            ctx.endCapture();
             return;
         }
 

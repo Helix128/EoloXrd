@@ -1,22 +1,23 @@
 #ifndef END_MENU_SCENE_H
 #define END_MENU_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/GUI.h"
-#include "../Drawing/SceneManager.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/SceneManager.h"
+#include "../../Drawing/GUI.h"
+#include "../../Config.h"
 
 
-typedef struct MenuOption{
+typedef struct EndMenuOption{
     const char* label;
     const char* scene;
-} MenuOption;
+} EndMenuOption;
 
 // Escena de logo/splash al iniciar la app
 class EndMenuScene : public IScene
 {
 private:
-    MenuOption menuOptions[2] = {
+    EndMenuOption menuOptions[2] = {
         {"Reiniciar EOLO", "inicio"},
         {"Regresar", "end"}
     };

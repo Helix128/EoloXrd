@@ -7,8 +7,8 @@
 #include "../Drawing/SceneManager.h"
 
 typedef struct Context
-{   
-    DisplayModel &u8g2; 
+{
+    DisplayModel &u8g2;
     Components components;
     Session session;
 
@@ -37,17 +37,30 @@ public:
     }
 
     uint32_t getCurrentSeconds()
-    {   
-        if(components.rtc.ok==false)
+    {
+        if (components.rtc.ok == false)
             return 0;
         return components.rtc.now().unixtime();
     }
-
     
-    void updateCapture()
-    {   
+    void beginCapture(){
         Context &ctx = *this;
-        
+        ctx.session.elapsedTime = 0;
+        ctx.isCapturing = true;
+        ctx.session.capturedVolume = 0.0; 
+    }
+    void endCapture()
+    {
+        Context &ctx = *this;
+        ctx.isCapturing = false;
+        ctx.isEnd = true;
+        SceneManager::setScene("end", ctx);
+    }
+
+    void updateCapture()
+    {
+        Context &ctx = *this;
+
         if (!ctx.isCapturing)
             return;
 
@@ -56,24 +69,22 @@ public:
 
         if (now > ctx.session.endTime)
         {
-            ctx.isCapturing = false;
-            ctx.isEnd = true;
-            SceneManager::setScene("end", ctx);
+            endCapture();
             return;
         }
 
-        # if !BAREBONES
+#if !BAREBONES
         ctx.components.flowSensor.readData();
-        // adjustMotorPower();
-        #else
-        ctx.components.flowSensor.flow = ctx.session.targetFlow+millis()%2;
-        # endif
+// adjustMotorPower();
+#else
+        ctx.components.flowSensor.flow = ctx.session.targetFlow + millis() % 2;
+#endif
 
         if (now - ctx.session.lastLog >= ctx.CAPTURE_INTERVAL)
         {
             ctx.session.lastLog = now;
 
-            # if !BAREBONES
+#if !BAREBONES
             ctx.components.logger.capture(
                 now,
                 ctx.components.flowSensor.flow,
@@ -85,12 +96,12 @@ public:
                 ctx.components.plantower.pm25,
                 ctx.components.plantower.pm10,
                 ctx.components.battery.getPct());
-            # else
+#else
             Serial.println("Capturando datos... (modo barebones, solo serial)");
-            # endif
+#endif
         }
     }
-    
+
 } Context;
 
 #endif
