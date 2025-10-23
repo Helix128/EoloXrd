@@ -150,7 +150,7 @@ public:
         {
             if (!ctx.session.usePlantower)
             {
-                cycleFooter++;
+                cycleFooter-=ctx.components.input.encoderDelta;
                 break;
             }
             float pm1 = ctx.components.plantower.pm1;
