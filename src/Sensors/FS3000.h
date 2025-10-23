@@ -52,13 +52,9 @@ public:
             return;
         }
         velocity = sensor.readMetersPerSecond();
-      //  float volume = velocity * 3.1416f * TUBE_RADIUS * TUBE_RADIUS; // m^3/s
-      //  flow = volume * 60.0f * 1000.0f; // m^3/s to L/min
+        flow = velocity * 10; // TEMPORAL: HAY QUE CALCULAR VALOR REAL??
+    }
 
-     //   flow = constrain(flow, 0.0, 20.0);
-     flow = velocity*10;
-   }
-    
 private:
     FS3000 sensor;
 };

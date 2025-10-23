@@ -14,6 +14,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
+        ctx.isCapturing = true;
     }
 
     void update(Context &ctx) override
@@ -76,15 +77,20 @@ public:
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(0, 50, "Temp");
             ctx.u8g2.drawStr(0, 60, tempStr);
-            ctx.u8g2.drawStr(20, 60, " C");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(22, 60, "C");
 
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(45, 50, "Hum");
             ctx.u8g2.drawStr(45, 60, humStr);
-            ctx.u8g2.drawStr(65, 60, " %");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(67, 60, "%");
 
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(80, 50, "Pres");
             ctx.u8g2.drawStr(80, 60, presStr);
-            ctx.u8g2.drawStr(100, 60, " hPa");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(102, 60, "hPa");
             break;
         }
         case 1: // pm1 pm2.5 pm10
@@ -139,7 +145,21 @@ public:
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(25, 50, "Flujo configurado");
             ctx.u8g2.drawStr(42, 60, targetFlowStr);
-            ctx.u8g2.drawStr(62, 60, " L/min");
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(62, 60, "L/min");
+        }
+        case 3: { // tiempo transcurrido
+            unsigned long elapsed = ctx.elapsedTime;
+            unsigned long hours = elapsed / 3600;
+            unsigned long minutes = (elapsed % 3600) / 60;
+            unsigned long seconds = elapsed % 60;
+
+            char timeStr[9];
+            snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.drawStr(35, 50, "Tiempo transcurrido");
+            ctx.u8g2.drawStr(50, 60, timeStr);
+            break;
         }
         }
     }

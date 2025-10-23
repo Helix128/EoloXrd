@@ -9,9 +9,12 @@ typedef struct Session{
 
     // Flujo
     float targetFlow = 5.0; 
-
+    
     // Sensor de material particulado
     bool usePlantower = true;
+
+    // Datos de sesión
+    float capturedVolume = 0.0;
 
 }Session;
 

@@ -23,7 +23,7 @@ public:
         GUI::displayHeader(ctx);
 
         DateTime now = ctx.components.rtc.now();
-        int nowUnix = ctx.components.rtc.now().unixtime();
+        unsigned long int nowUnix = ctx.components.rtc.now().unixtime();
         if(nowUnix >= ctx.session.startTime){
             SceneManager::setScene("captura",ctx);
         }
@@ -31,7 +31,7 @@ public:
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
         //ctx.u8g2.drawStr(10, 25, "Esperando");
 
-        ctx.u8g2.drawStr(10, 26, "Flujo actual:");
+        ctx.u8g2.drawStr(10, 26, "Flujo actual");
         
      
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
@@ -47,7 +47,7 @@ public:
         ctx.u8g2.drawStr(33, 36, "L/min");
         ctx.u8g2.drawStr(10, 36, flowStr);
         
-        ctx.u8g2.drawStr(10, 46, "Hora de inicio:");
+        ctx.u8g2.drawStr(10, 46, "Inicio");
 
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         char timeStr[20];
@@ -57,6 +57,23 @@ public:
             startTime.minute()
         );
         ctx.u8g2.drawStr(10, 60, timeStr);
+
+        // Mostrar tiempo faltante
+        int secondsLeft = ctx.session.startTime-nowUnix;
+        int hoursLeft = secondsLeft / 3600;
+        int minutesLeft = (secondsLeft % 3600) / 60;
+        int secondsLeftRemainder = secondsLeft % 60;
+        
+        char timeLeftStr[20];
+        snprintf(timeLeftStr, sizeof(timeLeftStr), "%02d:%02d:%02d",
+            hoursLeft,
+            minutesLeft,
+            secondsLeftRemainder
+        );
+
+        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.drawStr(75, 46, "Restante");   
+        ctx.u8g2.drawStr(75, 60, timeLeftStr);
 
         ctx.u8g2.sendBuffer();
     }

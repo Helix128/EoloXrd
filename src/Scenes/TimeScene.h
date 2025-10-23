@@ -80,6 +80,14 @@ public:
                 targetMinute,
                 0
             );
+            unsigned long int nowUnix = now.unixtime();
+            unsigned long int targetUnix = targetTime.unixtime();
+            Serial.print("Now Unix: ");
+            Serial.println(nowUnix);
+            Serial.print("Target Unix: ");
+            Serial.println(targetUnix);
+            Serial.println("Delta");
+            Serial.println(targetUnix - nowUnix);
             if(isEndTime){
                 ctx.session.endTime = targetTime.unixtime();
                 SceneManager::setScene("plantower",ctx);

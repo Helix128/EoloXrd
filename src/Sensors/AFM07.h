@@ -61,7 +61,7 @@ public:
         {
             uint16_t valorCrudo = node.getResponseBuffer(0);
             flow = (float)valorCrudo / FACTOR_LECTURA;
-            velocity = flow / (3.1416f * TUBE_RADIUS * TUBE_RADIUS * 60.0f); // L/min to m^3/s to m/s
+            velocity = flow; // TODO: CALCULAR VALOR REAL (?) Innecesario tal vez
         }
         else
         {
