@@ -59,7 +59,7 @@ public:
         ctx.u8g2.drawStr(75, 45, "No");
 
         ctx.u8g2.setDrawColor(1); 
-        ctx.u8g2.drawStr(10, 60, "(usa mas bateria)");
+        ctx.u8g2.drawStr(10, 60, "+ consumo de energia");
         ctx.u8g2.sendBuffer();
     }
 };

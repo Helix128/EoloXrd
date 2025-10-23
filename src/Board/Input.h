@@ -169,7 +169,7 @@ class Input{
             } 
             else if (command == 's') {
                 buttonPressed = true;
-                Serial.print("Botón pulsado");
+                Serial.println("Botón pulsado");
             }
         }
     }

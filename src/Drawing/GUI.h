@@ -36,7 +36,7 @@ public:
         ctx.u8g2.setFont(u8g2_font_fivepx_tr);
 
         // Estado de la SD
-        char* sdStatus = "OK!";
+        const char* sdStatus = "OK!";
         if (ctx.components.logger.status == SD_ERROR)
             sdStatus = "ERR!";
         else if (ctx.components.logger.status == SD_WRITING)
