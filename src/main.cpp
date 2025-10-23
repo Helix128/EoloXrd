@@ -35,9 +35,16 @@ void setup()
   SceneManager::setScene("splash", ctx);
 }
 
+const int targetMs = 16;
+unsigned long int lastFrameMs = 0;
 void loop()
 {
+  if(millis() - lastFrameMs < targetMs){
+    return;
+  }
+  lastFrameMs = millis();
   // Actualizar el contexto de la app y la escena actual
   ctx.update();
   SceneManager::update(ctx);
+  
 }

@@ -1,11 +1,11 @@
 #ifndef CAPTURA_SCENE_H
 #define CAPTURA_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/SceneManager.h"
-#include "../Drawing/GUI.h"
-#include "../Config.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/SceneManager.h"
+#include "../../Drawing/GUI.h"
+#include "../../Config.h"
 
 // Escena de logo/splash al iniciar la app
 class CapturaScene : public IScene
@@ -14,7 +14,9 @@ private:
 public:
     void enter(Context &ctx) override
     {
+        ctx.session.elapsedTime = 0;
         ctx.isCapturing = true;
+        ctx.session.capturedVolume = 0.0; 
     }
 
     void update(Context &ctx) override
@@ -48,6 +50,7 @@ public:
             return;
 
         unsigned long now = ctx.getCurrentSeconds();
+        ctx.session.elapsedTime = now - ctx.session.startTime;
 
         if (now > ctx.session.endTime)
         {
@@ -60,12 +63,13 @@ public:
         # if !BAREBONES
         ctx.components.flowSensor.readData();
         // adjustMotorPower();
+        #else
+        ctx.components.flowSensor.flow = ctx.session.targetFlow+millis()%2;
         # endif
 
-        if (now - ctx.lastCapture >= ctx.CAPTURE_INTERVAL)
+        if (now - ctx.session.lastLog >= ctx.CAPTURE_INTERVAL)
         {
-            ctx.lastCapture = now;
-            ctx.elapsedTime += ctx.CAPTURE_INTERVAL;
+            ctx.session.lastLog = now;
 
             # if !BAREBONES
             ctx.components.logger.capture(
@@ -200,7 +204,7 @@ public:
         }
         case 3:
         { // tiempo transcurrido
-            unsigned long elapsed = ctx.elapsedTime;
+            unsigned long elapsed = ctx.session.elapsedTime;
             unsigned long hours = elapsed / 3600;
             unsigned long minutes = (elapsed % 3600) / 60;
             unsigned long seconds = elapsed % 60;
@@ -210,6 +214,21 @@ public:
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(15, 50, "Tiempo transcurrido");
             ctx.u8g2.drawStr(35, 60, timeStr);
+            break;
+        }
+        case 4: {
+            // tiempo restante
+            unsigned long duration = ctx.session.endTime - ctx.session.startTime;
+            unsigned long remaining = duration - (ctx.session.elapsedTime);
+            unsigned long hours = remaining / 3600;
+            unsigned long minutes = (remaining % 3600) / 60;
+            unsigned long seconds = remaining % 60;
+
+            char remainingStr[9];
+            snprintf(remainingStr, sizeof(remainingStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.drawStr(15, 50, "Tiempo restante");
+            ctx.u8g2.drawStr(35, 60, remainingStr);
             break;
         }
         }

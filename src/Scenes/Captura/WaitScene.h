@@ -1,11 +1,11 @@
 #ifndef WAIT_SCENE_H
 #define WAIT_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/SceneManager.h"
-#include "../Drawing/GUI.h"
-#include "../Config.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/SceneManager.h"
+#include "../../Drawing/GUI.h"
+#include "../../Config.h"
 
 class WaitScene : public IScene
 {

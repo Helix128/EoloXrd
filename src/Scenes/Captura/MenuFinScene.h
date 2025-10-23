@@ -1,5 +1,5 @@
-#ifndef INICIO_SCENE_H
-#define INICIO_SCENE_H
+#ifndef END_MENU_SCENE_H
+#define END_MENU_SCENE_H
 
 #include "IScene.h"
 #include "../Data/Context.h"
@@ -13,13 +13,12 @@ typedef struct MenuOption{
 } MenuOption;
 
 // Escena de logo/splash al iniciar la app
-class InicioScene : public IScene
+class EndMenuScene : public IScene
 {
 private:
-    MenuOption menuOptions[3] = {
-        {"Continuar sesion", "continuar"},
-        {"Nueva sesion", "flujo"},
-        {"Capturar ahora", "flujo_now"}
+    MenuOption menuOptions[2] = {
+        {"Reiniciar EOLO", "inicio"},
+        {"Regresar", "end"}
     };
 public:
 
@@ -36,13 +35,13 @@ public:
         GUI::displayHeader(ctx);
         
         selectIndex += ctx.components.input.encoderDelta;
-        selectIndex = constrain(selectIndex, 0, 2);
+        selectIndex = constrain(selectIndex, 0, 1);
         if(ctx.components.input.buttonPressed){
             ctx.components.input.resetCounter();
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
         }
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 2; i++)
         {   
             if(selectIndex==i){
                 ctx.u8g2.drawBox(-1, 32 + i * 14 - 14, 131, 14);

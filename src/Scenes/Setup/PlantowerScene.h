@@ -1,10 +1,10 @@
 #ifndef PLANTOWER_SCENE_H
 #define PLANTOWER_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/SceneManager.h"
-#include "../Drawing/GUI.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/GUI.h"
+#include "../../Drawing/SceneManager.h"
 
 class PlantowerScene : public IScene
 {

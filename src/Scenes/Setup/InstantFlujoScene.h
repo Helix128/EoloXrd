@@ -1,12 +1,12 @@
-#ifndef FLUJO_SCENE_H
-#define FLUJO_SCENE_H
+#ifndef INSTANT_FLUJO_SCENE_H
+#define INSTANT_FLUJO_SCENE_H
 
-#include "IScene.h"
-#include "../Data/Context.h"
-#include "../Drawing/GUI.h"
-#include "../Drawing/SceneManager.h"
+#include "../IScene.h"
+#include "../../Data/Context.h"
+#include "../../Drawing/GUI.h"
+#include "../../Drawing/SceneManager.h"
 
-class FlujoScene : public IScene
+class InstantFlujoScene : public IScene
 {
 public:
     
@@ -28,7 +28,9 @@ public:
         if(ctx.components.input.buttonPressed){
             ctx.components.input.resetButton();
             ctx.session.targetFlow = targetFlow;
-            SceneManager::setScene("tiempo",ctx);
+            ctx.session.startTime = ctx.getCurrentSeconds();
+            ctx.session.endTime = ctx.session.startTime + 3600; 
+            SceneManager::setScene("captura",ctx);
         }
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         ctx.u8g2.drawStr(10, 30, "Flujo objetivo");
