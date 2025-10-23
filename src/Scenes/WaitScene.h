@@ -5,6 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/SceneManager.h"
 #include "../Drawing/GUI.h"
+#include "../Config.h"
 
 class WaitScene : public IScene
 {
@@ -35,7 +36,14 @@ public:
      
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
         char flowStr[10];
-        snprintf(flowStr, sizeof(flowStr), "%.1f", ctx.components.flowSensor.flow);
+
+        float flow = ctx.components.flowSensor.flow;
+
+        #if BAREBONES == true // valores inventados para testing
+        flow = millis() % 20;
+        #endif
+
+        snprintf(flowStr, sizeof(flowStr), "%.1f", flow);
         ctx.u8g2.drawStr(33, 36, "L/min");
         ctx.u8g2.drawStr(10, 36, flowStr);
         

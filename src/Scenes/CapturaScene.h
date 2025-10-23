@@ -5,6 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/SceneManager.h"
 #include "../Drawing/GUI.h"
+#include "../Config.h"
 
 // Escena de logo/splash al iniciar la app
 class CapturaScene : public IScene
@@ -59,6 +60,12 @@ public:
             float hum = ctx.components.bme.humidity;
             float presAtm = ctx.components.bme.pressure;
 
+            #if BAREBONES == true // valores inventados para testing
+            temp = 25.0;
+            hum = 50.0;
+            presAtm = 1013.0;
+            #endif
+
             char tempStr[5];
             char humStr[5];
             char presStr[5];
@@ -90,9 +97,11 @@ public:
             float pm25 = ctx.components.plantower.pm25;
             float pm10 = ctx.components.plantower.pm10;
 
+            #if BAREBONES == true
             pm1 = 512;
             pm25 = 512;
             pm10 = 512;
+            #endif
 
             char pm1Str[5];
             char pm25Str[5];
