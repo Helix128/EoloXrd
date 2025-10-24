@@ -1,5 +1,5 @@
-#ifndef END_SCENE_H
-#define END_SCENE_H
+#ifndef CAPTURA_BOMBAS_SCENE_H
+#define CAPTURA_BOMBAS_SCENE_H
 
 #include "../IScene.h"
 #include "../../Data/Context.h"
