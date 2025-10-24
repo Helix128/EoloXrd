@@ -55,12 +55,12 @@ public:
         isActive = active;
         digitalWrite(PT_PWR, active ? HIGH : LOW); // Controla la alimentación
         delay(50);
-        while(pm25<0 && isActive) {
-            Serial.print(".");
-            readData();
-            delay(50);
+        for (int i = 0; i < 8; i++)
+        {   
+            readData(); 
+            delay(500);
         }
-        Serial.println("OK!");
+            Serial.println("OK!");
     }
 
     void testSensor()
@@ -98,7 +98,6 @@ public:
     {
         if (!Serial2.available())
         {   
-            Serial.println("No hay datos disponibles del Plantower.");
             // Si el sensor está apagado no hay datos
             pm1 = -1;
             pm25 = -1;

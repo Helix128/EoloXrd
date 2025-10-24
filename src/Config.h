@@ -7,8 +7,16 @@
 #define CHECK_SENSORS false
 
 // Modo barebones (para debug sin tener el EOLO completo)
-// simula sensores e input
+// simula sensores
 #define BAREBONES false
+
+// simula encoder
+#define SERIAL_INPUT true
+
+#define SD_CS_PIN 5
+#define SD_MOSI_PIN 23
+#define SD_MISO_PIN 19
+#define SD_SCK_PIN 18
 
 // Modelo de pantalla a usar en U8G2 (default U8G2_SSD1309_128x64_NONAME2_F_HW_I2C)
 //#define DisplayModel U8G2_SSD1309_128X64_NONAME2_F_HW_I2C

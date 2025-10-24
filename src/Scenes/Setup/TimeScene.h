@@ -106,11 +106,13 @@ public:
             {   
                 ctx.components.input.resetCounter();
                 ctx.session.endTime = targetTime.unixtime();
+                ctx.session.endDate = targetTime;
                 SceneManager::setScene("plantower", ctx);
             }
             else
             {
                 ctx.session.startTime = targetTime.unixtime();
+                ctx.session.startDate = targetTime;
                 isEndTime = true;
                 enter(ctx);
             }

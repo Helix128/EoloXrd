@@ -5,6 +5,14 @@
 #include "Components.h"
 #include "../Config.h"
 #include "../Drawing/SceneManager.h"
+#include <SD.h>
+
+enum SDStatus
+{
+    SD_OK,
+    SD_WRITING,
+    SD_ERROR
+};
 
 typedef struct Context
 {
@@ -21,6 +29,10 @@ typedef struct Context
 
     bool isEnd = false;
 
+    SDStatus sdStatus = SD_OK;
+
+    const char *eoloDir = "/eolo";
+
 public:
     Context(DisplayModel &display) : u8g2(display) {}
 
@@ -28,7 +40,39 @@ public:
     {
         u8g2.begin();
         components.begin();
+        initSD();
         Serial.println("Contexto inicializado");
+    }
+
+    bool initSD()
+    {
+        if (!SD.begin(SD_CS_PIN))
+        {
+            Serial.println("Fallo al inicializar SD");
+            sdStatus = SD_ERROR;
+            return false;
+        }
+
+        if (!SD.exists(eoloDir))
+        {
+            sdStatus = SD_WRITING;
+            SD.mkdir(eoloDir);
+            Serial.println("Directorio /eolo creado en SD");
+            sdStatus = SD_OK;
+        }
+        else
+        {
+            Serial.println("Directorio /eolo ya existe en SD");
+        }
+
+        Serial.println("SD inicializada");
+        sdStatus = SD_OK;
+        return true;
+    }
+
+    void logData()
+    {
+        
     }
 
     void update()
@@ -42,20 +86,21 @@ public:
             return 0;
         return components.rtc.now().unixtime();
     }
-    
-    void beginCapture(){
+
+    void beginCapture()
+    {
         Context &ctx = *this;
         ctx.session.elapsedTime = 0;
         ctx.isCapturing = true;
-        ctx.session.capturedVolume = 0.0; 
-        
+        ctx.session.capturedVolume = 0.0;
+
         SceneManager::setScene("captura", ctx);
     }
 
     void pauseCapture()
     {
         Context &ctx = *this;
-         
+
         ctx.components.input.resetCounter();
         if (!ctx.isCapturing || ctx.isPaused)
             return;
@@ -67,7 +112,7 @@ public:
     void resumeCapture()
     {
         Context &ctx = *this;
-         
+
         ctx.components.input.resetCounter();
         if (!ctx.isCapturing || !ctx.isPaused)
             return;
@@ -82,12 +127,13 @@ public:
         ctx.isCapturing = false;
         ctx.isEnd = true;
         ctx.resetCapture();
-         
+
         ctx.components.input.resetCounter();
         SceneManager::setScene("end", ctx);
     }
 
-    void resetCapture(){
+    void resetCapture()
+    {
         Context &ctx = *this;
         ctx.isCapturing = false;
         ctx.isPaused = false;
@@ -95,7 +141,8 @@ public:
         ctx.session = Session();
     }
 
-    void updateMotors(){
+    void updateMotors()
+    {
         Context &ctx = *this;
         float currentFlow = ctx.components.flowSensor.flow;
         float targetFlow = ctx.session.targetFlow;
@@ -136,17 +183,6 @@ public:
             ctx.components.plantower.setPower(ctx.session.usePlantower);
             ctx.components.plantower.readData();
 
-            ctx.components.logger.capture(
-                now,
-                ctx.components.flowSensor.flow,
-                ctx.session.targetFlow,
-                ctx.components.bme.temperature,
-                ctx.components.bme.humidity,
-                ctx.components.bme.pressure,
-                ctx.components.plantower.pm1,
-                ctx.components.plantower.pm25,
-                ctx.components.plantower.pm10,
-                ctx.components.battery.getPct());
 #else
             Serial.println("Capturando datos... (modo barebones, solo serial)");
 #endif

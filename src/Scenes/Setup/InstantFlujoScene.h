@@ -30,7 +30,9 @@ public:
             ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
             ctx.session.startTime = ctx.getCurrentSeconds();
-            ctx.session.endTime = ctx.session.startTime + 3600; 
+            ctx.session.startDate = DateTime(ctx.session.startTime);
+            ctx.session.endTime = ctx.session.startTime + 3600;
+            ctx.session.endDate = DateTime(ctx.session.endTime);
             SceneManager::setScene("captura",ctx);
         }
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);

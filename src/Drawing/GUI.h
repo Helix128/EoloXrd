@@ -3,9 +3,7 @@
 
 #include <U8g2lib.h>
 #include "../Data/Context.h" 
-#include "../Board/Logger.h"
 
-struct AppContext;
 
 // Helper para dibujar elementos comunes en la UI
 class GUI
@@ -37,10 +35,10 @@ public:
 
         // Estado de la SD
         const char* sdStatus = "OK!";
-        if (ctx.components.logger.status == SD_ERROR)
-            sdStatus = "ERR!";
-        else if (ctx.components.logger.status == SD_WRITING)
-            sdStatus = "IO";
+      //  if (ctx.components.logger.status == SD_ERROR)
+      //      sdStatus = "ERR!";
+      //  else if (ctx.components.logger.status == SD_WRITING)
+      //      sdStatus = "IO";
         ctx.u8g2.drawStr(98, 9, "SD:");
         ctx.u8g2.drawStr(111, 9, sdStatus);
 

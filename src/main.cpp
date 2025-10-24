@@ -15,8 +15,6 @@
 DisplayModel u8g2(U8G2_R0, SCL_PIN, SDA_PIN);
 Context ctx(u8g2); // Aquí se procesa toda la lógica
 
-// Crear instancia de Logger
-Logger logger;
 
 void setup()
 { 

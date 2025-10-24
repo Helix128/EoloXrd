@@ -9,7 +9,6 @@
 #include "../Sensors/Plantower.h"
 #include "../Sensors/BME280.h"
 #include "../Board/Battery.h"
-#include "../Board/Logger.h"
 
 typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
@@ -19,7 +18,6 @@ typedef struct Components{
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
-  Logger logger;       // Registro de datos en SD
   RTCManager rtc;      // Manejo RTC
 
   public: 
@@ -41,11 +39,6 @@ typedef struct Components{
     Serial.print(batteryPct);
     Serial.println("%)");
 
-    if(logger.begin())
-      Serial.println("Logger iniciado correctamente");
-    else
-      Serial.println("Fallo en la inicialización del logger");
-    
     Serial.println("Inicialización de componentes completa");
     
   }

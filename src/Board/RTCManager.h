@@ -60,13 +60,25 @@ public:
     String getTimeString()
     {
         if(!ok)
-            return String("0000-00-00 00:00:00 RTCERROR");
+            return String("0000-00-00 00:00:00");
 
         DateTime now = rtc.now();
         char buf[20];
         snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
                  now.year(), now.month(), now.day(),
                  now.hour(), now.minute(), now.second());
+        return String(buf);
+    }
+
+    String getTimeString(DateTime time)
+    {
+        if(!ok)
+            return String("0000-00-00 00:00:00");
+
+        char buf[20];
+        snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
+                 time.year(), time.month(), time.day(),
+                 time.hour(), time.minute(), time.second());
         return String(buf);
     }
 

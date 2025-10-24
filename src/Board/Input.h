@@ -3,7 +3,7 @@
 
 #include "../Config.h"
 
-#if BAREBONES == false
+#if SERIAL_INPUT == false
 
 #include <Arduino.h>
 #include <Wire.h>

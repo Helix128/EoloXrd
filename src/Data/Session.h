@@ -1,11 +1,15 @@
 #ifndef SESSION_H
 #define SESSION_H
 
+#include <RTClib.h>
+
 typedef struct Session{
 
     // Tiempo
     unsigned long startTime = 0;
-    unsigned long endTime = 3600; 
+    DateTime startDate;
+    unsigned long endTime = 3600;
+    DateTime endDate; 
     unsigned long elapsedTime = 0;
     unsigned long lastLog = 0;
     
