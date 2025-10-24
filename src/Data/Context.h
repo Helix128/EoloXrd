@@ -337,6 +337,8 @@ public:
             ctx.components.plantower.setPower(ctx.session.usePlantower);
             ctx.components.plantower.readData();
 
+            logData();
+
 #else
             Serial.println("Capturando datos... (modo barebones, solo serial)");
 #endif
