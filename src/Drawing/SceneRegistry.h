@@ -15,6 +15,7 @@
 #include "../Scenes/Captura/HoraFinScene.h"
 #include "../Scenes/Captura/FinScene.h"
 #include "../Scenes/Captura/MenuFinScene.h"
+#include "../Scenes/Captura/CapturaBombas.h"
 
 
 
@@ -34,7 +35,7 @@ void registerAllScenes()
     SceneManager::addScene("time_end", new TimeEndScene());
     SceneManager::addScene("end", new FinScene());
     SceneManager::addScene("end_menu", new EndMenuScene());
-    
+    SceneManager::addScene("captura_bombas", new CapturaBombasScene());
     Serial.println("Todas las escenas registradas");
 }
 
