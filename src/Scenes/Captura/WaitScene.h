@@ -22,9 +22,8 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        DateTime now = ctx.components.rtc.now();
-        unsigned long int nowUnix = ctx.components.rtc.now().unixtime();
-        if(nowUnix >= ctx.session.startTime){
+        unsigned long int nowUnix = ctx.getUnixTime();
+        if(nowUnix >= ctx.session.startDate.unixtime()){
              
             ctx.components.input.resetCounter();
             ctx.beginCapture();
@@ -55,7 +54,7 @@ public:
 
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         char timeStr[20];
-        DateTime startTime = DateTime(ctx.session.startTime);
+        DateTime startTime = ctx.session.startDate;
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d",
             startTime.hour(),
             startTime.minute()
@@ -63,7 +62,7 @@ public:
         ctx.u8g2.drawStr(10, 60, timeStr);
 
         // Mostrar tiempo faltante
-        int secondsLeft = ctx.session.startTime-nowUnix;
+        int secondsLeft = ctx.session.startDate.unixtime() - nowUnix;
         int hoursLeft = secondsLeft / 3600;
         int minutesLeft = (secondsLeft % 3600) / 60;
         int secondsLeftRemainder = secondsLeft % 60;

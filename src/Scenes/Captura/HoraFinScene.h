@@ -14,11 +14,13 @@ public:
     int targetHour = 12;
     int targetDay = 0;
 
+    long targetDuration = 0;
+
     void enter(Context &ctx) override
     {   
         isEndTime = true;
-        DateTime now = ctx.components.rtc.now();
-        int nowUnix = ctx.components.rtc.now().unixtime();
+        DateTime now = DateTime(ctx.session.startDate.unixtime()+ctx.session.duration);
+        int nowUnix = now.unixtime();
         targetMinute = now.minute();
         targetHour = now.hour();
         targetDay = 0;
@@ -32,59 +34,60 @@ public:
         int delta = ctx.components.input.encoderDelta;
         if (delta != 0)
         {
-            Serial.println("Delta tiempo: " + String(delta));
-            Serial.println("Hora objetivo: " + String(targetHour) + ":" + String(targetMinute) + " Dia offset: " + String(targetDay));
+            int newMinute = targetMinute + delta;
+            int newHour = targetHour;
+            int newDay = targetDay;
+
+            if (newMinute >= 60)
+            {
+            newMinute = 0;
+            newHour++;
+            }
+            else if (newMinute < 0)
+            {
+            newMinute = 59;
+            newHour--;
+            }
+            
+            if (newHour >= 24)
+            {
+            newHour = 0;
+            newDay++;
+            }
+            else if (newHour < 0)
+            {
+            newHour = 23;
+            newDay--;
+            }
+            
             DateTime now = ctx.components.rtc.now();
-            DateTime targetTime(
-                now.year(),
-                now.month(),
-                now.day() + targetDay,
-                targetHour,
-                targetMinute,
-                0);
-            if (targetTime.unixtime() < now.unixtime())
+            DateTime newTime(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
+            
+            bool isValid = true;
+            
+            if (newTime.unixtime() <= now.unixtime())
             {
-                Serial.println("La hora objetivo debe ser mayor o igual a la hora actual.");
-                targetMinute = now.minute();
-                targetHour = now.hour();
-                targetDay = 0;
+            isValid = false;
             }
-            if (isEndTime)
+            
+            if (isEndTime && isValid)
             {
-                DateTime startTime = DateTime(ctx.session.startTime);
-                if (targetTime.unixtime() <= startTime.unixtime())
-                {
-                    Serial.println("La hora de fin debe ser mayor a la de inicio.");
-                    targetMinute = startTime.minute();
-                    targetHour = startTime.hour();
-                    targetDay = 0;
-                }
+            if (newTime.unixtime() <= ctx.session.startDate.unixtime())
+            {
+                isValid = false;
+            }
+            }
+            
+          
+            if (isValid)
+            {
+            delta = 0; 
+            targetDay = newDay;
+            targetHour = newHour;
+            targetMinute = newMinute;
             }
         }
-
-        targetMinute += delta;
-        if (targetMinute >= 60)
-        {
-            targetMinute = 0;
-            targetHour++;
-        }
-        else if (targetMinute < 0)
-        {
-            targetMinute = 59;
-            targetHour--;
-        }
-
-        if (targetHour >= 24)
-        {
-            targetHour = 0;
-            targetDay++;
-        }
-        else if (targetHour < 0)
-        {
-            targetHour = 23;
-            targetDay--;
-        }
-
+     
         if (ctx.components.input.buttonPressed)
         {
             DateTime now = ctx.components.rtc.now();
@@ -95,7 +98,7 @@ public:
                 targetHour,
                 targetMinute,
                 0);
-            unsigned long int nowUnix = now.unixtime();
+            unsigned long int nowUnix = ctx.getUnixTime();
             unsigned long int targetUnix = targetTime.unixtime();
             Serial.print("Now Unix: ");
             Serial.println(nowUnix);
@@ -106,13 +109,13 @@ public:
             if (isEndTime)
             {   
                 ctx.components.input.resetCounter();
-                ctx.session.endTime = targetTime.unixtime();
-                ctx.session.endDate = targetTime;
+                ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
+                Serial.print("Hora de fin establecida:");
+                Serial.println(targetTime.timestamp());
                 SceneManager::setScene("captura", ctx);
             }
             else
             {
-                ctx.session.startTime = targetTime.unixtime();
                 ctx.session.startDate = targetTime;
                 isEndTime = true;
                 enter(ctx);

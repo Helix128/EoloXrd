@@ -36,9 +36,9 @@ public:
         char flowStr[10];
         snprintf(flowStr, sizeof(flowStr), "%.1f", targetFlow);
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        ctx.u8g2.drawStr(40, 50, flowStr);
+        ctx.u8g2.drawStr(10, 50, flowStr);
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-        ctx.u8g2.drawStr(80, 50, "L/min");
+        ctx.u8g2.drawStr(50, 50, "L/min");
         ctx.u8g2.sendBuffer();
     }
 };

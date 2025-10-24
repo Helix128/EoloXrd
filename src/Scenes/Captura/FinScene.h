@@ -14,7 +14,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
-        ctx.clearSession();
+
     }
 
     void update(Context &ctx) override
@@ -25,8 +25,8 @@ public:
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
         ctx.u8g2.drawStr(10, 24, "Fin de captura");
 
-        DateTime startTime = DateTime(ctx.session.startTime);
-        DateTime endTime = DateTime(ctx.session.endTime);
+        DateTime startTime = ctx.session.startDate;
+        DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
         float targetFlow = ctx.session.targetFlow;
         float capturedVolume = ctx.session.capturedVolume;
 
@@ -66,6 +66,7 @@ public:
         if (ctx.components.input.buttonPressed)
         {    
             ctx.components.input.resetCounter();
+            ctx.clearSession();
             SceneManager::setScene("end_menu",ctx);
         }
         

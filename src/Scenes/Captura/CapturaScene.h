@@ -94,7 +94,7 @@ public:
             ctx.u8g2.drawStr(0, 50, "Temp");
             ctx.u8g2.drawStr(0, 60, tempStr);
             ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            ctx.u8g2.drawStr(22, 60, "C");
+            ctx.u8g2.drawStr(24, 60, "C");
 
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(45, 50, "Hum");
@@ -103,7 +103,7 @@ public:
             ctx.u8g2.drawStr(67, 60, "%");
 
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.drawStr(80, 50, "Pres");
+            ctx.u8g2.drawStr(80, 50, "Presion");
             ctx.u8g2.drawStr(80, 60, presStr);
             ctx.u8g2.setFont(u8g2_font_4x6_tf);
             ctx.u8g2.drawStr(104, 60, "hPa");
@@ -182,7 +182,7 @@ public:
         }
         case 4: {
             // tiempo restante
-            unsigned long duration = ctx.session.endTime - ctx.session.startTime;
+            unsigned long duration = ctx.session.duration;
             unsigned long remaining = duration - (ctx.session.elapsedTime);
             unsigned long hours = remaining / 3600;
             unsigned long minutes = (remaining % 3600) / 60;

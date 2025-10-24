@@ -17,16 +17,17 @@ enum SDStatus
 typedef struct Context
 {
     DisplayModel &u8g2;
+    bool isDisplayOn = true;
+    unsigned long int lastInputTime = 0;
+    const unsigned long int DISPLAY_TIMEOUT_MS = 60000;
+
     Components components;
     Session session;
 
     const int CAPTURE_INTERVAL = 10;
 
     bool isCapturing = false;
-
     bool isPaused = false;
-    unsigned long remainingTime = 0;
-
     bool isEnd = false;
 
     SDStatus sdStatus = SD_OK;
@@ -38,11 +39,34 @@ public:
     Context(DisplayModel &display) : u8g2(display) {}
 
     void begin()
-    {
+    {   
+        Serial.println("Inicializando contexto...");
+        setDisplayPower(true);
         u8g2.begin();
         components.begin();
+        u8g2.setBusClock(150000UL);
         initSD();
         Serial.println("Contexto inicializado");
+    }
+
+    void setDisplayPower(bool on)
+    {
+        isDisplayOn = on;
+        if (on)
+        {
+            u8g2.setPowerSave(0);
+        }
+        else
+        {
+            u8g2.setPowerSave(1);
+        }
+    }
+
+    void enableDisplay()
+    {
+        lastInputTime = millis();
+        components.input.hasChanged = false;
+        setDisplayPower(true);
     }
 
     bool initSD()
@@ -87,8 +111,8 @@ public:
 
         String filename = String(eoloDir) + "/session.txt";
 
-        String startStr = String(session.startTime);
-        String endStr = String(session.endTime);
+        String startStr = String(session.startDate.unixtime());
+        String durationStr = String(session.duration);
         String targetFlowStr = String(session.targetFlow);
         String usePlantowerStr = session.usePlantower ? "1" : "0";
 
@@ -100,7 +124,7 @@ public:
         }
 
         file.println(startStr);
-        file.println(endStr);
+        file.println(durationStr);
         file.println(targetFlowStr);
         file.println(usePlantowerStr);
         file.close();
@@ -121,13 +145,13 @@ public:
         }
 
         String startStr = file.readStringUntil('\n');
-        String endStr = file.readStringUntil('\n');
+        String durationStr = file.readStringUntil('\n');
         String targetFlowStr = file.readStringUntil('\n');
         String usePlantowerStr = file.readStringUntil('\n');
         file.close();
 
-        session.startTime = startStr.toInt();
-        session.endTime = endStr.toInt();
+        session.startDate = DateTime(startStr.toInt());
+        session.duration = durationStr.toInt();
         session.targetFlow = targetFlowStr.toInt();
         session.usePlantower = (usePlantowerStr == "1");
 
@@ -147,10 +171,9 @@ public:
 
     void logData()
     {
-        if (sdStatus != SD_OK)
+        if (sdStatus == SD_ERROR)
         {
-            Serial.println("No se puede registrar datos en SD: estado no OK");
-            return;
+            Serial.println("Aviso: SD anteriormente falló!");
         }
         sdStatus = SD_WRITING;
 
@@ -187,9 +210,7 @@ public:
             }
 
             // time
-            char dateStr[20];
-            components.rtc.now().toString(dateStr);
-            file.print(dateStr);
+            file.print(components.rtc.now().timestamp());
             file.print(",");
 
             // flow
@@ -232,14 +253,26 @@ public:
             Serial.println("Archivo de log escrito!");
         }
         sdStatus = SD_OK;
+        Serial.println("Log completado con éxito.");
     }
 
     void update()
     {
         components.input.poll();
+
+        if (components.input.hasChanged)
+        {   setDisplayPower(true);
+            lastInputTime = millis();
+            components.input.hasChanged = false;
+        }
+
+        if (isDisplayOn && (millis() - lastInputTime > DISPLAY_TIMEOUT_MS))
+        {
+            setDisplayPower(false);
+        }
     }
 
-    uint32_t getCurrentSeconds()
+    uint32_t getUnixTime()
     {
         if (components.rtc.ok == false)
             return 0;
@@ -253,8 +286,10 @@ public:
         session.capturedVolume = 0.0;
         Serial.println("Iniciando captura...");
         SceneManager::setScene("captura", *this);
+        enableDisplay();
     }
 
+    unsigned long int pauseTime = 0;
     void pauseCapture()
     {
         components.input.resetCounter();
@@ -262,8 +297,7 @@ public:
             return;
         Serial.println("Pausando captura...");
         isPaused = true;
-        unsigned long now = getCurrentSeconds();
-        remainingTime = session.endTime - now;
+        pauseTime = getUnixTime();
     }
 
     void resumeCapture()
@@ -273,26 +307,28 @@ public:
             return;
         Serial.println("Resumiendo captura...");
         isPaused = false;
-        unsigned long now = getCurrentSeconds();
-        session.endTime = now + remainingTime;
+        unsigned long now = getUnixTime();
+        unsigned long pauseDelta = now - pauseTime;
+        session.duration += pauseDelta;
     }
 
     void endCapture()
     {
         isCapturing = false;
         isEnd = true;
-        resetCapture();
+       
         Serial.println("Captura finalizada.");
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
+        enableDisplay();
     }
 
     void resetCapture()
     {   
         isCapturing = false;
         isPaused = false;
-        remainingTime = 0;
         session = Session();
+        session.elapsedTime = 0;
         Serial.println("Estado de captura reiniciado.");
     }
 
@@ -311,11 +347,18 @@ public:
         if (!ctx.isCapturing || ctx.isPaused)
             return;
 
-        unsigned long now = ctx.getCurrentSeconds();
-        ctx.session.elapsedTime = now - ctx.session.startTime;
+        unsigned long now = ctx.getUnixTime();
+        ctx.session.elapsedTime = now - ctx.session.startDate.unixtime();
 
-        if (now > ctx.session.endTime)
+        if (ctx.session.elapsedTime >= ctx.session.duration)
         {
+            Serial.println("Duración de captura alcanzada.");
+            Serial.print("Tiempo transcurrido: ");
+            Serial.println(ctx.session.elapsedTime);
+
+            Serial.print("Duración establecida: ");
+            Serial.println(ctx.session.duration);
+
             endCapture();
             return;
         }

@@ -12,9 +12,9 @@ class LogoScene : public IScene
 {
 private:
     unsigned long startTime;
-    static const unsigned long ANIM_DURATION = 450;   // 0.45 segundos
-    static const unsigned long FADE_DURATION = 400;   // 0.40 segundos
-    static const unsigned long SPLASH_DURATION = 950; // 0.95 segundos
+    static const unsigned long ANIM_DURATION = 900;   // 0.90 segundos
+    static const unsigned long FADE_DURATION = 900;   // 1.25 segundos
+    static const unsigned long SPLASH_DURATION = 1500; // 1.50 segundos
 
 public:
     void enter(Context &ctx) override

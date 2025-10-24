@@ -16,7 +16,8 @@ public:
   bool buttonPressed = false;
   int encoderDelta = 0;
   bool isReady = false;
-
+  bool hasChanged = false;
+  
   // Constructor
   Input() {}
 
@@ -89,8 +90,8 @@ private:
   volatile bool rawButton = false; // Estado del botón (raw)
   volatile bool prevButtonRaw = false;
 
-  const bool FLIP_ENCODER = true; // Poner a true si el encoder va invertido
-  const int BUTTON_DEBOUNCE_MS = 0; 
+  const bool FLIP_ENCODER = false; // Poner a true si el encoder va invertido
+  const int BUTTON_DEBOUNCE_MS = 100; 
   const int ENCODER_DEBOUNCE_MS = 25;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
@@ -98,7 +99,7 @@ private:
   void debounce(){
 
     encoderDelta = 0;
-
+    buttonPressed = false;
     if(rawButton!=prevButtonRaw){
       unsigned long currentMs = millis();
       if(currentMs - lastButtonMs > BUTTON_DEBOUNCE_MS){
@@ -151,16 +152,20 @@ private:
       {
         Serial.print("Encoder: Contador cambio a ");
         Serial.println(rawCounter);
+        hasChanged = true;
       }
       if(rawDirection != prevDirection)
-      {
+      { 
+        
         Serial.print("Encoder: Dirección cambio a ");
         Serial.println(rawDirection);
+        hasChanged = true;
       }
       if (rawButton != prevButton)
       {
         Serial.print("Encoder: Boton pulsado? ");
         Serial.println(rawButton);
+        hasChanged = true;
       }
     }
   }
@@ -172,6 +177,7 @@ class Input{
     int encoderDelta = 0;
     bool buttonPressed = false;
     bool isReady = false;
+    bool hasChanged = false;
 
     void begin() {
         if (isReady) {
@@ -189,14 +195,17 @@ class Input{
             char command = Serial.read();
             if (command == 'd') {
                 encoderDelta++;
+                hasChanged = true;
                 Serial.println("Encoder derecha");
             }
             else if (command == 'a') {
                 encoderDelta--;
+                hasChanged = true;
                 Serial.println("Encoder izquierda");
             } 
             else if (command == 's') {
                 buttonPressed = true;
+                hasChanged = true;
                 Serial.println("Botón pulsado");
             }
         }

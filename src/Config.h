@@ -8,10 +8,10 @@
 
 // Modo barebones (para debug sin tener el EOLO completo)
 // simula sensores
-#define BAREBONES true
+#define BAREBONES false
 
 // simula encoder
-#define SERIAL_INPUT true
+#define SERIAL_INPUT false
 
 #define SD_CS_PIN 5
 #define SD_MOSI_PIN 23
@@ -32,5 +32,9 @@
 // Comandos para el ATTINY85
 #define CMD_RESET_COUNTER 0x01
 #define CMD_RESET_BUTTON 0x02
+
+#define MINUTE 60UL
+#define HOUR 3600UL
+#define DAY 86400UL
 
 #endif // CONFIG_H

@@ -6,10 +6,9 @@
 typedef struct Session{
 
     // Tiempo
-    unsigned long startTime = 0;
+    
     DateTime startDate;
-    unsigned long endTime = 3600;
-    DateTime endDate; 
+    unsigned int duration = 0;
     unsigned long elapsedTime = 0;
     unsigned long lastLog = 0;
     
