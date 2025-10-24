@@ -17,7 +17,7 @@ class InicioScene : public IScene
 {
 private:
     MenuOption menuOptions[3] = {
-        {"Continuar sesion", "continuar"},
+        {"Continuar sesion", "captura"},
         {"Nueva sesion", "flujo"},
         {"Capturar ahora", "flujo_now"}
     };
@@ -27,7 +27,7 @@ public:
 
     void enter(Context &ctx) override
     {
-
+        ctx.loadSession();
     }
 
     void update(Context &ctx) override

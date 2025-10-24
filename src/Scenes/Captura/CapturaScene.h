@@ -16,6 +16,7 @@ public:
     {
         if(!ctx.isCapturing) {
             ctx.beginCapture();
+            ctx.saveSession();
         }
     }
 

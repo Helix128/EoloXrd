@@ -14,7 +14,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
-
+        ctx.saveSession();
     }
 
     void update(Context &ctx) override

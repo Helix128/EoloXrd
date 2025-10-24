@@ -32,6 +32,7 @@ typedef struct Context
     SDStatus sdStatus = SD_OK;
 
     const char *eoloDir = "/eolo";
+    const char *logsDir = "/eolo/logs";
 
 public:
     Context(DisplayModel &display) : u8g2(display) {}
@@ -65,14 +66,172 @@ public:
             Serial.println("Directorio /eolo ya existe en SD");
         }
 
+        if (!SD.exists(logsDir))
+        {
+            sdStatus = SD_WRITING;
+            SD.mkdir(logsDir);
+            Serial.println("Directorio /eolo/logs creado en SD");
+            sdStatus = SD_OK;
+        }
+        else
+        {
+            Serial.println("Directorio /eolo/logs ya existe en SD");
+        }
+
         Serial.println("SD inicializada");
         sdStatus = SD_OK;
         return true;
     }
 
+    void saveSession(){
+
+        String filename = String(eoloDir) + "/session.txt";
+
+        String startStr = String(session.startTime);
+        String endStr = String(session.endTime);
+        String targetFlowStr = String(session.targetFlow);
+        String usePlantowerStr = session.usePlantower ? "1" : "0";
+
+        File file = SD.open(filename.c_str(), FILE_WRITE);
+        if (!file)
+        {
+            Serial.println("No se pudo abrir el archivo de sesión para escribir");
+            return;
+        }
+
+        file.println(startStr);
+        file.println(endStr);
+        file.println(targetFlowStr);
+        file.println(usePlantowerStr);
+        file.close();
+
+        Serial.println("Sesión guardada en SD");
+
+    }
+
+    bool loadSession(){
+
+        String filename = String(eoloDir) + "/session.txt";
+
+        File file = SD.open(filename.c_str(), FILE_READ);
+        if (!file)
+        {
+            Serial.println("No se pudo abrir el archivo de sesión para leer");
+            return false;
+        }
+
+        String startStr = file.readStringUntil('\n');
+        String endStr = file.readStringUntil('\n');
+        String targetFlowStr = file.readStringUntil('\n');
+        String usePlantowerStr = file.readStringUntil('\n');
+        file.close();
+
+        session.startTime = startStr.toInt();
+        session.endTime = endStr.toInt();
+        session.targetFlow = targetFlowStr.toInt();
+        session.usePlantower = (usePlantowerStr == "1");
+
+        Serial.println("Sesión cargada desde SD");
+        return true;
+
+    }
+
+    void clearSession(){
+        String filename = String(eoloDir) + "/session.txt";
+        if (SD.exists(filename.c_str()))
+        {
+            SD.remove(filename.c_str());
+            Serial.println("Archivo de sesión eliminado de SD");
+        }
+    }
+
     void logData()
     {
-        
+        if (sdStatus != SD_OK)
+        {
+            Serial.println("No se puede registrar datos en SD: estado no OK");
+            return;
+        }
+        sdStatus = SD_WRITING;
+
+        char dateStr[20];
+        session.startDate.toString(dateStr);
+        String filename = String(logsDir) + "/log_" + String(dateStr) + ".csv";
+        bool fileExists = SD.exists(filename.c_str());
+
+        if (!fileExists)
+        {
+            File file = SD.open(filename.c_str(), FILE_WRITE);
+            if (!file)
+            {
+                sdStatus = SD_ERROR;
+                Serial.println("No se pudo abrir el archivo para escribir");
+                return;
+            }
+
+            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct");
+            file.close();
+
+            Serial.println("Archivo de log creado: " + filename);
+        }
+        else
+        {
+            Serial.println("Archivo de log ya existe: " + filename);
+
+            File file = SD.open(filename.c_str(), FILE_WRITE);
+            if (!file)
+            {
+                sdStatus = SD_ERROR;
+                Serial.println("No se pudo abrir el archivo para escribir");
+                return;
+            }
+
+            // time
+            char dateStr[20];
+            components.rtc.now().toString(dateStr);
+            file.print(dateStr);
+            file.print(",");
+
+            // flow
+            file.print(components.flowSensor.flow);
+            file.print(",");
+
+            // flow_target
+            file.print(session.targetFlow);
+            file.print(",");
+
+            // temperature
+            file.print(components.bme.temperature);
+            file.print(",");
+
+            // humidity
+            file.print(components.bme.humidity);
+            file.print(",");
+
+            // pressure
+            file.print(components.bme.pressure);
+            file.print(",");
+
+            // pm1
+            file.print(components.plantower.pm1);
+            file.print(",");
+
+            // pm25
+            file.print(components.plantower.pm25);
+            file.print(",");
+
+            // pm10
+            file.print(components.plantower.pm10);
+            file.print(",");
+
+            // battery_pct
+            file.print(components.battery.getPct());
+            file.println();
+            file.close();
+
+            Serial.println("Archivo de log escrito!");
+        }
+        sdStatus = SD_OK;
     }
 
     void update()
@@ -89,65 +248,57 @@ public:
 
     void beginCapture()
     {
-        Context &ctx = *this;
-        ctx.session.elapsedTime = 0;
-        ctx.isCapturing = true;
-        ctx.session.capturedVolume = 0.0;
+        session.elapsedTime = 0;
+        isCapturing = true;
+        session.capturedVolume = 0.0;
 
-        SceneManager::setScene("captura", ctx);
+        SceneManager::setScene("captura", *this);
     }
 
     void pauseCapture()
     {
-        Context &ctx = *this;
-
-        ctx.components.input.resetCounter();
-        if (!ctx.isCapturing || ctx.isPaused)
+        components.input.resetCounter();
+        if (!isCapturing || isPaused)
             return;
-        ctx.isPaused = true;
-        unsigned long now = ctx.getCurrentSeconds();
-        ctx.remainingTime = ctx.session.endTime - now;
+        isPaused = true;
+        unsigned long now = getCurrentSeconds();
+        remainingTime = session.endTime - now;
     }
 
     void resumeCapture()
     {
-        Context &ctx = *this;
-
-        ctx.components.input.resetCounter();
-        if (!ctx.isCapturing || !ctx.isPaused)
+        components.input.resetCounter();
+        if (!isCapturing || !isPaused)
             return;
-        ctx.isPaused = false;
-        unsigned long now = ctx.getCurrentSeconds();
-        ctx.session.endTime = now + ctx.remainingTime;
+        isPaused = false;
+        unsigned long now = getCurrentSeconds();
+        session.endTime = now + remainingTime;
     }
 
     void endCapture()
     {
-        Context &ctx = *this;
-        ctx.isCapturing = false;
-        ctx.isEnd = true;
-        ctx.resetCapture();
+        isCapturing = false;
+        isEnd = true;
+        resetCapture();
 
-        ctx.components.input.resetCounter();
-        SceneManager::setScene("end", ctx);
+        components.input.resetCounter();
+        SceneManager::setScene("end", *this);
     }
 
     void resetCapture()
     {
-        Context &ctx = *this;
-        ctx.isCapturing = false;
-        ctx.isPaused = false;
-        ctx.remainingTime = 0;
-        ctx.session = Session();
+        isCapturing = false;
+        isPaused = false;
+        remainingTime = 0;
+        session = Session();
     }
 
     void updateMotors()
     {
-        Context &ctx = *this;
-        float currentFlow = ctx.components.flowSensor.flow;
-        float targetFlow = ctx.session.targetFlow;
+        float currentFlow = components.flowSensor.flow;
+        float targetFlow = session.targetFlow;
         float error = targetFlow - currentFlow;
-        ctx.components.motor.setPowerPct(ctx.components.motor.getPowerPct() + error * 0.1f);
+        components.motor.setPowerPct(components.motor.getPowerPct() + error * 0.1f);
     }
 
     void updateCapture()
