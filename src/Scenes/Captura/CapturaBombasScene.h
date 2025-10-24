@@ -22,8 +22,8 @@ public:
         GUI::displayHeader(ctx);
 
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        ctx.u8g2.drawStr(10, 24, "Motor 1:");
-        ctx.u8g2.drawStr(10, 44, "Motor 2:");
+        ctx.u8g2.drawStr(10, 35, "Motor 1:");
+        ctx.u8g2.drawStr(10, 55, "Motor 2:");
 
         int pwm1 = ctx.components.motor.pwmValues[0];
         int pwm2 = ctx.components.motor.pwmValues[1];
@@ -34,8 +34,8 @@ public:
         snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
 
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-        ctx.u8g2.drawStr(60, 24, pwm1Str);
-        ctx.u8g2.drawStr(60, 44, pwm2Str);
+        ctx.u8g2.drawStr(80, 35, pwm1Str);
+        ctx.u8g2.drawStr(80, 55, pwm2Str);
 
         ctx.u8g2.sendBuffer();
 

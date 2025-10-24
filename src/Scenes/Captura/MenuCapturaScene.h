@@ -42,7 +42,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
-
+        ctx.pauseCapture();
     }
 
     void update(Context &ctx) override

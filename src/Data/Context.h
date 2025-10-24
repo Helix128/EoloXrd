@@ -251,7 +251,7 @@ public:
         session.elapsedTime = 0;
         isCapturing = true;
         session.capturedVolume = 0.0;
-
+        Serial.println("Iniciando captura...");
         SceneManager::setScene("captura", *this);
     }
 
@@ -260,6 +260,7 @@ public:
         components.input.resetCounter();
         if (!isCapturing || isPaused)
             return;
+        Serial.println("Pausando captura...");
         isPaused = true;
         unsigned long now = getCurrentSeconds();
         remainingTime = session.endTime - now;
@@ -270,6 +271,7 @@ public:
         components.input.resetCounter();
         if (!isCapturing || !isPaused)
             return;
+        Serial.println("Resumiendo captura...");
         isPaused = false;
         unsigned long now = getCurrentSeconds();
         session.endTime = now + remainingTime;
@@ -280,17 +282,18 @@ public:
         isCapturing = false;
         isEnd = true;
         resetCapture();
-
+        Serial.println("Captura finalizada.");
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
     }
 
     void resetCapture()
-    {
+    {   
         isCapturing = false;
         isPaused = false;
         remainingTime = 0;
         session = Session();
+        Serial.println("Estado de captura reiniciado.");
     }
 
     void updateMotors()
@@ -305,7 +308,7 @@ public:
     {
         Context &ctx = *this;
 
-        if (!ctx.isCapturing)
+        if (!ctx.isCapturing || ctx.isPaused)
             return;
 
         unsigned long now = ctx.getCurrentSeconds();

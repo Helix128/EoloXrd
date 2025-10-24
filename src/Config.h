@@ -11,7 +11,7 @@
 #define BAREBONES false
 
 // simula encoder
-#define SERIAL_INPUT true
+#define SERIAL_INPUT false
 
 #define SD_CS_PIN 5
 #define SD_MOSI_PIN 23

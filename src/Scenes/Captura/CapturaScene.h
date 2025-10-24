@@ -18,6 +18,9 @@ public:
             ctx.beginCapture();
             ctx.saveSession();
         }
+        else{
+            ctx.resumeCapture();
+        }
     }
 
     void update(Context &ctx) override
