@@ -28,6 +28,8 @@ public:
              
             ctx.components.input.resetCounter();
             ctx.beginCapture();
+            ctx.u8g2.sendBuffer();
+            return;
         }
         
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);

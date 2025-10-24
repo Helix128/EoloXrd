@@ -18,17 +18,16 @@ class MenuCapturaScene : public IScene
 private:
     int selectIndex = 0;
     CaptureMenuOption menuOptions[8] = {
-        {"Continuar captura", [](Context &ctx) {
-            ctx.resumeCapture();
+        {"Continuar", [](Context &ctx) {
             SceneManager::setScene("captura", ctx);
         }},
-        {"Finalizar captura", [](Context &ctx) {
+        {"Finalizar", [](Context &ctx) {
             ctx.endCapture();
         }},
-        {"Modificar flujo", [](Context &ctx) {
+        {"Ajustar flujo", [](Context &ctx) {
             SceneManager::setScene("captura_flujo", ctx);
         }},
-        {"Cambiar hora fin.", [](Context &ctx) {
+        {"Ajustar hora fin", [](Context &ctx) {
             SceneManager::setScene("time_end", ctx);
         }},
         {"Probar bombas", [](Context &ctx) {

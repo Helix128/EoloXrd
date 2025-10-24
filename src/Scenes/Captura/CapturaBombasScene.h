@@ -13,7 +13,7 @@ public:
     int targetPct = 0;
     void enter(Context &ctx) override
     {
-        ctx.pauseCapture();
+    
     }
 
     void update(Context &ctx) override
@@ -45,7 +45,6 @@ public:
 
         if (ctx.components.input.buttonPressed)
         {
-            ctx.resumeCapture();
             SceneManager::setScene("captura_menu", ctx);
         }
     }

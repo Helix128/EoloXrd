@@ -23,9 +23,8 @@ void setup()
     delay(50);
   }
   
-  I2CUtility i2c;
-  i2c.begin();
-  i2c.scan();
+  I2CUtility::begin();
+  I2CUtility::scan();
   
   // Inicialización del contexto de la app
   ctx.begin();

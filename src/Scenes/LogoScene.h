@@ -79,9 +79,8 @@ public:
         {
             Serial.println("Reinicializando I2C y componentes...");
             ctx.components.input.resetCounter();
-            I2CUtility i2c;
-            i2c.begin();
-            i2c.scan(); 
+            
+            I2CUtility::scan();
             
             delay(150);
 

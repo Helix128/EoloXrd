@@ -4,19 +4,16 @@
 #define I2C_UTIL_H
 class I2CUtility {
 private:
-  uint8_t count;
+  static uint8_t count;
 
 public:
-  I2CUtility() : count(0) {}
-
-  void begin() {
-    Serial.begin(115200);
+  static void begin() {
     while (!Serial) {}
     Wire.begin();
     Serial.println("I2C Scanner iniciado");
   }
 
-  void scan() {
+  static void scan() {
     count = 0;
     Serial.println("Escaneando bus I2C...");
     
@@ -49,4 +46,7 @@ public:
     Serial.println();
   }
 };
+
+uint8_t I2CUtility::count = 0;
+
 #endif  // I2C_UTIL_H

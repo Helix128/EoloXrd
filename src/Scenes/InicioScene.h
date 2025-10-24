@@ -17,8 +17,8 @@ class InicioScene : public IScene
 {
 private:
     MenuOption menuOptions[3] = {
-        {"Continuar sesion", "captura"},
         {"Nueva sesion", "flujo"},
+        {"Continuar sesion", "captura"},
         {"Capturar ahora", "flujo_now"}
     };
 public:
