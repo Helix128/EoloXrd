@@ -26,7 +26,7 @@ private:
             ctx.endCapture();
         }},
         {"Modificar flujo", [](Context &ctx) {
-            SceneManager::setScene("flujo_now", ctx);
+            SceneManager::setScene("captura_flujo", ctx);
         }},
         {"Cambiar hora fin.", [](Context &ctx) {
             SceneManager::setScene("time_end", ctx);
