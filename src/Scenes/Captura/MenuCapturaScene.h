@@ -33,7 +33,7 @@ private:
         {"Probar bombas", [](Context &ctx) {
             SceneManager::setScene("captura_bombas", ctx);
         }},
-        {"Ajustar Plantower", [](Context &ctx) {
+        {"Ajustar sensor PM", [](Context &ctx) {
             SceneManager::setScene("plantower_fin", ctx);
         }}
     };

@@ -44,7 +44,7 @@ public:
         setDisplayPower(true);
         u8g2.begin();
         components.begin();
-        u8g2.setBusClock(150000UL);
+        u8g2.setBusClock(100000UL); // 100kHz (fix pantalla - para que la señal sea más cuadrada)
         initSD();
         Serial.println("Contexto inicializado");
     }
@@ -115,8 +115,8 @@ public:
         String durationStr = String(session.duration);
         String targetFlowStr = String(session.targetFlow);
         String usePlantowerStr = session.usePlantower ? "1" : "0";
-
-        File file = SD.open(filename.c_str(), FILE_WRITE);
+        
+        File file = SD.open(filename.c_str(), FILE_WRITE, true);
         if (!file)
         {
             Serial.println("No se pudo abrir el archivo de sesión para escribir");
