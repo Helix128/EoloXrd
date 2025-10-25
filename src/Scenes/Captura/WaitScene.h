@@ -9,11 +9,9 @@
 
 class WaitScene : public IScene
 {
-private:
-
 public:
     void enter(Context &ctx) override
-    {
+    {   
         ctx.saveSession();
     }
 

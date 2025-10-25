@@ -118,13 +118,17 @@ public:
             if (isEndTime)
             {
                 ctx.components.input.resetCounter();
+                ctx.components.input.resetButton();
                 ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
 
                 Serial.print("Duracion establecida: "); 
                 Serial.println(ctx.session.duration);
                 Serial.print("Hora de fin establecida:");
                 Serial.println(targetTime.timestamp());
-                SceneManager::setScene("captura", ctx);
+
+                delay(10);
+
+                SceneManager::setScene("plantower", ctx);
             }
             else
             {

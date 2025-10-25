@@ -131,6 +131,20 @@ public:
 
         Serial.println("Sesión guardada en SD");
 
+    }   
+
+    bool canLoadSession(){
+        String filename = String(eoloDir) + "/session.txt";
+        if (!SD.exists(filename.c_str()))
+            return false;
+        
+        File file = SD.open(filename.c_str(), FILE_READ);
+        if (!file)
+            return false;
+        
+        size_t fileSize = file.size();
+        file.close();
+        return fileSize > 0;
     }
 
     bool loadSession(){
@@ -165,7 +179,13 @@ public:
         if (SD.exists(filename.c_str()))
         {
             SD.remove(filename.c_str());
-            Serial.println("Archivo de sesión eliminado de SD");
+            delay(5);
+            if(!SD.exists(filename.c_str())){
+                Serial.println("Archivo de sesión eliminado de SD");
+            }
+            else{
+                Serial.println("No se pudo eliminar el archivo de sesión de SD");
+            }
         }
     }
 
@@ -177,9 +197,8 @@ public:
         }
         sdStatus = SD_WRITING;
 
-        char dateStr[20];
-        session.startDate.toString(dateStr);
-        String filename = String(logsDir) + "/log_" + String(dateStr) + ".csv";
+        String dateStr = session.startDate.timestamp();
+        String filename = String(logsDir) + "/log_" + dateStr + ".csv";
         bool fileExists = SD.exists(filename.c_str());
 
         if (!fileExists)
@@ -348,9 +367,9 @@ public:
             return;
 
         unsigned long now = ctx.getUnixTime();
-        ctx.session.elapsedTime = now - ctx.session.startDate.unixtime();
-
-        if (ctx.session.elapsedTime >= ctx.session.duration)
+        DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
+        ctx.session.elapsedTime = ctx.session.duration - (endTime.unixtime() - now);
+        if (now >= endTime.unixtime())
         {
             Serial.println("Duración de captura alcanzada.");
             Serial.print("Tiempo transcurrido: ");

@@ -66,6 +66,7 @@ public:
         if (ctx.components.input.buttonPressed)
         {    
             ctx.components.input.resetCounter();
+            ctx.resetCapture();
             ctx.clearSession();
             SceneManager::setScene("end_menu",ctx);
         }

@@ -33,9 +33,8 @@ private:
         {"Probar bombas", [](Context &ctx) {
             SceneManager::setScene("captura_bombas", ctx);
         }},
-        {"Reiniciar EOLO", [](Context &ctx) {
-            ctx.endCapture();
-            ESP.restart();
+        {"Ajustar Plantower", [](Context &ctx) {
+            SceneManager::setScene("plantower_fin", ctx);
         }}
     };
 public:

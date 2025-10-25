@@ -18,16 +18,16 @@ class InicioScene : public IScene
 private:
     MenuOption menuOptions[3] = {
         {"Nueva sesion", "flujo"},
-        {"Continuar sesion", "captura"},
+        {"Cargar sesion", "captura"},
         {"Capturar ahora", "flujo_now"}
     };
 public:
 
     int selectIndex = 0;
-
+    bool canLoad = false;
     void enter(Context &ctx) override
     {
-        ctx.loadSession();
+        canLoad = ctx.canLoadSession();
     }
 
     void update(Context &ctx) override
@@ -42,8 +42,18 @@ public:
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
         }
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+
+        if(!canLoad && selectIndex==1){
+            selectIndex += ctx.components.input.encoderDelta;
+        }
+        
         for (int i = 0; i < 3; i++)
         {   
+            if(i==1 && !canLoad){
+                ctx.u8g2.setDrawColor(1);
+                ctx.u8g2.drawStr(2, 30 + i * 14, "Cargar sesion (x)");
+                continue;
+            }
             if(selectIndex==i){
                 ctx.u8g2.drawBox(-1, 32 + i * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
