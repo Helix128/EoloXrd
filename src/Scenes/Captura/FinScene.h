@@ -45,7 +45,7 @@ public:
         snprintf(endStr, sizeof(endStr), "%02d:%02d",
             endTime.hour(),
             endTime.minute()
-        );
+        );  
         endTime.toString(endStr);
         
         ctx.u8g2.drawStr(10, 44, "Fin: ");

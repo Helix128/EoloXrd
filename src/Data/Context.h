@@ -44,13 +44,12 @@ public:
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
         if (!isDisplayReady)
-        {   
+        {
             Serial.println("Iniciando pantalla...");
             u8g2.begin();
             u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
             isDisplayReady = true;
             Serial.println("Pantalla iniciada");
-        
         }
         components.begin();
 
@@ -58,6 +57,7 @@ public:
         Serial.println("Contexto inicializado");
     }
 
+    
     void setDisplayPower(bool on)
     {
         isDisplayOn = on;
@@ -167,6 +167,7 @@ public:
 
         String startStr = session.startDate.timestamp();
         String durationStr = String(session.duration);
+        String elapsedStr = String(session.elapsedTime);
         String targetFlowStr = String(session.targetFlow);
         String capturedVolumeStr = String(session.capturedVolume);
         String usePlantowerStr = session.usePlantower ? "1" : "0";
@@ -180,6 +181,7 @@ public:
 
         file.println(startStr);
         file.println(durationStr);
+        file.println(elapsedStr);
         file.println(targetFlowStr);
         file.println(capturedVolumeStr);
         file.println(usePlantowerStr);
@@ -190,12 +192,66 @@ public:
         Serial.println(startStr);
         Serial.print(" duration: ");
         Serial.println(durationStr);
+        Serial.print(" elapsedTime: ");
+        Serial.println(elapsedStr);
         Serial.print(" targetFlow: ");
         Serial.println(targetFlowStr);
         Serial.print(" capturedVolume: ");
         Serial.println(capturedVolumeStr);
         Serial.print(" usePlantower: ");
         Serial.println(usePlantowerStr);
+    }
+
+    bool loadSession()
+    {
+        String filename = String(eoloDir) + "/session.txt";
+
+        File file = SD.open(filename.c_str(), "r+");
+        if (!file)
+        {
+            Serial.println("No se pudo abrir el archivo de sesión para leer");
+            return false;
+        }
+
+        String startStr = file.readStringUntil('\n');
+        String durationStr = file.readStringUntil('\n');
+        String elapsedStr = file.readStringUntil('\n');
+        String targetFlowStr = file.readStringUntil('\n');
+        String capturedVolumeStr = file.readStringUntil('\n');
+        String usePlantowerStr = file.readStringUntil('\n');
+        file.close();
+
+        long elapsedTime = elapsedStr.toInt();
+
+        session.startDate = components.rtc.now();
+        session.duration = durationStr.toInt();
+        session.duration -= elapsedTime; 
+        session.elapsedTime = 0;
+        
+        Serial.print("Tiempo transcurrido restaurado: ");
+        Serial.print(elapsedTime);
+        Serial.println("s");
+
+        session.targetFlow = targetFlowStr.toInt();
+        session.capturedVolume = capturedVolumeStr.toFloat();
+        session.usePlantower = usePlantowerStr == "1";
+
+        Serial.println("Sesión cargada desde SD:");
+        Serial.print(" startDate: ");
+        Serial.println(startStr);
+        Serial.print(" duration: ");
+        Serial.println(durationStr);
+        Serial.print(" elapsedTime: ");
+        Serial.println(elapsedStr);
+        Serial.print(" targetFlow: ");
+        Serial.println(targetFlowStr);
+        Serial.print(" capturedVolume: ");
+        Serial.println(capturedVolumeStr);
+        Serial.print(" usePlantower: ");
+        Serial.println(usePlantowerStr);    
+
+        saveSession();
+        return true;
     }
 
     bool canLoadSession()
@@ -211,62 +267,6 @@ public:
         size_t fileSize = file.size();
         file.close();
         return fileSize > 0;
-    }
-
-    bool loadSession()
-    {
-
-        String filename = String(eoloDir) + "/session.txt";
-
-        File file = SD.open(filename.c_str(), "r+");
-        if (!file)
-        {
-            Serial.println("No se pudo abrir el archivo de sesión para leer");
-            return false;
-        }
-
-        String startStr = file.readStringUntil('\n');
-        String durationStr = file.readStringUntil('\n');
-        String targetFlowStr = file.readStringUntil('\n');
-        String capturedVolumeStr = file.readStringUntil('\n');
-        String usePlantowerStr = file.readStringUntil('\n');
-        file.close();
-
-        session.startDate = DateTime(startStr.c_str());
-
-        session.duration = durationStr.toInt();
-        if (session.startDate < components.rtc.now())
-        {
-            unsigned long delta = components.rtc.now().unixtime() - session.startDate.unixtime();
-            session.duration += delta;
-            session.startDate = components.rtc.now();
-            Serial.println("Duración de sesión ajustada por tiempo pasado desde inicio");
-            Serial.print(" Nueva startDate: ");
-            Serial.println(session.startDate.timestamp());
-            Serial.print(" Nueva duration: ");
-            Serial.print(session.duration);
-            Serial.print(" (+ ");
-            Serial.print(delta);
-            Serial.println(")");
-        }
-
-        session.targetFlow = targetFlowStr.toInt();
-        session.capturedVolume = capturedVolumeStr.toFloat();
-        session.usePlantower = usePlantowerStr == "1";
-
-        Serial.println("Sesión cargada desde SD:");
-        Serial.print(" startDate: ");
-        Serial.println(startStr);
-        Serial.print(" duration: ");
-        Serial.println(durationStr);
-        Serial.print(" targetFlow: ");
-        Serial.println(targetFlowStr);
-        Serial.print(" capturedVolume: ");
-        Serial.println(capturedVolumeStr);
-        Serial.print(" usePlantower: ");
-        Serial.println(usePlantowerStr);
-
-        return true;
     }
 
     void clearSession()
@@ -397,6 +397,7 @@ public:
         }
         sdStatus = SD_OK;
         Serial.println("Log completado con éxito.");
+        saveSession();
     }
 
     void update()
