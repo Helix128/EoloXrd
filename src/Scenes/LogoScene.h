@@ -7,19 +7,29 @@
 #include "../Drawing/SceneManager.h"
 #include "../Testing/I2CUtil.h"
 
-// Escena de logo/splash al iniciar la app
 class LogoScene : public IScene
 {
 private:
-    unsigned long startTime;
-    static const unsigned long ANIM_DURATION = 900;   // 0.90 segundos
-    static const unsigned long FADE_DURATION = 900;   // 1.25 segundos
-    static const unsigned long SPLASH_DURATION = 1500; // 1.50 segundos
+    enum SceneState
+    {
+        FADING_IN,
+        INITIALIZING,
+        FADING_OUT,
+        DONE
+    };
+
+    SceneState currentState;
+    unsigned long phaseStartTime;
+
+    static const unsigned long ANIM_DURATION = 1000;
+    static const unsigned long FADE_DURATION = 1000;
+    static const unsigned long FADE_OUT_DURATION = 1000;
 
 public:
     void enter(Context &ctx) override
     {
-        startTime = millis();
+        phaseStartTime = millis();
+        currentState = FADING_IN;
     }
 
     int smoothstep(int start, int end, unsigned long t)
@@ -33,10 +43,11 @@ public:
         return val;
     }
 
-    void drawAnimatedFill(Context &ctx, unsigned long elapsedTime)
+    void drawAnimatedFill(Context &ctx, float t_norm)
     {
-        float t = constrain((elapsedTime) / ((float)FADE_DURATION), 0.0f, 1.0f);
+        float t = constrain(t_norm, 0.0f, 1.0f);
         t *= 16;
+
         static const uint8_t bayerPattern[4][4] = {
             {0, 8, 2, 10},
             {12, 4, 14, 6},
@@ -59,39 +70,90 @@ public:
         ctx.u8g2.setDrawColor(1);
     }
 
-    void update(Context &ctx) override
+    void drawFrame(Context &ctx, int xPos, float t_dither_norm)
     {
-        unsigned long currentTime = millis();
-        unsigned long elapsedTime = currentTime - startTime;
-
-        // Dibujar el logo una vez al entrar en la escena
         ctx.u8g2.clearBuffer();
 
-        int xPos = smoothstep(-32, 32, (elapsedTime * 1000) / ANIM_DURATION);
-        xPos = constrain(xPos, -32, 32);
         ctx.u8g2.setBitmapMode(1);
         ctx.u8g2.drawXBM((int)xPos, 0, 128, 64, cmas);
         ctx.u8g2.drawXBM(64 - (int)xPos, 0, 128, 64, cmas);
-        drawAnimatedFill(ctx, elapsedTime);
+
+        drawAnimatedFill(ctx, t_dither_norm);
+
         ctx.u8g2.sendBuffer();
-        // Cambiar de escena después de la duración del splash
-        if (elapsedTime > SPLASH_DURATION + ANIM_DURATION)
+    }
+
+    void update(Context &ctx) override
+    {
+        unsigned long currentTime = millis();
+        unsigned long elapsedTime = currentTime - phaseStartTime;
+
+        float t_dither_norm = 0.0f;
+        int xPos = 32;
+
+        switch (currentState)
         {
+        case FADING_IN:
+        {
+            t_dither_norm = (float)elapsedTime / (float)FADE_DURATION;
+            xPos = smoothstep(-32, 32, (elapsedTime * 1000) / ANIM_DURATION);
+
+            if (elapsedTime > FADE_DURATION)
+            {
+                t_dither_norm = 1.0f;
+                xPos = 32;
+                currentState = INITIALIZING;
+            }
+            break;
+        }
+
+        case INITIALIZING:
+        {
+
             Serial.println("Reinicializando I2C y componentes...");
             ctx.components.input.resetCounter();
-            
+
             I2CUtility::scan();
-            
             delay(150);
 
             ctx.begin();
-
             delay(150);
-            SceneManager::setScene("inicio", ctx);
-            
-            
-            
+
+            currentState = FADING_OUT;
+            phaseStartTime = millis();
+
+            return;
         }
+
+        case FADING_OUT:
+        {
+            xPos = 32;
+            float t_fade_norm = (float)elapsedTime / (float)FADE_OUT_DURATION;
+            t_dither_norm = 1.0f - t_fade_norm;
+
+            if (elapsedTime > FADE_OUT_DURATION)
+            {
+                t_dither_norm = 0.0f;
+                currentState = DONE;
+            }
+            break;
+        }
+
+        case DONE:
+        {
+            t_dither_norm = 0.0f;
+            xPos = 32;
+
+            drawFrame(ctx, xPos, t_dither_norm);
+
+            SceneManager::setScene("inicio", ctx);
+            return;
+        }
+        }
+
+        t_dither_norm = constrain(t_dither_norm, 0.0f, 1.0f);
+
+        drawFrame(ctx, xPos, t_dither_norm);
     }
 };
 #endif

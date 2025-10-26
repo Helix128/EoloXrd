@@ -12,7 +12,7 @@ class WaitScene : public IScene
 public:
     void enter(Context &ctx) override
     {   
-        ctx.saveSession();
+
     }
 
     void update(Context &ctx) override
@@ -24,7 +24,7 @@ public:
         if(nowUnix >= ctx.session.startDate.unixtime()){
              
             ctx.components.input.resetCounter();
-            ctx.beginCapture();
+            SceneManager::setScene("captura",ctx);
             ctx.u8g2.sendBuffer();
             return;
         }

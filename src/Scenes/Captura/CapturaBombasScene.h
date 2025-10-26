@@ -43,7 +43,7 @@ public:
         targetPct = constrain(targetPct, 0, 100);
         ctx.components.motor.setPowerPct(targetPct);
 
-        if (ctx.components.input.buttonPressed)
+        if (ctx.components.input.isButtonPressed())
         {
             SceneManager::setScene("captura_menu", ctx);
         }

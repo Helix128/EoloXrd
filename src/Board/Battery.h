@@ -8,6 +8,9 @@
 class Battery
 {
 public:
+
+    static const int ADC_MAX = 4095;
+
     static int getLevel()
     {
         return analogRead(BATTERY_PIN);
@@ -16,8 +19,7 @@ public:
     static float getPct()
     {
         int level = getLevel();
-        int pct = map(level, 0, 1023, 0, 100);
-        pct = constrain(pct, 0, 100);
+        int pct = map(level, 0, ADC_MAX, 0, 100);
         return pct;
     }
 };

@@ -37,7 +37,7 @@ public:
         
         selectIndex += ctx.components.input.encoderDelta;
         selectIndex = constrain(selectIndex, 0, 1);
-        if(ctx.components.input.buttonPressed){
+        if(ctx.components.input.isButtonPressed()){
              
             ctx.components.input.resetCounter();
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);

@@ -66,6 +66,11 @@ public:
     {
         return currentSceneName;
     }
+
+    static IScene* getCurrentScene()
+    {
+        return currentScene;
+    }
 };
 
 // Definiciones de miembros

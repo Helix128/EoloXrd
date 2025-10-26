@@ -25,13 +25,14 @@ public:
         targetFlow += delta * 0.1f;
         targetFlow = constrain(targetFlow, 0.0f, 8.0f);
 
-        if(ctx.components.input.buttonPressed){
+        if(ctx.components.input.isButtonPressed()){
              
             ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
             ctx.session.startDate = ctx.components.rtc.now();
             ctx.session.duration = 3600;
-            SceneManager::setScene("captura",ctx);
+            ctx.saveSession();
+            SceneManager::setScene("plantower",ctx);
         }
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         ctx.u8g2.drawStr(10, 30, "Flujo objetivo");

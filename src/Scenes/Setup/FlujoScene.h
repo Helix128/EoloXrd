@@ -25,7 +25,7 @@ public:
         targetFlow += delta * 0.1f;
         targetFlow = constrain(targetFlow, 0.0f, 8.0f);
 
-        if(ctx.components.input.buttonPressed){
+        if(ctx.components.input.isButtonPressed()){
              
             ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;

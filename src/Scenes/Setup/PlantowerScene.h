@@ -26,15 +26,16 @@ public:
             enablePM = !enablePM;
         }
 
-        if(ctx.components.input.buttonPressed){
+        if(ctx.components.input.isButtonPressed()){
              
             ctx.components.input.resetCounter();
             ctx.session.usePlantower = enablePM;
+            ctx.saveSession();
             SceneManager::setScene("wait",ctx);
         }
         
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        ctx.u8g2.drawStr(10,28, "Plantower (MP)");
+        ctx.u8g2.drawStr(10,28, "Usar sensor PM");
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
 
         

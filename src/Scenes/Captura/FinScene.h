@@ -63,7 +63,7 @@ public:
 
         ctx.u8g2.sendBuffer();
 
-        if (ctx.components.input.buttonPressed)
+        if (ctx.components.input.isButtonPressed())
         {    
             ctx.components.input.resetCounter();
             ctx.resetCapture();

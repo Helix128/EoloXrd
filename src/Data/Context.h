@@ -32,8 +32,8 @@ typedef struct Context
 
     SDStatus sdStatus = SD_OK;
 
-    const char *eoloDir = "/eolo";
-    const char *logsDir = "/eolo/logs";
+    const char *eoloDir = "/EOLO";
+    const char *logsDir = "/EOLO/logs";
 
 public:
     Context(DisplayModel &display) : u8g2(display) {}
@@ -44,7 +44,7 @@ public:
         setDisplayPower(true);
         u8g2.begin();
         components.begin();
-        u8g2.setBusClock(100000UL); // 100kHz (fix pantalla - para que la señal sea más cuadrada)
+        u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
         initSD();
         Serial.println("Contexto inicializado");
     }
@@ -78,28 +78,71 @@ public:
             return false;
         }
 
+        sdcard_type_t sdType = SD.cardType();
+        if( sdType == CARD_NONE )
+        {
+            Serial.println("No se detectó tarjeta SD");
+            sdStatus = SD_ERROR;
+            return false;
+        }
+        else{
+            Serial.print("Tipo de tarjeta SD: ");
+            switch(sdType)
+            {   
+                case CARD_MMC:
+                    Serial.println("MMC");
+                    break;
+                case CARD_SD:
+                    Serial.println("SDSC");
+                    break;
+                case CARD_SDHC:
+                    Serial.println("SDHC");
+                    break;
+                case CARD_UNKNOWN:
+                default:
+                    Serial.println("Desconocido");
+                    break;
+            }
+        }
+
+        uint64_t sdCardSize = SD.cardSize();
+        Serial.print("Tamaño de la tarjeta SD: ");
+        Serial.print(sdCardSize / (1024 * 1024));
+        Serial.println(" MB");
+
+        uint64_t totalBytes = SD.totalBytes();
+        uint64_t usedBytes = SD.usedBytes();
+        Serial.print("Espacio total: ");
+        Serial.print(totalBytes / (1024 * 1024));
+        Serial.println(" MB");
+        Serial.print("Espacio usado: ");
+        Serial.print(usedBytes / (1024 * 1024));
+        Serial.print(" MB (");
+        Serial.print((usedBytes * 100) / totalBytes);
+        Serial.println("%)");
+
         if (!SD.exists(eoloDir))
         {
             sdStatus = SD_WRITING;
             SD.mkdir(eoloDir);
-            Serial.println("Directorio /eolo creado en SD");
+            Serial.println("Directorio /EOLO creado en SD");
             sdStatus = SD_OK;
         }
         else
         {
-            Serial.println("Directorio /eolo ya existe en SD");
+            Serial.println("Directorio /EOLO ya existe en SD");
         }
 
         if (!SD.exists(logsDir))
         {
             sdStatus = SD_WRITING;
             SD.mkdir(logsDir);
-            Serial.println("Directorio /eolo/logs creado en SD");
+            Serial.println("Directorio /EOLO/logs creado en SD");
             sdStatus = SD_OK;
         }
         else
         {
-            Serial.println("Directorio /eolo/logs ya existe en SD");
+            Serial.println("Directorio /EOLO/logs ya existe en SD");
         }
 
         Serial.println("SD inicializada");
@@ -111,12 +154,13 @@ public:
 
         String filename = String(eoloDir) + "/session.txt";
 
-        String startStr = String(session.startDate.unixtime());
+        String startStr = session.startDate.timestamp();
         String durationStr = String(session.duration);
         String targetFlowStr = String(session.targetFlow);
+        String capturedVolumeStr = String(session.capturedVolume);
         String usePlantowerStr = session.usePlantower ? "1" : "0";
         
-        File file = SD.open(filename.c_str(), FILE_WRITE, true);
+        File file = SD.open(filename.c_str(), "w+");
         if (!file)
         {
             Serial.println("No se pudo abrir el archivo de sesión para escribir");
@@ -126,10 +170,16 @@ public:
         file.println(startStr);
         file.println(durationStr);
         file.println(targetFlowStr);
+        file.println(capturedVolumeStr);
         file.println(usePlantowerStr);
         file.close();
 
-        Serial.println("Sesión guardada en SD");
+        Serial.println("Sesión guardada en SD:");
+        Serial.print(" startDate: "); Serial.println(startStr);
+        Serial.print(" duration: "); Serial.println(durationStr);
+        Serial.print(" targetFlow: "); Serial.println(targetFlowStr);
+        Serial.print(" capturedVolume: "); Serial.println(capturedVolumeStr);
+        Serial.print(" usePlantower: "); Serial.println(usePlantowerStr);
 
     }   
 
@@ -138,7 +188,7 @@ public:
         if (!SD.exists(filename.c_str()))
             return false;
         
-        File file = SD.open(filename.c_str(), FILE_READ);
+        File file = SD.open(filename.c_str(), "r+");
         if (!file)
             return false;
         
@@ -151,7 +201,7 @@ public:
 
         String filename = String(eoloDir) + "/session.txt";
 
-        File file = SD.open(filename.c_str(), FILE_READ);
+        File file = SD.open(filename.c_str(), "r+");
         if (!file)
         {
             Serial.println("No se pudo abrir el archivo de sesión para leer");
@@ -161,15 +211,34 @@ public:
         String startStr = file.readStringUntil('\n');
         String durationStr = file.readStringUntil('\n');
         String targetFlowStr = file.readStringUntil('\n');
+        String capturedVolumeStr = file.readStringUntil('\n');
         String usePlantowerStr = file.readStringUntil('\n');
         file.close();
 
-        session.startDate = DateTime(startStr.toInt());
-        session.duration = durationStr.toInt();
-        session.targetFlow = targetFlowStr.toInt();
-        session.usePlantower = (usePlantowerStr == "1");
+        session.startDate = DateTime(startStr.c_str());
 
-        Serial.println("Sesión cargada desde SD");
+        session.duration = durationStr.toInt();
+        if(session.startDate<components.rtc.now()){
+            unsigned long delta = components.rtc.now().unixtime() - session.startDate.unixtime();
+            session.duration += delta;
+            session.startDate = components.rtc.now();
+            Serial.println("Duración de sesión ajustada por tiempo pasado desde inicio");
+            Serial.print(" Nueva startDate: "); Serial.println(session.startDate.timestamp());
+            Serial.print(" Nueva duration: "); Serial.print(session.duration); Serial.print(" (+ "); Serial.print(delta); Serial.println(")"); 
+        }
+
+        session.targetFlow = targetFlowStr.toInt();
+        session.capturedVolume = capturedVolumeStr.toFloat();
+        session.usePlantower = usePlantowerStr == "1";
+
+
+        Serial.println("Sesión cargada desde SD:");
+        Serial.print(" startDate: "); Serial.println(startStr);
+        Serial.print(" duration: "); Serial.println(durationStr);
+        Serial.print(" targetFlow: "); Serial.println(targetFlowStr);
+        Serial.print(" capturedVolume: "); Serial.println(capturedVolumeStr);
+        Serial.print(" usePlantower: "); Serial.println(usePlantowerStr);
+
         return true;
 
     }
@@ -198,16 +267,19 @@ public:
         sdStatus = SD_WRITING;
 
         String dateStr = session.startDate.timestamp();
+        dateStr.replace(":", "_");
+        dateStr.replace("-", "_");
+
         String filename = String(logsDir) + "/log_" + dateStr + ".csv";
         bool fileExists = SD.exists(filename.c_str());
 
         if (!fileExists)
         {
-            File file = SD.open(filename.c_str(), FILE_WRITE);
+            File file = SD.open(filename.c_str(), "w+");
             if (!file)
             {
                 sdStatus = SD_ERROR;
-                Serial.println("No se pudo abrir el archivo para escribir");
+                Serial.println("No se pudo abrir el archivo para escribir/crear");
                 return;
             }
 
@@ -220,7 +292,7 @@ public:
         {
             Serial.println("Archivo de log ya existe: " + filename);
 
-            File file = SD.open(filename.c_str(), FILE_WRITE);
+            File file = SD.open(filename.c_str(), "a+");
             if (!file)
             {
                 sdStatus = SD_ERROR;
@@ -267,6 +339,19 @@ public:
             // battery_pct
             file.print(components.battery.getPct());
             file.println();
+
+            Serial.println("Datos registrados en SD: ");
+            Serial.print(" Time: "); Serial.println(components.rtc.now().timestamp());
+            Serial.print(" Flow: "); Serial.println(components.flowSensor.flow);
+            Serial.print(" Flow_target: "); Serial.println(session.targetFlow);
+            Serial.print(" Temp: "); Serial.println(components.bme.temperature);
+            Serial.print(" Hum: "); Serial.println(components.bme.humidity);
+            Serial.print(" Pres: "); Serial.println(components.bme.pressure);
+            Serial.print(" PM1: "); Serial.println(components.plantower.pm1);
+            Serial.print(" PM2.5: "); Serial.println(components.plantower.pm25);
+            Serial.print(" PM10: "); Serial.println(components.plantower.pm10);
+            Serial.print(" Battery: "); Serial.println(components.battery.getPct());
+            
             file.close();
 
             Serial.println("Archivo de log escrito!");

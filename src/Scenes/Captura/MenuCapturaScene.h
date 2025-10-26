@@ -24,16 +24,16 @@ private:
         {"Finalizar", [](Context &ctx) {
             ctx.endCapture();
         }},
+        {"Probar bombas", [](Context &ctx) {
+            SceneManager::setScene("captura_bombas", ctx);
+        }},
         {"Ajustar flujo", [](Context &ctx) {
             SceneManager::setScene("captura_flujo", ctx);
         }},
         {"Ajustar hora fin", [](Context &ctx) {
             SceneManager::setScene("time_end", ctx);
         }},
-        {"Probar bombas", [](Context &ctx) {
-            SceneManager::setScene("captura_bombas", ctx);
-        }},
-        {"Ajustar sensor PM", [](Context &ctx) {
+        {"Usar sensor PM", [](Context &ctx) {
             SceneManager::setScene("plantower_fin", ctx);
         }}
     };
@@ -41,6 +41,7 @@ public:
     void enter(Context &ctx) override
     {
         ctx.pauseCapture();
+        ctx.saveSession();
     }
 
     void update(Context &ctx) override
@@ -50,7 +51,7 @@ public:
         ctx.updateCapture();
 
         int delta = ctx.components.input.encoderDelta;
-        bool button = ctx.components.input.buttonPressed;
+        bool button = ctx.components.input.isButtonPressed();
 
         if (delta != 0)
         {

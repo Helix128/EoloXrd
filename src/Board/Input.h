@@ -14,12 +14,21 @@ class Input
 public:
 
   bool buttonPressed = false;
+  bool prevButtonPressed = false;
   int encoderDelta = 0;
   bool isReady = false;
   bool hasChanged = false;
   
   // Constructor
   Input() {}
+
+  bool isButtonPressed()
+  {   
+    if(prevButtonPressed == buttonPressed){
+        return false;
+    }
+    return buttonPressed;
+  }
 
   void begin()
   {
@@ -104,6 +113,7 @@ private:
       unsigned long currentMs = millis();
       if(currentMs - lastButtonMs > BUTTON_DEBOUNCE_MS){
         prevButtonRaw = rawButton;
+        prevButtonPressed = buttonPressed;
         buttonPressed = rawButton;
         lastButtonMs = currentMs;
         Serial.print("Botón cambiado a: ");

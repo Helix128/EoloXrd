@@ -13,7 +13,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
-
+        enablePM = ctx.session.usePlantower;
     }
 
     void update(Context &ctx) override
@@ -26,15 +26,16 @@ public:
             enablePM = !enablePM;
         }
 
-        if(ctx.components.input.buttonPressed){
+        if(ctx.components.input.isButtonPressed()){
              
             ctx.components.input.resetCounter();
             ctx.session.usePlantower = enablePM;
+            ctx.saveSession();  
             SceneManager::setScene("captura",ctx);
         }
         
         ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        ctx.u8g2.drawStr(10,28, "¿Usar sensor PM?");
+        ctx.u8g2.drawStr(10,28, "Usar sensor PM");
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
 
         

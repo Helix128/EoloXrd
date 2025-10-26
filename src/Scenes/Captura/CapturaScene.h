@@ -14,12 +14,13 @@ private:
 public:
     void enter(Context &ctx) override
     {
-        if(!ctx.isCapturing) {
-            ctx.beginCapture();
-            ctx.saveSession();
-        }
-        else{
+        if(ctx.isPaused){
             ctx.resumeCapture();
+            Serial.println("Resumiendo captura.");
+        }
+        else if(!ctx.isCapturing){
+            ctx.beginCapture();
+            Serial.println("Iniciando captura.");
         }
     }
 
@@ -31,7 +32,7 @@ public:
         GUI::displayHeader(ctx);
 
         int delta = ctx.components.input.encoderDelta;
-        bool button = ctx.components.input.buttonPressed;
+        bool button = ctx.components.input.isButtonPressed();
 
         if (delta != 0)
         {
@@ -43,6 +44,7 @@ public:
         }
 
         if(button){
+            ctx.saveSession();
             SceneManager::setScene("captura_menu", ctx);
         }
 

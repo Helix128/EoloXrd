@@ -18,9 +18,11 @@ class InicioScene : public IScene
 private:
     MenuOption menuOptions[3] = {
         {"Nueva sesion", "flujo"},
-        {"Cargar sesion", "captura"},
-        {"Capturar ahora", "flujo_now"}
+        {"Cargar sesion", "wait"},
+        {"Captura rapida", "flujo_now"}
     };
+    MenuOption availableOptions[3];
+    int optionCount = 0;
 public:
 
     int selectIndex = 0;
@@ -28,6 +30,19 @@ public:
     void enter(Context &ctx) override
     {
         canLoad = ctx.canLoadSession();
+        
+        // Build available options dynamically
+        optionCount = 0;
+        availableOptions[optionCount++] = menuOptions[0]; // Nueva sesion
+        if(canLoad){
+            Serial.println("Carga de sesión disponible");
+            availableOptions[optionCount++] = menuOptions[1]; // Cargar sesion
+        } else {
+            Serial.println("No hay sesión para cargar");
+        }
+        availableOptions[optionCount++] = menuOptions[2]; // Captura rapida
+        
+        selectIndex = 0;
     }
 
     void update(Context &ctx) override
@@ -36,31 +51,28 @@ public:
         GUI::displayHeader(ctx);
         
         selectIndex += ctx.components.input.encoderDelta;
-        selectIndex = constrain(selectIndex, 0, 2);
-        if(ctx.components.input.buttonPressed){
+        selectIndex = constrain(selectIndex, 0, optionCount - 1);
+        
+        if(ctx.components.input.isButtonPressed()){
             ctx.components.input.resetCounter();
-            SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
-        }
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-
-        if(!canLoad && selectIndex==1){
-            selectIndex += ctx.components.input.encoderDelta;
+            if(strcmp(availableOptions[selectIndex].label, "Cargar sesion") == 0){
+                Serial.println("Cargando sesión guardada...");
+                ctx.loadSession();
+            }
+            SceneManager::setScene(availableOptions[selectIndex].scene, ctx);
         }
         
-        for (int i = 0; i < 3; i++)
+        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        
+        for (int i = 0; i < optionCount; i++)
         {   
-            if(i==1 && !canLoad){
-                ctx.u8g2.setDrawColor(1);
-                ctx.u8g2.drawStr(2, 30 + i * 14, "Cargar sesion (x)");
-                continue;
-            }
-            if(selectIndex==i){
+            if(selectIndex == i){
                 ctx.u8g2.drawBox(-1, 32 + i * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
             } else {
                 ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.drawStr(2, 30 + i * 14, menuOptions[i].label);
+            ctx.u8g2.drawStr(2, 30 + i * 14, availableOptions[i].label);
             ctx.u8g2.setDrawColor(1);
         }
 

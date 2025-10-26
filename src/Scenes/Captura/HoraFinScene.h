@@ -88,7 +88,7 @@ public:
             }
         }
      
-        if (ctx.components.input.buttonPressed)
+        if (ctx.components.input.isButtonPressed())
         {
             DateTime now = ctx.components.rtc.now();
             DateTime targetTime(
@@ -112,6 +112,7 @@ public:
                 ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
                 Serial.print("Hora de fin establecida:");
                 Serial.println(targetTime.timestamp());
+                ctx.saveSession();
                 SceneManager::setScene("captura", ctx);
             }
             else
@@ -121,7 +122,7 @@ public:
                 enter(ctx);
             }
         }
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+      ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         ctx.u8g2.drawStr(10, 30, isEndTime ? "Hora (fin)" : "Hora (inicio)");
 
         ctx.u8g2.setFont(u8g2_font_helvB08_tf);
@@ -139,6 +140,20 @@ public:
             ctx.u8g2.drawLine(65, 41, 68, 41);
         }
         ctx.u8g2.drawStr(45, 50, dayText);
+
+        if (isEndTime)
+        {
+            DateTime now = ctx.components.rtc.now();
+            DateTime targetTime(now.year(), now.month(), now.day() + targetDay, targetHour, targetMinute, 0);
+            long duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
+            
+            int durationHours = duration / 3600;
+            int durationMinutes = (duration % 3600) / 60;
+            
+            char durationBuffer[20];
+            sprintf(durationBuffer, "Duracion: %dh %dm", durationHours, durationMinutes);
+            ctx.u8g2.drawStr(10, 62, durationBuffer);
+        }
 
         ctx.u8g2.sendBuffer();
     }
