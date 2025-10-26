@@ -57,7 +57,6 @@ public:
         Serial.println("Contexto inicializado");
     }
 
-    
     void setDisplayPower(bool on)
     {
         isDisplayOn = on;
@@ -222,15 +221,17 @@ public:
         file.close();
 
         long elapsedTime = elapsedStr.toInt();
+        if (session.startDate.unixtime() < components.rtc.now().unixtime()) // reajusta tiempo solo si la fecha de inicio ya pasó
+        {
+            session.startDate = components.rtc.now();
+            session.duration = durationStr.toInt();
+            session.duration -= elapsedTime;
+            session.elapsedTime = 0;
 
-        session.startDate = components.rtc.now();
-        session.duration = durationStr.toInt();
-        session.duration -= elapsedTime; 
-        session.elapsedTime = 0;
-        
-        Serial.print("Tiempo transcurrido restaurado: ");
-        Serial.print(elapsedTime);
-        Serial.println("s");
+            Serial.print("Tiempo transcurrido restaurado: ");
+            Serial.print(elapsedTime);
+            Serial.println("s");
+        }
 
         session.targetFlow = targetFlowStr.toInt();
         session.capturedVolume = capturedVolumeStr.toFloat();
@@ -248,7 +249,7 @@ public:
         Serial.print(" capturedVolume: ");
         Serial.println(capturedVolumeStr);
         Serial.print(" usePlantower: ");
-        Serial.println(usePlantowerStr);    
+        Serial.println(usePlantowerStr);
 
         saveSession();
         return true;

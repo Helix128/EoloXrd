@@ -32,14 +32,16 @@ public:
             ctx.saveSession();
             SceneManager::setScene("captura",ctx);
         }
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
-        ctx.u8g2.drawStr(10, 30, "Flujo objetivo");
-        char flowStr[10];
-        snprintf(flowStr, sizeof(flowStr), "%.1f", targetFlow);
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
-        ctx.u8g2.drawStr(40, 50, flowStr);
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-        ctx.u8g2.drawStr(80, 50, "L/min");
+     ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        int titleWidth = ctx.u8g2.getStrWidth("Flujo objetivo");
+        int titleX = (128 - titleWidth) / 2;
+        ctx.u8g2.drawStr(titleX, 30, "Flujo objetivo");
+        ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+        char flowStr[20];
+        snprintf(flowStr, sizeof(flowStr), "%.1f L/min", targetFlow);
+        int valueWidth = ctx.u8g2.getStrWidth(flowStr);
+        int valueX = (128 - valueWidth) / 2;
+        ctx.u8g2.drawStr(valueX, 50, flowStr);
         ctx.u8g2.sendBuffer();
     }
 };

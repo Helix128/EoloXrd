@@ -51,7 +51,10 @@ public:
             } else {
                 ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.drawStr(2, 30 + i * 14, menuOptions[i].label);
+            ctx.u8g2.setFont(selectIndex==i?u8g2_font_helvB10_tf:u8g2_font_helvR10_tf);
+            int labelWidth = ctx.u8g2.getStrWidth(menuOptions[i].label);
+            int labelX = (128 - labelWidth) / 2;
+            ctx.u8g2.drawStr(labelX, 30 + i * 14, menuOptions[i].label);
             ctx.u8g2.setDrawColor(1);
         }
 

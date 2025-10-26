@@ -22,20 +22,32 @@ public:
   // Constructor
   Input() {}
 
+  int intPow(int base, int exp)
+  {
+    int result = 1;
+    for (int i = 0; i < exp; i++)
+    {
+      result *= base;
+    }
+    return result;
+  }
+
   bool isButtonPressed()
-  {   
-    if(prevButtonPressed == buttonPressed){
-        return false;
+  {
+    if (prevButtonPressed == buttonPressed)
+    {
+      return false;
     }
     return buttonPressed;
   }
 
   int getEncoderDelta()
   {
-    int delta = encoderDelta*encoderDelta*encoderDelta;
-    if(delta!=0){
-    Serial.println("Encoder delta leído: " + String(delta));
-  }
+    int exponent = 3;
+    int delta = intPow(encoderDelta, exponent);
+    if(encoderDelta<0&& exponent%2==0){
+        delta = -delta;
+    }
     return delta;
   }
 
@@ -110,7 +122,7 @@ private:
 
   const bool FLIP_ENCODER = false; // Poner a true si el encoder va invertido
   const int BUTTON_DEBOUNCE_MS = 100; 
-  const int ENCODER_DEBOUNCE_MS = 66;
+  const int ENCODER_DEBOUNCE_MS = 100;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
 

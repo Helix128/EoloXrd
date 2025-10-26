@@ -54,7 +54,7 @@ public:
 
         if (enablePM) {
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.drawBox(leftBoxX, boxY+2, boxWidth, boxHeight);  
+            ctx.u8g2.drawBox(leftBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(0);  
         } else {
             ctx.u8g2.setFont(u8g2_font_helvR08_tf);
@@ -70,7 +70,7 @@ public:
         if (!enablePM) {
               ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.setDrawColor(1);
-            ctx.u8g2.drawBox(rightBoxX, boxY+2, boxWidth, boxHeight);  
+            ctx.u8g2.drawBox(rightBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(0); 
         } else {
             ctx.u8g2.setFont(u8g2_font_helvR08_tf);

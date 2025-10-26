@@ -30,8 +30,7 @@ public:
     {
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
-
-        int delta = ctx.components.input.getEncoderDelta();
+    int delta = ctx.components.input.getEncoderDelta();
         if (delta != 0)
         {
             int newMinute = targetMinute + delta;
@@ -48,7 +47,7 @@ public:
             newMinute = 59;
             newHour--;
             }
-            
+
             if (newHour >= 24)
             {
             newHour = 0;
@@ -59,33 +58,33 @@ public:
             newHour = 23;
             newDay--;
             }
-            
+
             DateTime now = ctx.components.rtc.now();
             DateTime newTime(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
-            
-            bool isValid = true;
-            
             if (newTime.unixtime() <= now.unixtime())
             {
-            isValid = false;
+            DateTime minTime = DateTime(now.unixtime() + 60);
+            newDay = 0;
+            newHour = minTime.hour();
+            newMinute = minTime.minute();
             }
-            
-            if (isEndTime && isValid)
+
+            if (isEndTime)
             {
-            if (newTime.unixtime() <= ctx.session.startDate.unixtime())
+            DateTime newTimeAdjusted(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
+            if (newTimeAdjusted.unixtime() <= ctx.session.startDate.unixtime())
             {
-                isValid = false;
+                DateTime minTime = DateTime(ctx.session.startDate.unixtime() + 60);
+                newDay = minTime.day() - now.day();
+                newHour = minTime.hour();
+                newMinute = minTime.minute();
             }
             }
-            
-          
-            if (isValid)
-            {
-            delta = 0; 
+
+            delta = 0;
             targetDay = newDay;
             targetHour = newHour;
             targetMinute = newMinute;
-            }
         }
      
         if (ctx.components.input.isButtonPressed())
@@ -122,24 +121,36 @@ public:
                 enter(ctx);
             }
         }
-      ctx.u8g2.setFont(u8g2_font_helvB12_tf);
-        ctx.u8g2.drawStr(10, 30, isEndTime ? "Hora (fin)" : "Hora (inicio)");
 
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        const char* title = isEndTime ? "Hora (fin)" : "Hora (inicio)";
+        int titleWidth = ctx.u8g2.getStrWidth(title);
+        int titleX = (128 - titleWidth) / 2;
+        ctx.u8g2.drawStr(titleX, 30, title);
+
+        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
         char timeBuffer[6];
         sprintf(timeBuffer, "%02d:%02d", targetHour, targetMinute);
-        ctx.u8g2.drawStr(10, 50, timeBuffer);
-        const char *dayText = "";
+        int timeWidth = ctx.u8g2.getStrWidth(timeBuffer);
+        int timeX = (128 - timeWidth) / 2;
+        ctx.u8g2.drawStr(timeX, 43, timeBuffer);
+
+        char dayText[15];
         if (targetDay == 0)
         {
-            dayText = "(hoy)";
+            strcpy(dayText, "hoy");
         }
         else if (targetDay == 1)
         {
-            dayText = "(manana)";
-            ctx.u8g2.drawLine(65, 41, 68, 41);
+            strcpy(dayText, "en 1 dia");
         }
-        ctx.u8g2.drawStr(45, 50, dayText);
+        else
+        {
+            sprintf(dayText, "en %i dias", targetDay);
+        }
+        int dayWidth = ctx.u8g2.getStrWidth(dayText);
+        int dayX = (128 - dayWidth) / 2;
+        ctx.u8g2.drawStr(dayX, 52, dayText);
 
         if (isEndTime)
         {
@@ -152,7 +163,9 @@ public:
             
             char durationBuffer[20];
             sprintf(durationBuffer, "Duracion: %dh %dm", durationHours, durationMinutes);
-            ctx.u8g2.drawStr(10, 62, durationBuffer);
+            int durationWidth = ctx.u8g2.getStrWidth(durationBuffer);
+            int durationX = (128 - durationWidth) / 2;
+            ctx.u8g2.drawStr(durationX, 62, durationBuffer);
         }
 
         ctx.u8g2.sendBuffer();

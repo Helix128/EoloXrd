@@ -55,12 +55,12 @@ public:
         isActive = active;
         digitalWrite(PT_PWR, active ? HIGH : LOW); // Controla la alimentación
         delay(50);
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 14; i++)
         {   
             readData(); 
-            delay(500);
+            delay(350);
         }
-            Serial.println("OK!");
+        Serial.println("OK!");
     }
 
     void testSensor()

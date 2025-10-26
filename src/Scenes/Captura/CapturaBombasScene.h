@@ -33,7 +33,7 @@ public:
         char pwm2Str[6];
         snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
 
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
         ctx.u8g2.drawStr(80, 35, pwm1Str);
         ctx.u8g2.drawStr(80, 55, pwm2Str);
 
@@ -44,7 +44,8 @@ public:
         ctx.components.motor.setPowerPct(targetPct);
 
         if (ctx.components.input.isButtonPressed())
-        {
+        {      
+            ctx.components.motor.setPowerPct(0);
             SceneManager::setScene("captura_menu", ctx);
         }
     }

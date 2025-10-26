@@ -32,7 +32,6 @@ public:
             int nowUnix = now.unixtime();
             targetMinute = now.minute();
             targetHour = now.hour();
-            targetDay = 0;
         }
     }
 
@@ -50,51 +49,52 @@ public:
 
             if (newMinute >= 60)
             {
-                newMinute = 0;
-                newHour++;
+            newMinute = 0;
+            newHour++;
             }
             else if (newMinute < 0)
             {
-                newMinute = 59;
-                newHour--;
+            newMinute = 59;
+            newHour--;
             }
 
             if (newHour >= 24)
             {
-                newHour = 0;
-                newDay++;
+            newHour = 0;
+            newDay++;
             }
             else if (newHour < 0)
             {
-                newHour = 23;
-                newDay--;
+            newHour = 23;
+            newDay--;
             }
 
             DateTime now = ctx.components.rtc.now();
             DateTime newTime(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
-
-            bool isValid = true;
-
             if (newTime.unixtime() <= now.unixtime())
             {
-                isValid = false;
+            DateTime minTime = DateTime(now.unixtime() + 60);
+            newDay = 0;
+            newHour = minTime.hour();
+            newMinute = minTime.minute();
             }
 
-            if (isEndTime && isValid)
+            if (isEndTime)
             {
-                if (newTime.unixtime() <= ctx.session.startDate.unixtime())
-                {
-                    isValid = false;
-                }
+            DateTime newTimeAdjusted(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
+            if (newTimeAdjusted.unixtime() <= ctx.session.startDate.unixtime())
+            {
+                DateTime minTime = DateTime(ctx.session.startDate.unixtime() + 60);
+                newDay = minTime.day() - now.day();
+                newHour = minTime.hour();
+                newMinute = minTime.minute();
+            }
             }
 
-            if (isValid)
-            {
-                delta = 0;
-                targetDay = newDay;
-                targetHour = newHour;
-                targetMinute = newMinute;
-            }
+            delta = 0;
+            targetDay = newDay;
+            targetHour = newHour;
+            targetMinute = newMinute;
         }
 
         if (ctx.components.input.isButtonPressed())
@@ -137,6 +137,7 @@ public:
                 enter(ctx);
             }
         }
+        
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
         const char* title = isEndTime ? "Hora (fin)" : "Hora (inicio)";
         int titleWidth = ctx.u8g2.getStrWidth(title);
@@ -148,22 +149,24 @@ public:
         sprintf(timeBuffer, "%02d:%02d", targetHour, targetMinute);
         int timeWidth = ctx.u8g2.getStrWidth(timeBuffer);
         int timeX = (128 - timeWidth) / 2;
-        ctx.u8g2.drawStr(timeX, 50, timeBuffer);
+        ctx.u8g2.drawStr(timeX, 43, timeBuffer);
 
-        const char *dayText = "";
+        char dayText[15];
         if (targetDay == 0)
         {
-            dayText = "(hoy)";
+            strcpy(dayText, "hoy");
         }
         else if (targetDay == 1)
         {
-            dayText = "(manana)";
-    
+            strcpy(dayText, "en 1 dia");
+        }
+        else
+        {
+            sprintf(dayText, "en %i dias", targetDay);
         }
         int dayWidth = ctx.u8g2.getStrWidth(dayText);
-        int dayX = timeX + timeWidth + 2;
-        ctx.u8g2.drawStr(dayX, 50, dayText);
-        ctx.u8g2.drawLine(dayX + 4, 41, dayX + 7, 41);
+        int dayX = (128 - dayWidth) / 2;
+        ctx.u8g2.drawStr(dayX, 52, dayText);
 
         if (isEndTime)
         {
@@ -176,7 +179,9 @@ public:
             
             char durationBuffer[20];
             sprintf(durationBuffer, "Duracion: %dh %dm", durationHours, durationMinutes);
-            ctx.u8g2.drawStr(10, 62, durationBuffer);
+            int durationWidth = ctx.u8g2.getStrWidth(durationBuffer);
+            int durationX = (128 - durationWidth) / 2;
+            ctx.u8g2.drawStr(durationX, 62, durationBuffer);
         }
 
         ctx.u8g2.sendBuffer();

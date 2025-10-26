@@ -24,6 +24,15 @@ public:
             ctx.beginCapture();
             Serial.println("Iniciando captura.");
         }
+
+        if(ctx.session.usePlantower&&!ctx.components.plantower.isActive)
+        {
+            ctx.components.plantower.setPower(true);
+        }
+        else if(!ctx.session.usePlantower&&ctx.components.plantower.isActive)
+        {
+            ctx.components.plantower.setPower(false);
+        }
     }
 
     void update(Context &ctx) override
@@ -60,13 +69,54 @@ public:
     void mainPanel(Context &ctx)
     {
         float lmin = ctx.components.flowSensor.flow;
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
-        char lminStr[10];
-        snprintf(lminStr, sizeof(lminStr), "%.1f", lmin);
-        ctx.u8g2.drawStr(50, 30, lminStr);
+        float volume = ctx.session.capturedVolume; 
 
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-        ctx.u8g2.drawStr(48, 39, "L/min");
+        char lminStr[10];
+        char volStr[10];
+        snprintf(lminStr, sizeof(lminStr), "%.1f", lmin);
+        snprintf(volStr, sizeof(volStr), "%.1f", volume*0.001);
+
+        int sectionWidth = 128 / 2;
+        int startX1 = 0;
+        int startX2 = sectionWidth;
+
+        // Flow
+        {
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            int labelWidth = ctx.u8g2.getStrWidth("Flujo");
+            int labelX = startX1 + (sectionWidth - labelWidth) / 2;
+            ctx.u8g2.drawStr(labelX, 24, "Flujo");
+
+            ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+            int valueWidth = ctx.u8g2.getStrWidth(lminStr);
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            int unitWidth = ctx.u8g2.getStrWidth("L/min");
+            int totalWidth = valueWidth + unitWidth + 1;
+            int valueX = startX1 + (sectionWidth - totalWidth) / 2;
+            ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+            ctx.u8g2.drawStr(valueX, 38, lminStr);
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(valueX + valueWidth + 1, 38, "L/min");
+        }
+
+        // Captured Volume
+        {
+            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            int labelWidth = ctx.u8g2.getStrWidth("Vol. captura");
+            int labelX = startX2 + (sectionWidth - labelWidth) / 2;
+            ctx.u8g2.drawStr(labelX, 24, "Vol. captura");
+
+            ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+            int valueWidth = ctx.u8g2.getStrWidth(volStr);
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            int unitWidth = ctx.u8g2.getStrWidth("m3");
+            int totalWidth = valueWidth + unitWidth + 1;
+            int valueX = startX2 + (sectionWidth - totalWidth) / 2;
+            ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+            ctx.u8g2.drawStr(valueX, 38, volStr);
+            ctx.u8g2.setFont(u8g2_font_4x6_tf);
+            ctx.u8g2.drawStr(valueX + valueWidth + 1, 38, "m3");
+        }
     }
 
     int cycleFooter = 0;
@@ -95,7 +145,6 @@ public:
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
             snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
 
-            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             int sectionWidth = 128 / 3;
             int startX1 = 0;
             int startX2 = sectionWidth;
@@ -103,16 +152,18 @@ public:
 
             // Temp
             {
+                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
                 int labelWidth = ctx.u8g2.getStrWidth("Temp");
                 int labelX = startX1 + (sectionWidth - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "Temp");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(tempStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("C");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX1 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, tempStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "C");
@@ -125,12 +176,13 @@ public:
                 int labelX = startX2 + (sectionWidth - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "Hum");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(humStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("%");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX2 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, humStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "%");
@@ -143,12 +195,13 @@ public:
                 int labelX = startX3 + (128 - startX3 - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "Presion");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(presStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("hPa");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX3 + (128 - startX3 - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, presStr);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "hPa");
@@ -179,7 +232,6 @@ public:
             snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
             snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
             snprintf(pm10Str, sizeof(pm10Str), "%.0f", pm10);
-            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             int sectionWidth = 128 / 3;
             int startX1 = 0;
             int startX2 = sectionWidth;
@@ -187,16 +239,18 @@ public:
 
             // PM1.0
             {
+                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
                 int labelWidth = ctx.u8g2.getStrWidth("PM1.0");
                 int labelX = startX1 + (sectionWidth - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "PM1.0");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(pm1Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("ugm2");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX1 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, pm1Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
@@ -209,12 +263,13 @@ public:
                 int labelX = startX2 + (sectionWidth - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "PM2.5");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(pm25Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("ugm2");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX2 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, pm25Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
@@ -227,12 +282,13 @@ public:
                 int labelX = startX3 + (128 - startX3 - labelWidth) / 2;
                 ctx.u8g2.drawStr(labelX, 50, "PM10");
 
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 int valueWidth = ctx.u8g2.getStrWidth(pm10Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 int unitWidth = ctx.u8g2.getStrWidth("ugm2");
                 int totalValueWidth = valueWidth + unitWidth + 1;
                 int valueX = startX3 + (128 - startX3 - totalValueWidth) / 2;
-                ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+                ctx.u8g2.setFont(u8g2_font_helvR08_tf);
                 ctx.u8g2.drawStr(valueX, 60, pm10Str);
                 ctx.u8g2.setFont(u8g2_font_4x6_tf);
                 ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
@@ -246,19 +302,16 @@ public:
             char targetFlowStr[10];
             snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", targetFlow);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
-            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             int labelWidth = ctx.u8g2.getStrWidth("Flujo configurado");
             int labelX = 64 - labelWidth / 2;
             ctx.u8g2.drawStr(labelX, 50, "Flujo configurado");
+            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
             int valueWidth = ctx.u8g2.getStrWidth(targetFlowStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
             int unitWidth = ctx.u8g2.getStrWidth("L/min");
-            int totalWidth = valueWidth + unitWidth;
+            int totalWidth = valueWidth + unitWidth + 1;
             int valueX = 64 - totalWidth / 2;
-            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             ctx.u8g2.drawStr(valueX, 60, targetFlowStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            ctx.u8g2.drawStr(valueX + valueWidth+1, 60, "L/min");
+            ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "L/min");
             break;
         }
         case 3:
@@ -272,11 +325,12 @@ public:
             snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             int labelWidth = ctx.u8g2.getStrWidth("Tiempo transcurrido");
-            int valueWidth = ctx.u8g2.getStrWidth(timeStr);
             int centerX = 64;
             int labelX = centerX - labelWidth / 2;
-            int valueX = centerX - valueWidth / 2;
             ctx.u8g2.drawStr(labelX, 50, "Tiempo transcurrido");
+            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+            int valueWidth = ctx.u8g2.getStrWidth(timeStr);
+            int valueX = centerX - valueWidth / 2;
             ctx.u8g2.drawStr(valueX, 60, timeStr);
             break;
         }
@@ -288,16 +342,16 @@ public:
             unsigned long hours = remaining / 3600;
             unsigned long minutes = (remaining % 3600) / 60;
             unsigned long seconds = remaining % 60;
-
             char remainingStr[9];
             snprintf(remainingStr, sizeof(remainingStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
             int labelWidth = ctx.u8g2.getStrWidth("Tiempo restante");
-            int valueWidth = ctx.u8g2.getStrWidth(remainingStr);
             int centerX = 64;
             int labelX = centerX - labelWidth / 2;
-            int valueX = centerX - valueWidth / 2;
             ctx.u8g2.drawStr(labelX, 50, "Tiempo restante");
+            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+            int valueWidth = ctx.u8g2.getStrWidth(remainingStr);
+            int valueX = centerX - valueWidth / 2;
             ctx.u8g2.drawStr(valueX, 60, remainingStr);
             break;
         }
@@ -309,7 +363,6 @@ public:
 
             String startStr = start.timestamp(DateTime::TIMESTAMP_TIME);
             String endStr = end.timestamp(DateTime::TIMESTAMP_TIME);
-
             ctx.u8g2.setFont(u8g2_font_helvB08_tf);
 
             int startWidth = ctx.u8g2.getStrWidth(startStr.c_str());
@@ -327,9 +380,10 @@ public:
             int labelEndX = rightCenter - labelEndWidth / 2;
 
             ctx.u8g2.drawStr(labelStartX, 50, "Inicio");
-            ctx.u8g2.drawStr(startX, 60, startStr.c_str());
-
             ctx.u8g2.drawStr(labelEndX, 50, "Fin");
+
+            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+            ctx.u8g2.drawStr(startX, 60, startStr.c_str());
             ctx.u8g2.drawStr(endX, 60, endStr.c_str());
             break;
         }
