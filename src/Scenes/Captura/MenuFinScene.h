@@ -18,7 +18,7 @@ class EndMenuScene : public IScene
 {
 private:
     EndMenuOption menuOptions[2] = {
-        {"Reiniciar EOLO", "RESET"},
+        {"Volver al menu", "inicio"},
         {"Regresar", "end"}
     };
 public:

@@ -221,7 +221,13 @@ public:
         file.close();
 
         long elapsedTime = elapsedStr.toInt();
-        if (session.startDate.unixtime() < components.rtc.now().unixtime()) // reajusta tiempo solo si la fecha de inicio ya pasó
+
+        DateTime loadedStart = DateTime(startStr.c_str());
+        session.startDate = loadedStart;
+        session.duration = durationStr.toInt();
+        session.elapsedTime = 0;
+        
+        if (session.startDate < components.rtc.now()) // reajusta tiempo solo si la fecha de inicio ya pasó
         {
             session.startDate = components.rtc.now();
             session.duration = durationStr.toInt();
