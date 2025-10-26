@@ -39,7 +39,7 @@ public:
 
         ctx.u8g2.sendBuffer();
 
-        targetPct += ctx.components.input.encoderDelta * 1;
+        targetPct += ctx.components.input.getEncoderDelta() * 1;
         targetPct = constrain(targetPct, 0, 100);
         ctx.components.motor.setPowerPct(targetPct);
 

@@ -21,7 +21,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        float delta = ctx.components.input.encoderDelta;
+        float delta = ctx.components.input.getEncoderDelta();
         targetFlow += delta * 0.1f;
         targetFlow = constrain(targetFlow, 0.0f, 8.0f);
 

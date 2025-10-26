@@ -12,7 +12,7 @@ public:
     // Header con batería, hora, SD, nombre del dispositivo
     static void displayHeader(Context &ctx)
     {
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
 
         // Bateria
         char batteryStr[5];
@@ -28,23 +28,34 @@ public:
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", nowHr, nowMin, nowSec);
         ctx.u8g2.drawStr(6, 11, timeStr);
 
+        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
         ctx.u8g2.drawStr(51, 11, "EOLO");
+        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
         // Iconos de baterías 
-        ctx.u8g2.drawFrame(80, 1, 6, 11);
-        ctx.u8g2.drawFrame(87, 1, 6, 11);
+        ctx.u8g2.drawRFrame(80, 3, 13, 4, 1);
+        ctx.u8g2.drawRFrame(80, 8, 13, 4, 1); 
+        ctx.u8g2.drawLine(80,3,80,6);
+        ctx.u8g2.drawLine(80,8,80,11);
 
-        # if BAREBONES == true
-        int batteryPct = (millis() / 50) % 101; // Simulación de batería para testing
-        # else
+
+        #if BAREBONES == true
+        int batteryPct = (millis() / 100) % 101; // Simulación de batería para testing
+        #else
         int batteryPct = ctx.components.battery.getPct();
         #endif
-        if(batteryPct<=50){
-            ctx.u8g2.drawBox(81,1,5,map(batteryPct,0,50,0,11));
+        
+        if (batteryPct > 0) {
+            if(batteryPct<50){
+                int fillWidth = map(batteryPct, 0, 50, 0, 11);
+                ctx.u8g2.drawBox(81, 4, fillWidth, 2);
+            }
+            else{
+                ctx.u8g2.drawBox(81, 4, 11, 2);
+                int fillWidth = map(batteryPct, 50, 100, 0, 11);
+                ctx.u8g2.drawBox(81, 9, fillWidth, 2);
+            }
         }
-        else{
-            ctx.u8g2.drawBox(81,1,5,11);
-            ctx.u8g2.drawBox(88,1,5,map(batteryPct,50,100,0,11));
-        }
+
         // Estado de la SD
         const char* sdStatus = "OK";
         if (ctx.sdStatus == SD_ERROR)

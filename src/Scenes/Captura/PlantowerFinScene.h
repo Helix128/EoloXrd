@@ -21,7 +21,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int delta = ctx.components.input.encoderDelta;
+        int delta = ctx.components.input.getEncoderDelta();
         if(delta!=0){
             enablePM = !enablePM;
         }

@@ -33,7 +33,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int delta = ctx.components.input.encoderDelta;
+        int delta = ctx.components.input.getEncoderDelta();
         bool button = ctx.components.input.isButtonPressed();
 
         if (delta != 0)
@@ -159,7 +159,7 @@ public:
         {
             if (!ctx.session.usePlantower)
             {
-                cycleFooter += ctx.components.input.encoderDelta;
+                cycleFooter += ctx.components.input.getEncoderDelta();
                 break;
             }
             float pm1 = ctx.components.plantower.pm1;

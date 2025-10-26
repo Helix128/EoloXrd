@@ -49,7 +49,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
         
-        selectIndex += ctx.components.input.encoderDelta;
+        selectIndex += ctx.components.input.getEncoderDelta();
         selectIndex = constrain(selectIndex, 0, optionCount - 1);
         
         if(ctx.components.input.isButtonPressed()){
@@ -61,17 +61,23 @@ public:
             SceneManager::setScene(availableOptions[selectIndex].scene, ctx);
         }
         
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        ctx.u8g2.setFont(u8g2_font_helvR10_tf);
         
         for (int i = 0; i < optionCount; i++)
         {   
-            if(selectIndex == i){
+            bool highlight = (selectIndex == i);
+            if(highlight){
                 ctx.u8g2.drawBox(-1, 32 + i * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
+                ctx.u8g2.setFont(u8g2_font_helvB10_tf);
             } else {
                 ctx.u8g2.setDrawColor(1);
+                ctx.u8g2.setFont(u8g2_font_helvR10_tf);
             }
-            ctx.u8g2.drawStr(2, 30 + i * 14, availableOptions[i].label);
+            int textWidth = ctx.u8g2.getStrWidth(availableOptions[i].label);
+            int x = (128 / 2) - (textWidth / 2);
+            ctx.u8g2.drawStr(x, 30 + i * 14, availableOptions[i].label);
+
             ctx.u8g2.setDrawColor(1);
         }
 

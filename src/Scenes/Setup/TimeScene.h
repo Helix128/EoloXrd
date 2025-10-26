@@ -41,7 +41,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int delta = ctx.components.input.encoderDelta;
+        int delta = ctx.components.input.getEncoderDelta();
         if (delta != 0)
         {
             int newMinute = targetMinute + delta;
@@ -138,12 +138,18 @@ public:
             }
         }
         ctx.u8g2.setFont(u8g2_font_helvB12_tf);
-        ctx.u8g2.drawStr(10, 30, isEndTime ? "Hora (fin)" : "Hora (inicio)");
+        const char* title = isEndTime ? "Hora (fin)" : "Hora (inicio)";
+        int titleWidth = ctx.u8g2.getStrWidth(title);
+        int titleX = (128 - titleWidth) / 2;
+        ctx.u8g2.drawStr(titleX, 30, title);
 
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
         char timeBuffer[6];
         sprintf(timeBuffer, "%02d:%02d", targetHour, targetMinute);
-        ctx.u8g2.drawStr(10, 50, timeBuffer);
+        int timeWidth = ctx.u8g2.getStrWidth(timeBuffer);
+        int timeX = (128 - timeWidth) / 2;
+        ctx.u8g2.drawStr(timeX, 50, timeBuffer);
+
         const char *dayText = "";
         if (targetDay == 0)
         {
@@ -152,9 +158,12 @@ public:
         else if (targetDay == 1)
         {
             dayText = "(manana)";
-            ctx.u8g2.drawLine(65, 41, 68, 41);
+    
         }
-        ctx.u8g2.drawStr(45, 50, dayText);
+        int dayWidth = ctx.u8g2.getStrWidth(dayText);
+        int dayX = timeX + timeWidth + 2;
+        ctx.u8g2.drawStr(dayX, 50, dayText);
+        ctx.u8g2.drawLine(dayX + 4, 41, dayX + 7, 41);
 
         if (isEndTime)
         {

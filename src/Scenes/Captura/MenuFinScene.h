@@ -35,7 +35,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
         
-        selectIndex += ctx.components.input.encoderDelta;
+        selectIndex += ctx.components.input.getEncoderDelta();
         selectIndex = constrain(selectIndex, 0, 1);
         if(ctx.components.input.isButtonPressed()){
              

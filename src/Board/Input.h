@@ -30,6 +30,15 @@ public:
     return buttonPressed;
   }
 
+  int getEncoderDelta()
+  {
+    int delta = encoderDelta*encoderDelta*encoderDelta;
+    if(delta!=0){
+    Serial.println("Encoder delta leído: " + String(delta));
+  }
+    return delta;
+  }
+
   void begin()
   {
     if (isReady) {
@@ -101,7 +110,7 @@ private:
 
   const bool FLIP_ENCODER = false; // Poner a true si el encoder va invertido
   const int BUTTON_DEBOUNCE_MS = 100; 
-  const int ENCODER_DEBOUNCE_MS = 25;
+  const int ENCODER_DEBOUNCE_MS = 66;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
 

@@ -50,7 +50,7 @@ public:
         GUI::displayHeader(ctx);
         ctx.updateCapture();
 
-        int delta = ctx.components.input.encoderDelta;
+        int delta = ctx.components.input.getEncoderDelta();
         bool button = ctx.components.input.isButtonPressed();
 
         if (delta != 0)
