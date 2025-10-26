@@ -6,6 +6,7 @@
 #include "../Config.h"
 #include "../Drawing/SceneManager.h"
 #include <SD.h>
+#include <SdFat.h>
 
 enum SDStatus
 {
@@ -16,6 +17,7 @@ enum SDStatus
 
 typedef struct Context
 {
+    static Context* instance;
     DisplayModel &u8g2;
     bool isDisplayOn = true;
     bool isDisplayReady = false;
@@ -41,6 +43,7 @@ public:
 
     void begin()
     {
+        instance = this;
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
         if (!isDisplayReady)
@@ -77,8 +80,18 @@ public:
         setDisplayPower(true);
     }
 
+    static void dateTime(uint16_t* date, uint16_t* time)
+    {
+        DateTime now = Context::instance->components.rtc.now();
+        *date = FAT_DATE(now.year(), now.month(), now.day());
+        *time = FAT_TIME(now.hour(), now.minute(), now.second());
+    }
+
     bool initSD()
     {
+
+        SdFile::dateTimeCallback(dateTime);
+
         if (!SD.begin(SD_CS_PIN))
         {
             Serial.println("Fallo al inicializar SD");
@@ -542,4 +555,5 @@ public:
 
 } Context;
 
+inline Context* Context::instance = nullptr;
 #endif

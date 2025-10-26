@@ -18,7 +18,7 @@ class InicioScene : public IScene
 private:
     MenuOption menuOptions[3] = {
         {"Nueva sesion", "flujo"},
-        {"Cargar sesion", "wait"},
+        {"Continuar sesion", "wait"},
         {"Captura rapida", "flujo_now"}
     };
     MenuOption availableOptions[3];
@@ -54,7 +54,7 @@ public:
         
         if(ctx.components.input.isButtonPressed()){
             ctx.components.input.resetCounter();
-            if(strcmp(availableOptions[selectIndex].label, "Cargar sesion") == 0){
+            if(strcmp(availableOptions[selectIndex].label, "Continuar sesion") == 0){
                 Serial.println("Cargando sesión guardada...");
                 ctx.loadSession();
             }

@@ -11,7 +11,6 @@
 #include "Config.h" 
 
 #include "Testing/I2CUtil.h"
-#include "Testing/FlowMotor.h"
 
 // Instancias globales
 DisplayModel u8g2(U8G2_R0, SCL_PIN, SDA_PIN);
@@ -33,8 +32,6 @@ void setup()
   
   // Registrar todas las escenas (SceneRegistry)
   registerAllScenes();
-
-  // testFlowMotor(ctx);
 
   // Carga la escena inicial (splash)
   SceneManager::setScene("splash", ctx);
