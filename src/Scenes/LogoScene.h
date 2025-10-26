@@ -21,9 +21,9 @@ private:
     SceneState currentState;
     unsigned long phaseStartTime;
 
-    static const unsigned long ANIM_DURATION = 1000;
-    static const unsigned long FADE_DURATION = 1000;
-    static const unsigned long FADE_OUT_DURATION = 1000;
+    static const unsigned long ANIM_DURATION = 600;
+    static const unsigned long FADE_DURATION = 600;
+    static const unsigned long FADE_OUT_DURATION = 600;
 
 public:
     void enter(Context &ctx) override
@@ -143,8 +143,11 @@ public:
         {
             t_dither_norm = 0.0f;
             xPos = 32;
-
-            drawFrame(ctx, xPos, t_dither_norm);
+            
+            ctx.u8g2.clearBuffer();
+            ctx.u8g2.sendBuffer();
+            
+            delay(1);
 
             SceneManager::setScene("inicio", ctx);
             return;

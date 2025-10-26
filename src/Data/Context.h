@@ -18,6 +18,7 @@ typedef struct Context
 {
     DisplayModel &u8g2;
     bool isDisplayOn = true;
+    bool isDisplayReady = false;
     unsigned long int lastInputTime = 0;
     const unsigned long int DISPLAY_TIMEOUT_MS = 60000;
 
@@ -39,12 +40,20 @@ public:
     Context(DisplayModel &display) : u8g2(display) {}
 
     void begin()
-    {   
+    {
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
-        u8g2.begin();
+        if (!isDisplayReady)
+        {   
+            Serial.println("Iniciando pantalla...");
+            u8g2.begin();
+            u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
+            isDisplayReady = true;
+            Serial.println("Pantalla iniciada");
+        
+        }
         components.begin();
-        u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
+
         initSD();
         Serial.println("Contexto inicializado");
     }
@@ -79,29 +88,30 @@ public:
         }
 
         sdcard_type_t sdType = SD.cardType();
-        if( sdType == CARD_NONE )
+        if (sdType == CARD_NONE)
         {
             Serial.println("No se detectó tarjeta SD");
             sdStatus = SD_ERROR;
             return false;
         }
-        else{
+        else
+        {
             Serial.print("Tipo de tarjeta SD: ");
-            switch(sdType)
-            {   
-                case CARD_MMC:
-                    Serial.println("MMC");
-                    break;
-                case CARD_SD:
-                    Serial.println("SDSC");
-                    break;
-                case CARD_SDHC:
-                    Serial.println("SDHC");
-                    break;
-                case CARD_UNKNOWN:
-                default:
-                    Serial.println("Desconocido");
-                    break;
+            switch (sdType)
+            {
+            case CARD_MMC:
+                Serial.println("MMC");
+                break;
+            case CARD_SD:
+                Serial.println("SDSC");
+                break;
+            case CARD_SDHC:
+                Serial.println("SDHC");
+                break;
+            case CARD_UNKNOWN:
+            default:
+                Serial.println("Desconocido");
+                break;
             }
         }
 
@@ -150,7 +160,8 @@ public:
         return true;
     }
 
-    void saveSession(){
+    void saveSession()
+    {
 
         String filename = String(eoloDir) + "/session.txt";
 
@@ -159,7 +170,7 @@ public:
         String targetFlowStr = String(session.targetFlow);
         String capturedVolumeStr = String(session.capturedVolume);
         String usePlantowerStr = session.usePlantower ? "1" : "0";
-        
+
         File file = SD.open(filename.c_str(), "w+");
         if (!file)
         {
@@ -175,29 +186,35 @@ public:
         file.close();
 
         Serial.println("Sesión guardada en SD:");
-        Serial.print(" startDate: "); Serial.println(startStr);
-        Serial.print(" duration: "); Serial.println(durationStr);
-        Serial.print(" targetFlow: "); Serial.println(targetFlowStr);
-        Serial.print(" capturedVolume: "); Serial.println(capturedVolumeStr);
-        Serial.print(" usePlantower: "); Serial.println(usePlantowerStr);
+        Serial.print(" startDate: ");
+        Serial.println(startStr);
+        Serial.print(" duration: ");
+        Serial.println(durationStr);
+        Serial.print(" targetFlow: ");
+        Serial.println(targetFlowStr);
+        Serial.print(" capturedVolume: ");
+        Serial.println(capturedVolumeStr);
+        Serial.print(" usePlantower: ");
+        Serial.println(usePlantowerStr);
+    }
 
-    }   
-
-    bool canLoadSession(){
+    bool canLoadSession()
+    {
         String filename = String(eoloDir) + "/session.txt";
         if (!SD.exists(filename.c_str()))
             return false;
-        
+
         File file = SD.open(filename.c_str(), "r+");
         if (!file)
             return false;
-        
+
         size_t fileSize = file.size();
         file.close();
         return fileSize > 0;
     }
 
-    bool loadSession(){
+    bool loadSession()
+    {
 
         String filename = String(eoloDir) + "/session.txt";
 
@@ -218,41 +235,53 @@ public:
         session.startDate = DateTime(startStr.c_str());
 
         session.duration = durationStr.toInt();
-        if(session.startDate<components.rtc.now()){
+        if (session.startDate < components.rtc.now())
+        {
             unsigned long delta = components.rtc.now().unixtime() - session.startDate.unixtime();
             session.duration += delta;
             session.startDate = components.rtc.now();
             Serial.println("Duración de sesión ajustada por tiempo pasado desde inicio");
-            Serial.print(" Nueva startDate: "); Serial.println(session.startDate.timestamp());
-            Serial.print(" Nueva duration: "); Serial.print(session.duration); Serial.print(" (+ "); Serial.print(delta); Serial.println(")"); 
+            Serial.print(" Nueva startDate: ");
+            Serial.println(session.startDate.timestamp());
+            Serial.print(" Nueva duration: ");
+            Serial.print(session.duration);
+            Serial.print(" (+ ");
+            Serial.print(delta);
+            Serial.println(")");
         }
 
         session.targetFlow = targetFlowStr.toInt();
         session.capturedVolume = capturedVolumeStr.toFloat();
         session.usePlantower = usePlantowerStr == "1";
 
-
         Serial.println("Sesión cargada desde SD:");
-        Serial.print(" startDate: "); Serial.println(startStr);
-        Serial.print(" duration: "); Serial.println(durationStr);
-        Serial.print(" targetFlow: "); Serial.println(targetFlowStr);
-        Serial.print(" capturedVolume: "); Serial.println(capturedVolumeStr);
-        Serial.print(" usePlantower: "); Serial.println(usePlantowerStr);
+        Serial.print(" startDate: ");
+        Serial.println(startStr);
+        Serial.print(" duration: ");
+        Serial.println(durationStr);
+        Serial.print(" targetFlow: ");
+        Serial.println(targetFlowStr);
+        Serial.print(" capturedVolume: ");
+        Serial.println(capturedVolumeStr);
+        Serial.print(" usePlantower: ");
+        Serial.println(usePlantowerStr);
 
         return true;
-
     }
 
-    void clearSession(){
+    void clearSession()
+    {
         String filename = String(eoloDir) + "/session.txt";
         if (SD.exists(filename.c_str()))
         {
             SD.remove(filename.c_str());
             delay(5);
-            if(!SD.exists(filename.c_str())){
+            if (!SD.exists(filename.c_str()))
+            {
                 Serial.println("Archivo de sesión eliminado de SD");
             }
-            else{
+            else
+            {
                 Serial.println("No se pudo eliminar el archivo de sesión de SD");
             }
         }
@@ -341,17 +370,27 @@ public:
             file.println();
 
             Serial.println("Datos registrados en SD: ");
-            Serial.print(" Time: "); Serial.println(components.rtc.now().timestamp());
-            Serial.print(" Flow: "); Serial.println(components.flowSensor.flow);
-            Serial.print(" Flow_target: "); Serial.println(session.targetFlow);
-            Serial.print(" Temp: "); Serial.println(components.bme.temperature);
-            Serial.print(" Hum: "); Serial.println(components.bme.humidity);
-            Serial.print(" Pres: "); Serial.println(components.bme.pressure);
-            Serial.print(" PM1: "); Serial.println(components.plantower.pm1);
-            Serial.print(" PM2.5: "); Serial.println(components.plantower.pm25);
-            Serial.print(" PM10: "); Serial.println(components.plantower.pm10);
-            Serial.print(" Battery: "); Serial.println(components.battery.getPct());
-            
+            Serial.print(" Time: ");
+            Serial.println(components.rtc.now().timestamp());
+            Serial.print(" Flow: ");
+            Serial.println(components.flowSensor.flow);
+            Serial.print(" Flow_target: ");
+            Serial.println(session.targetFlow);
+            Serial.print(" Temp: ");
+            Serial.println(components.bme.temperature);
+            Serial.print(" Hum: ");
+            Serial.println(components.bme.humidity);
+            Serial.print(" Pres: ");
+            Serial.println(components.bme.pressure);
+            Serial.print(" PM1: ");
+            Serial.println(components.plantower.pm1);
+            Serial.print(" PM2.5: ");
+            Serial.println(components.plantower.pm25);
+            Serial.print(" PM10: ");
+            Serial.println(components.plantower.pm10);
+            Serial.print(" Battery: ");
+            Serial.println(components.battery.getPct());
+
             file.close();
 
             Serial.println("Archivo de log escrito!");
@@ -365,7 +404,8 @@ public:
         components.input.poll();
 
         if (components.input.hasChanged)
-        {   setDisplayPower(true);
+        {
+            setDisplayPower(true);
             lastInputTime = millis();
             components.input.hasChanged = false;
         }
@@ -420,7 +460,7 @@ public:
     {
         isCapturing = false;
         isEnd = true;
-       
+
         Serial.println("Captura finalizada.");
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
@@ -428,7 +468,7 @@ public:
     }
 
     void resetCapture()
-    {   
+    {
         isCapturing = false;
         isPaused = false;
         session = Session();

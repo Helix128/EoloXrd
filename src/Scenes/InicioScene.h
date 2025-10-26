@@ -28,10 +28,9 @@ public:
     int selectIndex = 0;
     bool canLoad = false;
     void enter(Context &ctx) override
-    {
+    {   
         canLoad = ctx.canLoadSession();
         
-        // Build available options dynamically
         optionCount = 0;
         availableOptions[optionCount++] = menuOptions[0]; // Nueva sesion
         if(canLoad){
