@@ -24,12 +24,13 @@ public:
 
     
         // Estado de la SD - dibujar icono de tarjeta SD
-        int iconX = 38;
+        int iconX = 35;
         int iconY = 3;
-        int iconW = 8;
+        int iconW = 13;
         int iconH = 8;
         int bevelSize = 1;
         
+        ctx.u8g2.setFont(u8g2_font_tiny5_tf);        
         if (ctx.sdStatus == SD_ERROR) {
             // Outline with X and bevel
             ctx.u8g2.drawLine(iconX, iconY + bevelSize, iconX, iconY + iconH - 1);
@@ -51,6 +52,7 @@ public:
             ctx.u8g2.drawLine(iconX + iconW - 1, iconY + iconH - 1, iconX + iconW - 1, iconY + bevelSize);
             ctx.u8g2.drawLine(iconX + iconW - 1, iconY + bevelSize, iconX + iconW - 1 - bevelSize, iconY);
             ctx.u8g2.drawLine(iconX + iconW - 1 - bevelSize, iconY, iconX, iconY);
+            ctx.u8g2.drawStr(iconX + 2, iconY + 7, "OK");
         }
 
         ctx.u8g2.setFont(FONT_BOLD_S);

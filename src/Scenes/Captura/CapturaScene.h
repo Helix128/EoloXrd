@@ -73,8 +73,8 @@ public:
 
         char lminStr[10];
         char volStr[10];
-        snprintf(lminStr, sizeof(lminStr), "%.1f", lmin);
-        snprintf(volStr, sizeof(volStr), "%.1f", volume*0.001);
+        snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
+        snprintf(volStr, sizeof(volStr), "%.3f", volume*0.001);
 
         int sectionWidth = 128 / 2;
         int startX1 = 0;
@@ -138,10 +138,10 @@ public:
             presAtm = 1013.0;
 #endif
 
-            char tempStr[5];
+            char tempStr[6];
             char humStr[5];
             char presStr[5];
-            snprintf(tempStr, sizeof(tempStr), "%.1f", temp);
+            snprintf(tempStr, sizeof(tempStr), "%.2f", temp);
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
             snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
 

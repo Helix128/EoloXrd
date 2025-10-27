@@ -50,7 +50,7 @@ public:
         }
     }
     void readData()
-    {   
+    {      
         if(!isReady)
         {
             velocity = -1;
@@ -58,7 +58,7 @@ public:
             return;
         }
         velocity = sensor.readMetersPerSecond();
-        flow = velocity * 10; // TEMPORAL: HAY QUE CALCULAR VALOR REAL??
+        flow = velocity * 10; // TEMPORAL: HAY QUE CALCULAR VALOR REAL
     }
 
 private:

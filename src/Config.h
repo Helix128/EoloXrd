@@ -8,7 +8,7 @@
 
 // Modo barebones (para debug sin tener el EOLO completo)
 // simula sensores
-#define BAREBONES true
+#define BAREBONES false
 
 // simula encoder
 #define SERIAL_INPUT false
