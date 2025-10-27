@@ -104,6 +104,17 @@ public:
     setPWM(targetPWM);
   }
 
+  void setPowerPct(float powerPct)
+  {
+    if (powerPct > 100.0f)
+      powerPct = 100.0f;
+    else if (powerPct < 0.0f)
+      powerPct = 0.0f;
+    int totalMax = motorCount * MAX_PWM;
+    int targetPWM = static_cast<int>((totalMax * powerPct) / 100.0f);
+    setPWM(targetPWM);
+  }
+
   int getPowerPct()
   {
     int totalPWM = 0;

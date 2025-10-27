@@ -168,6 +168,21 @@ public:
             ctx.u8g2.drawStr(durationX, 62, durationBuffer);
         }
 
+        static int animCounter = 0;
+        animCounter++;
+        int cycle = (animCounter/4)%3;
+
+        const int TRIANGLE_Y_MID = 44;
+        const int TRIANGLE_HEIGHT = 8;
+        const int TRIANGLE_Y_TOP = TRIANGLE_Y_MID - TRIANGLE_HEIGHT / 2;
+        const int TRIANGLE_Y_BOTTOM = TRIANGLE_Y_MID + TRIANGLE_HEIGHT / 2;
+        const int TRIANGLE_WIDTH = 5;
+        const int TRIANGLE_SPACING = 14;
+        const int TRIANGLE_OFFSET = 7;
+
+        ctx.u8g2.drawTriangle(timeX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_TOP, timeX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_BOTTOM, timeX - TRIANGLE_OFFSET - cycle, TRIANGLE_Y_MID);
+        ctx.u8g2.drawTriangle(timeX + timeWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_TOP, timeX + timeWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_BOTTOM, timeX + timeWidth + TRIANGLE_OFFSET + cycle, TRIANGLE_Y_MID);
+        
         ctx.u8g2.sendBuffer();
     }
 };

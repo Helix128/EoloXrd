@@ -10,7 +10,7 @@
 #include "Drawing/SceneRegistry.h"
 #include "Config.h" 
 
-#include "Testing/I2CUtil.h"
+#include "Utility/I2CUtil.h"
 
 // Instancias globales
 DisplayModel u8g2(U8G2_R0, SCL_PIN, SDA_PIN);

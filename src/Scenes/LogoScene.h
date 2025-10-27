@@ -5,7 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/Logos.h"
 #include "../Drawing/SceneManager.h"
-#include "../Testing/I2CUtil.h"
+#include "../Utility/I2CUtil.h"
 
 class LogoScene : public IScene
 {

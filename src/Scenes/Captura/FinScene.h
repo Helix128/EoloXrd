@@ -88,7 +88,7 @@ public:
             ctx.u8g2.drawStr(label4X, 64, label4);
             ctx.u8g2.setFont(FONT_BOLD_S);
             char capturedStr[20];
-            snprintf(capturedStr, sizeof(capturedStr), "%.1f m3", capturedVolume*0.001);
+            snprintf(capturedStr, sizeof(capturedStr), "%.3f m3", capturedVolume*0.001);
             int value4X = centerX + padding;
             ctx.u8g2.drawStr(value4X, 64, capturedStr);
 

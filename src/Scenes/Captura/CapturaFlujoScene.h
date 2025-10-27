@@ -42,6 +42,22 @@ public:
         int valueWidth = ctx.u8g2.getStrWidth(flowStr);
         int valueX = (128 - valueWidth) / 2;
         ctx.u8g2.drawStr(valueX, 50, flowStr);
+        
+        static int animCounter = 0;
+        animCounter++;
+        int cycle = (animCounter/4)%3;
+
+        const int TRIANGLE_Y_MID = 44;
+        const int TRIANGLE_HEIGHT = 8;
+        const int TRIANGLE_Y_TOP = TRIANGLE_Y_MID - TRIANGLE_HEIGHT / 2;
+        const int TRIANGLE_Y_BOTTOM = TRIANGLE_Y_MID + TRIANGLE_HEIGHT / 2;
+        const int TRIANGLE_WIDTH = 5;
+        const int TRIANGLE_SPACING = 8;
+        const int TRIANGLE_OFFSET = 3;
+
+        ctx.u8g2.drawTriangle(valueX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_TOP, valueX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_BOTTOM, valueX - TRIANGLE_OFFSET - cycle, TRIANGLE_Y_MID);
+        ctx.u8g2.drawTriangle(valueX + valueWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_TOP, valueX + valueWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_BOTTOM, valueX + valueWidth + TRIANGLE_OFFSET + cycle, TRIANGLE_Y_MID);
+        
         ctx.u8g2.sendBuffer();
     }
 };
