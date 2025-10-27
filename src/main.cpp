@@ -37,7 +37,7 @@ void setup()
   SceneManager::setScene("splash", ctx);
 }
 
-const int targetMs = 16;
+const int targetMs = 50;
 unsigned long int lastFrameMs = 0;
 void loop()
 {

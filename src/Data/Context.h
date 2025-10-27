@@ -17,7 +17,7 @@ enum SDStatus
 
 typedef struct Context
 {
-    static Context* instance;
+    static Context *instance;
     DisplayModel &u8g2;
     bool isDisplayOn = true;
     bool isDisplayReady = false;
@@ -34,6 +34,7 @@ typedef struct Context
     bool isEnd = false;
 
     SDStatus sdStatus = SD_OK;
+    bool isSdReady = false;
 
     const char *eoloDir = "/EOLO";
     const char *logsDir = "/EOLO/logs";
@@ -80,7 +81,7 @@ public:
         setDisplayPower(true);
     }
 
-    static void dateTime(uint16_t* date, uint16_t* time)
+    static void dateTime(uint16_t *date, uint16_t *time)
     {
         DateTime now = Context::instance->components.rtc.now();
         *date = FAT_DATE(now.year(), now.month(), now.day());
@@ -89,16 +90,18 @@ public:
 
     bool initSD()
     {
-
+        if (isSdReady)
+            return true;
         SdFile::dateTimeCallback(dateTime);
 
         if (!SD.begin(SD_CS_PIN))
         {
             Serial.println("Fallo al inicializar SD");
             sdStatus = SD_ERROR;
+            isSdReady = false;
             return false;
         }
-
+        isSdReady = true;
         sdcard_type_t sdType = SD.cardType();
         if (sdType == CARD_NONE)
         {
@@ -174,7 +177,10 @@ public:
 
     void saveSession()
     {
-
+        if (!isSdReady)
+        {
+            initSD();
+        }
         String filename = String(eoloDir) + "/session.txt";
 
         String startStr = session.startDate.timestamp();
@@ -216,6 +222,10 @@ public:
 
     bool loadSession()
     {
+        if (!isSdReady)
+        {
+            initSD();
+        }
         String filename = String(eoloDir) + "/session.txt";
 
         File file = SD.open(filename.c_str(), "r+");
@@ -239,7 +249,7 @@ public:
         session.startDate = loadedStart;
         session.duration = durationStr.toInt();
         session.elapsedTime = 0;
-        
+
         if (session.startDate < components.rtc.now()) // reajusta tiempo solo si la fecha de inicio ya pasó
         {
             session.startDate = components.rtc.now();
@@ -555,5 +565,5 @@ public:
 
 } Context;
 
-inline Context* Context::instance = nullptr;
+inline Context *Context::instance = nullptr;
 #endif
