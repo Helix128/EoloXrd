@@ -13,7 +13,7 @@ public:
     float targetFlow = 5.0f;
     void enter(Context &ctx) override
     {
-
+        ctx.clearSession();
     }
 
     void update(Context &ctx) override

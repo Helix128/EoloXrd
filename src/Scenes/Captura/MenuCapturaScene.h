@@ -84,7 +84,15 @@ public:
 
             ctx.u8g2.setDrawColor(1);
         }
-
+        static unsigned long lastTime = 0;
+        unsigned long currentTime = millis();
+        int animOffset = ((currentTime / 200) % 2) * 2; 
+        
+        if (selectIndex < 3) {
+            ctx.u8g2.drawTriangle(120, 62 - animOffset, 128, 62 - animOffset, 124, 66 - animOffset);
+        } else {
+            ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
+        }
         int scrollHeight = 48 / 12; 
         int scrollY = selectIndex * scrollHeight*2 + 18; 
         ctx.u8g2.drawVLine(0, scrollY, scrollHeight);

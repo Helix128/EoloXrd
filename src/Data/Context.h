@@ -6,7 +6,6 @@
 #include "../Config.h"
 #include "../Drawing/SceneManager.h"
 #include <SD.h>
-#include <SdFat.h>
 
 enum SDStatus
 {
@@ -81,18 +80,20 @@ public:
         setDisplayPower(true);
     }
 
+    /* TODO - cambiar SD.h por SdFat.h para que el tiempo de los logs esté bien
     static void dateTime(uint16_t *date, uint16_t *time)
     {
         DateTime now = Context::instance->components.rtc.now();
         *date = FAT_DATE(now.year(), now.month(), now.day());
         *time = FAT_TIME(now.hour(), now.minute(), now.second());
     }
+    */
 
     bool initSD()
     {
         if (isSdReady)
             return true;
-        SdFile::dateTimeCallback(dateTime);
+        // SdFile::dateTimeCallback(dateTime);
 
         if (!SD.begin(SD_CS_PIN))
         {
