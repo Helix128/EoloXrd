@@ -22,15 +22,15 @@ public:
         {
             DateTime now = ctx.components.rtc.now();
             int nowUnix = now.unixtime();
-            targetMinute = now.minute();
+            targetMinute = now.minute()+1;
             targetHour = now.hour();
             targetDay = 0;
         }
         else
         {
-            DateTime now = DateTime(ctx.session.startDate.unixtime() + 1);
+            DateTime now = DateTime(ctx.session.startDate.unixtime());
             int nowUnix = now.unixtime();
-            targetMinute = now.minute();
+            targetMinute = now.minute()+1;
             targetHour = now.hour();
         }
     }
@@ -40,7 +40,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int delta = ctx.components.input.getEncoderDelta();
+        int delta = ctx.components.input.getEncoderDelta(5);
         if (delta != 0)
         {
             int newMinute = targetMinute + delta;

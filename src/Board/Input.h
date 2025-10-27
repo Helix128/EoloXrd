@@ -41,12 +41,12 @@ public:
     return buttonPressed;
   }
 
-  int getEncoderDelta()
+  int getEncoderDelta(int exponent = 2)
   {
-    int exponent = 3;
     int delta = intPow(encoderDelta, exponent);
-    if(encoderDelta<0&& exponent%2==0){
-        delta = -delta;
+    if (encoderDelta < 0 && exponent % 2 == 0)
+    {
+      delta = -delta;
     }
     return delta;
   }
@@ -122,7 +122,7 @@ private:
 
   const bool FLIP_ENCODER = false; // Poner a true si el encoder va invertido
   const int BUTTON_DEBOUNCE_MS = 100; 
-  const int ENCODER_DEBOUNCE_MS = 100;
+  const int ENCODER_DEBOUNCE_MS = 50;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
 

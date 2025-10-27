@@ -30,7 +30,7 @@ public:
     {
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
-    int delta = ctx.components.input.getEncoderDelta();
+        int delta = ctx.components.input.getEncoderDelta(5);
         if (delta != 0)
         {
             int newMinute = targetMinute + delta;
