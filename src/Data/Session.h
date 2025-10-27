@@ -19,7 +19,7 @@ typedef struct Session{
     bool usePlantower = true;
 
     // Datos de sesión
-    float capturedVolume = 0.0;
+    float capturedVolume = 0.0; // GUARDADO COMO LITROS, EN LAS ESCENAS SE MUESTRA COMO m3 (1m3 = 1000L)
 
 }Session;
 

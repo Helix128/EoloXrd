@@ -26,15 +26,14 @@ public:
             enablePM = !enablePM;
         }
 
-        if(ctx.components.input.isButtonPressed()){
-             
+        if(ctx.components.input.isButtonPressed()){      
             ctx.components.input.resetCounter();
             ctx.session.usePlantower = enablePM;
             ctx.saveSession();
             SceneManager::setScene("wait",ctx);
         }
         
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        ctx.u8g2.setFont(FONT_BOLD);
         char* text = "Usar sensor PM";
         int textWidth = ctx.u8g2.getStrWidth(text);
         int textX = (128 - textWidth) / 2;
@@ -53,11 +52,11 @@ public:
         const int textY = 47;
 
         if (enablePM) {
-            ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+            ctx.u8g2.setFont(FONT_BOLD_S);
             ctx.u8g2.drawBox(leftBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(0);  
         } else {
-            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+            ctx.u8g2.setFont(FONT_REGULAR_S);
             ctx.u8g2.setDrawColor(1);
             ctx.u8g2.drawFrame(leftBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(1);  
@@ -68,12 +67,12 @@ public:
         ctx.u8g2.drawStr(siX, textY, siStr);
 
         if (!enablePM) {
-              ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+              ctx.u8g2.setFont(FONT_BOLD_S);
             ctx.u8g2.setDrawColor(1);
             ctx.u8g2.drawBox(rightBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(0); 
         } else {
-            ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+            ctx.u8g2.setFont(FONT_REGULAR_S);
             ctx.u8g2.setDrawColor(1);
             ctx.u8g2.drawFrame(rightBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(1);  
@@ -83,7 +82,7 @@ public:
         int noX = rightBoxX + (boxWidth - noWidth) / 2;
         ctx.u8g2.drawStr(noX, textY, noStr);
 
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         ctx.u8g2.setDrawColor(1); 
         char* infoStr = "+ consumo de energia";
         int infoWidth = ctx.u8g2.getStrWidth(infoStr);

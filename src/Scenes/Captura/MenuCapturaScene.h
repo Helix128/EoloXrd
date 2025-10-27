@@ -27,11 +27,11 @@ private:
         {"Probar bombas", [](Context &ctx) {
             SceneManager::setScene("captura_bombas", ctx);
         }},
-        {"Ajustar flujo", [](Context &ctx) {
-            SceneManager::setScene("captura_flujo", ctx);
-        }},
         {"Ajustar hora fin", [](Context &ctx) {
             SceneManager::setScene("time_end", ctx);
+        }},
+        {"Ajustar flujo", [](Context &ctx) {
+            SceneManager::setScene("captura_flujo", ctx);
         }},
         {"Usar sensor PM", [](Context &ctx) {
             SceneManager::setScene("plantower_fin", ctx);
@@ -64,7 +64,7 @@ public:
             menuOptions[selectIndex].action(ctx);
         }
 
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        ctx.u8g2.setFont(FONT_BOLD);
 
 
         int offset = selectIndex > 2 ? 3:0;
@@ -77,24 +77,27 @@ public:
             } else {
                 ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.setFont(selectIndex==i?u8g2_font_helvB10_tf:u8g2_font_helvR10_tf);
+            ctx.u8g2.setFont(selectIndex==i?FONT_BOLD:FONT_REGULAR);
             int labelWidth = ctx.u8g2.getStrWidth(menuOptions[i].label);
             int labelX = (128 - labelWidth) / 2;
             ctx.u8g2.drawStr(labelX, 30 + e * 14, menuOptions[i].label);
 
             ctx.u8g2.setDrawColor(1);
         }
+        
+        ctx.u8g2.setDrawColor(1);
         static unsigned long lastTime = 0;
         unsigned long currentTime = millis();
         int animOffset = ((currentTime / 200) % 2) * 2; 
         
         if (selectIndex < 3) {
-            ctx.u8g2.drawTriangle(120, 62 - animOffset, 128, 62 - animOffset, 124, 66 - animOffset);
+            ctx.u8g2.drawTriangle(120, 60 - animOffset, 128, 60 - animOffset, 124, 64 - animOffset);
         } else {
             ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
         }
-        int scrollHeight = 48 / 12; 
-        int scrollY = selectIndex * scrollHeight*2 + 18; 
+
+        int scrollHeight = 48 / 12;
+        int scrollY = selectIndex * scrollHeight * 2 + 18;
         ctx.u8g2.drawVLine(0, scrollY, scrollHeight);
 
         ctx.u8g2.sendBuffer();

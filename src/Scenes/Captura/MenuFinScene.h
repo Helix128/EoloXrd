@@ -42,7 +42,7 @@ public:
             ctx.components.input.resetCounter();
             SceneManager::setScene(menuOptions[selectIndex].scene,ctx);
         }
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        ctx.u8g2.setFont(FONT_BOLD);
         for (int i = 0; i < 2; i++)
         {   
             if(selectIndex==i){
@@ -51,7 +51,7 @@ public:
             } else {
                 ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.setFont(selectIndex==i?u8g2_font_helvB10_tf:u8g2_font_helvR10_tf);
+            ctx.u8g2.setFont(selectIndex==i?FONT_BOLD:FONT_REGULAR);
             int labelWidth = ctx.u8g2.getStrWidth(menuOptions[i].label);
             int labelX = (128 - labelWidth) / 2;
             ctx.u8g2.drawStr(labelX, 30 + i * 14, menuOptions[i].label);

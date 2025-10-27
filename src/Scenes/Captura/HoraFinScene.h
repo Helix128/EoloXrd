@@ -122,13 +122,13 @@ public:
             }
         }
 
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        ctx.u8g2.setFont(FONT_BOLD_L);
         const char* title = isEndTime ? "Hora (fin)" : "Hora (inicio)";
         int titleWidth = ctx.u8g2.getStrWidth(title);
         int titleX = (128 - titleWidth) / 2;
         ctx.u8g2.drawStr(titleX, 30, title);
 
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         char timeBuffer[6];
         sprintf(timeBuffer, "%02d:%02d", targetHour, targetMinute);
         int timeWidth = ctx.u8g2.getStrWidth(timeBuffer);

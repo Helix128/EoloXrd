@@ -12,7 +12,7 @@ public:
     // Header con batería, hora, SD, nombre del dispositivo
     static void displayHeader(Context &ctx)
     {
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
 
         // Tiempo
         DateTime now = ctx.components.rtc.now();
@@ -53,9 +53,9 @@ public:
             ctx.u8g2.drawLine(iconX + iconW - 1 - bevelSize, iconY, iconX, iconY);
         }
 
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(FONT_BOLD_S);
         ctx.u8g2.drawStr(51, 11, "EOLO");
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         // Iconos de baterías 
         ctx.u8g2.drawRFrame(82, 3, 13, 4, 1);
         ctx.u8g2.drawRFrame(82, 8, 13, 4, 1); 

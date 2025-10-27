@@ -34,11 +34,11 @@ public:
             ctx.saveSession();
             SceneManager::setScene("plantower",ctx);
         }
-     ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+     ctx.u8g2.setFont(FONT_BOLD_L);
         int titleWidth = ctx.u8g2.getStrWidth("Flujo objetivo");
         int titleX = (128 - titleWidth) / 2;
         ctx.u8g2.drawStr(titleX, 30, "Flujo objetivo");
-        ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+        ctx.u8g2.setFont(FONT_REGULAR);
         char flowStr[20];
         snprintf(flowStr, sizeof(flowStr), "%.1f L/min", targetFlow);
         int valueWidth = ctx.u8g2.getStrWidth(flowStr);

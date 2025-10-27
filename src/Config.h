@@ -8,7 +8,7 @@
 
 // Modo barebones (para debug sin tener el EOLO completo)
 // simula sensores
-#define BAREBONES false
+#define BAREBONES true
 
 // simula encoder
 #define SERIAL_INPUT false
@@ -36,5 +36,14 @@
 #define MINUTE 60UL
 #define HOUR 3600UL
 #define DAY 86400UL
+
+#define FONT_BOLD u8g2_font_helvB10_tf
+#define FONT_REGULAR u8g2_font_helvR10_tf
+
+#define FONT_BOLD_S u8g2_font_helvB08_tf
+#define FONT_REGULAR_S u8g2_font_helvR08_tf
+
+#define FONT_BOLD_L u8g2_font_helvB12_tf
+#define FONT_REGULAR_L u8g2_font_helvR12_tf
 
 #endif // CONFIG_H

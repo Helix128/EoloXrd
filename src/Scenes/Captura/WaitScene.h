@@ -35,13 +35,13 @@ public:
             return;
         }
         
-        ctx.u8g2.setFont(u8g2_font_helvB08_tf);
+        ctx.u8g2.setFont(FONT_BOLD_S);
         //ctx.u8g2.drawStr(10, 25, "Esperando");
         int labelWidth = ctx.u8g2.getStrWidth("Flujo actual");
         int labelX = (128 - labelWidth) / 2;
         ctx.u8g2.drawStr(labelX, 23, "Flujo actual");
 
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         char flowStr[10];
 
         float flow = ctx.components.flowSensor.flow;
@@ -79,7 +79,7 @@ public:
             secondsLeftRemainder
         );
         // Calculate widths for centering
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        ctx.u8g2.setFont(FONT_BOLD_L);
         int width_start = ctx.u8g2.getStrWidth(timeStr);
         int width_remain = ctx.u8g2.getStrWidth(timeLeftStr);
         int space = 10;
@@ -89,7 +89,7 @@ public:
         int right_time_x = start_x + width_start + space;
 
         // Calculate label positions
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         int width_label_start = ctx.u8g2.getStrWidth("Inicio");
         int width_label_remain = ctx.u8g2.getStrWidth("Restante");
         int left_label_x = left_time_x + (width_start - width_label_start) / 2;
@@ -97,11 +97,11 @@ public:
 
         // Draw labels and times
         ctx.u8g2.drawStr(left_label_x, 46, "Inicio");
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        ctx.u8g2.setFont(FONT_BOLD_L);
         ctx.u8g2.drawStr(left_time_x, 60, timeStr);
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         ctx.u8g2.drawStr(right_label_x, 46, "Restante");
-        ctx.u8g2.setFont(u8g2_font_helvB12_tf);
+        ctx.u8g2.setFont(FONT_BOLD_L);
         ctx.u8g2.drawStr(right_time_x, 60, timeLeftStr);
 
         ctx.u8g2.sendBuffer();

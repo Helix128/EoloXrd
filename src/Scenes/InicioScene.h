@@ -61,7 +61,7 @@ public:
             SceneManager::setScene(availableOptions[selectIndex].scene, ctx);
         }
         
-        ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+        ctx.u8g2.setFont(FONT_REGULAR);
         
         for (int i = 0; i < optionCount; i++)
         {   
@@ -69,10 +69,10 @@ public:
             if(highlight){
                 ctx.u8g2.drawBox(-1, 32 + i * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
-                ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+                ctx.u8g2.setFont(FONT_BOLD);
             } else {
                 ctx.u8g2.setDrawColor(1);
-                ctx.u8g2.setFont(u8g2_font_helvR10_tf);
+                ctx.u8g2.setFont(FONT_REGULAR);
             }
             int textWidth = ctx.u8g2.getStrWidth(availableOptions[i].label);
             int x = (128 / 2) - (textWidth / 2);

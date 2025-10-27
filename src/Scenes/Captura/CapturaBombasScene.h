@@ -21,7 +21,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        ctx.u8g2.setFont(u8g2_font_helvB10_tf);
+        ctx.u8g2.setFont(FONT_BOLD);
         ctx.u8g2.drawStr(10, 35, "Motor 1:");
         ctx.u8g2.drawStr(10, 55, "Motor 2:");
 
@@ -33,7 +33,7 @@ public:
         char pwm2Str[6];
         snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
 
-        ctx.u8g2.setFont(u8g2_font_helvR08_tf);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         ctx.u8g2.drawStr(80, 35, pwm1Str);
         ctx.u8g2.drawStr(80, 55, pwm2Str);
 

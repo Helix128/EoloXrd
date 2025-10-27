@@ -555,7 +555,7 @@ public:
 
             ctx.components.plantower.setPower(ctx.session.usePlantower);
             ctx.components.plantower.readData();
-
+            ctx.session.capturedVolume += (ctx.components.flowSensor.flow / 60.0f) * (ctx.CAPTURE_INTERVAL);
             logData();
 
 #else

@@ -127,7 +127,6 @@ private:
   unsigned long lastButtonMs = 0;
 
   void debounce(){
-
     encoderDelta = 0;
     buttonPressed = false;
     if(rawButton!=prevButtonRaw){
