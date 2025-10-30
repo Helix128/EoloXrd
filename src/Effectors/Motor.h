@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "../Config.h"
 
-#define MAX_PWM 1023
+#define MAX_PWM 8192 
 
 class MotorManager
 {
