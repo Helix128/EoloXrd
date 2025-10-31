@@ -38,6 +38,13 @@ typedef struct Context
     const char *eoloDir = "/EOLO";
     const char *logsDir = "/EOLO/logs";
 
+    // Datos de calibración
+    static const int MAX_CAL_POINTS = 101; 
+    int numCalPoints = 0;
+    float calMotorPcts[MAX_CAL_POINTS];
+    float calFlows[MAX_CAL_POINTS];
+    bool isCalibrationLoaded = false;
+
 public:
     Context(DisplayModel &display) : u8g2(display) {}
 
@@ -57,6 +64,7 @@ public:
         components.begin();
 
         initSD();
+        loadCalibration();
         Serial.println("Contexto inicializado");
     }
 
@@ -318,6 +326,188 @@ public:
         }
     }
 
+    void saveCalibration()
+    {
+        if (!isSdReady)
+        {
+            initSD();
+        }
+        String filename = String(eoloDir) + "/calibracion.csv";
+
+        File file = SD.open(filename.c_str(), "w+");
+        if (!file)
+        {
+            Serial.println("No se pudo abrir el archivo de calibración para escribir");
+            return;
+        }
+
+        file.println("motor,flujo");
+        for (int i = 0; i < numCalPoints; i++)
+        {
+            file.print(calMotorPcts[i], 2);
+            file.print(",");
+            file.println(calFlows[i], 2);
+        }
+        file.close();
+
+        Serial.println("Calibración guardada en SD:");
+        Serial.print(" Número de puntos: ");
+        Serial.println(numCalPoints);
+        Serial.print(" Rango de flujo: ");
+        Serial.print(calFlows[0], 2);
+        Serial.print(" - ");
+        Serial.print(calFlows[numCalPoints - 1], 2);
+        Serial.println(" L/min");
+    }
+
+    bool loadCalibration()
+    {
+        if (!isSdReady)
+        {
+            initSD();
+        }
+        String filename = String(eoloDir) + "/calibracion.csv";
+
+        if (!SD.exists(filename.c_str()))
+        {
+            Serial.println("Archivo de calibración no existe");
+            isCalibrationLoaded = false;
+            runCalibration();
+            return false;
+        }
+
+        File file = SD.open(filename.c_str(), "r+");
+        if (!file)
+        {
+            Serial.println("No se pudo abrir el archivo de calibración para leer");
+            isCalibrationLoaded = false;
+            runCalibration();
+            return false;
+        }
+
+        // Omitir header
+        file.readStringUntil('\n');
+
+        numCalPoints = 0;
+        while (file.available() && numCalPoints < MAX_CAL_POINTS)
+        {
+            String line = file.readStringUntil('\n');
+            line.trim();
+            if (line.length() == 0)
+                break;
+
+            int commaIndex = line.indexOf(',');
+            if (commaIndex == -1)
+                continue;
+
+            String motorStr = line.substring(0, commaIndex);
+            String flowStr = line.substring(commaIndex + 1);
+
+            calMotorPcts[numCalPoints] = motorStr.toFloat();
+            calFlows[numCalPoints] = flowStr.toFloat();
+            numCalPoints++;
+        }
+        file.close();
+
+            isCalibrationLoaded = true;
+            Serial.println("Calibración cargada desde SD:");
+            Serial.print(" Número de puntos: ");
+            Serial.println(numCalPoints);
+            if (numCalPoints > 0)
+            {
+                Serial.print(" Rango de flujo: ");
+                Serial.print(calFlows[0], 2);
+                Serial.print(" - ");
+                Serial.print(calFlows[numCalPoints - 1], 2);
+                Serial.println(" L/min");
+                
+                // Verificar si el rango es inválido (0 - 0)
+                if (calFlows[0] == 0 && calFlows[numCalPoints - 1] == 0)
+                {
+                Serial.println("Calibración inválida detectada (rango 0-0). Ejecutando nueva calibración...");
+                isCalibrationLoaded = false;
+                runCalibration();
+                return false;
+                }
+            }
+
+        return true;
+    }
+
+    void runCalibration()
+    {
+        Serial.println("=== Iniciando calibración Motor-Flujo ===");
+        Serial.println("ADVERTENCIA: Este proceso tardará aproximadamente 2 minutos");
+
+        numCalPoints = 0;
+        float currentPct = 0;
+        float lastFlow = -1;
+
+        while (currentPct <= 100 && numCalPoints < MAX_CAL_POINTS)
+        {
+            components.motor.setPowerPct(currentPct);
+            delay(2500); // Estabilizar motores
+
+            components.flowSensor.readData();
+            float measuredFlow = components.flowSensor.flow;
+
+            Serial.print("Motor ");
+            Serial.print(currentPct, 1);
+            Serial.print("% -> Flujo medido: ");
+            Serial.print(measuredFlow, 2);
+            Serial.println(" L/min");
+
+            calMotorPcts[numCalPoints] = currentPct;
+            calFlows[numCalPoints] = measuredFlow;
+            numCalPoints++;
+
+            lastFlow = measuredFlow;
+            currentPct += 2.0f; // Incrementar 1%
+        }
+
+        components.motor.setPowerPct(0);
+
+        Serial.println("Calibración completa.");
+        Serial.print("Puntos capturados: ");
+        Serial.println(numCalPoints);
+
+        saveCalibration();
+        isCalibrationLoaded = true;
+    }
+
+    float getTargetMotorPct(float targetFlow)
+    {
+        if (!isCalibrationLoaded || numCalPoints == 0)
+        {
+            // Fallback
+            Serial.println("Advertencia: No hay calibración cargada, usando mapeo lineal");
+            return constrain(targetFlow * 12.5f, 0.0f, 100.0f); // Estimado aproximado: 8 L/min a 100%
+        }
+
+        // Si el objetivo está por debajo del flujo calibrado mínimo
+        if (targetFlow <= calFlows[0])
+            return calMotorPcts[0];
+
+        // Buscar el rango calibrado
+        for (int i = 0; i < numCalPoints - 1; i++)
+        {
+            if (targetFlow >= calFlows[i] && targetFlow <= calFlows[i + 1])
+            {
+                // Interpolación lineal
+                float flowRange = calFlows[i + 1] - calFlows[i];
+                if (flowRange == 0)
+                    return calMotorPcts[i];
+
+                float motorRange = calMotorPcts[i + 1] - calMotorPcts[i];
+                float flowDelta = targetFlow - calFlows[i];
+                return calMotorPcts[i] + (flowDelta / flowRange) * motorRange;
+            }
+        }
+
+        // Si el objetivo está por encima del flujo calibrado máximo
+        return calMotorPcts[numCalPoints - 1];
+    }
+
     void logData()
     {
         if (sdStatus == SD_ERROR)
@@ -510,10 +700,20 @@ public:
 
     void updateMotors()
     {
-        float currentFlow = components.flowSensor.flow;
-        float targetFlow = session.targetFlow;
-        float error = targetFlow - currentFlow;
-        components.motor.setPowerPct(components.motor.getPowerPct() + error * 0.1f);
+        if (isCalibrationLoaded && numCalPoints > 0)
+        {
+            // Use calibration-based control
+            float targetMotorPct = getTargetMotorPct(session.targetFlow);
+            components.motor.setPowerPct(targetMotorPct);
+        }
+        else
+        {
+            // Fallback to PID-like control
+            float currentFlow = components.flowSensor.flow;
+            float targetFlow = session.targetFlow;
+            float error = targetFlow - currentFlow;
+            components.motor.setPowerPct(components.motor.getPowerPct() + error * 0.1f);
+        }
     }
 
     void updateCapture()

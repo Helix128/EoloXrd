@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "../Config.h"
 
-#define MAX_PWM 8192 
+#define MAX_PWM 4095
 
 class MotorManager
 {
@@ -12,12 +12,11 @@ public:
   static constexpr int motors[2] = {26, 27};
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static constexpr int ledcChannels[2] = {0, 1};
-  static const int freq = 1000;
-  static const int resolution = 13;
+  static const int freq = 400;
+  static const int resolution = 12;
   int pwmValues[sizeof(motors) / sizeof(motors[0])];
   bool isReady = false;
 
-  // Constructor
   MotorManager()
   {
     for (int i = 0; i < motorCount; i++)
@@ -28,7 +27,6 @@ public:
 
   ~MotorManager() {}
 
-  // Inicializa pines
   void begin()
   {
     if (isReady)
@@ -64,7 +62,6 @@ public:
     setPowerPct(0);
   }
 
-  // Asigna PWM total; llena motores en orden
   void setPWM(int pwm)
   {
     if (pwm > motorCount * MAX_PWM)
@@ -92,7 +89,6 @@ public:
     }
   }
 
-  // Recibe porcentaje (0-100)
   void setPowerPct(int powerPct)
   {
     if (powerPct > 100)

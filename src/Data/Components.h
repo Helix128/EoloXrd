@@ -24,9 +24,9 @@ typedef struct Components{
   void begin(){
     input.begin();
     motor.begin();
-    motor.setPowerPct(50);
+    motor.setPowerPct(100); // ENCENDER MOTORES AL MAXIMO
     flowSensor.begin();
-    motor.setPowerPct(0);
+    motor.setPowerPct(0); // APAGAR MOTORES
     bme.begin();
     plantower.begin();
     rtc.begin();

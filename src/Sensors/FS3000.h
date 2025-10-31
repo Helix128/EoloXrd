@@ -9,7 +9,8 @@ public:
     FS3K() {}
 
     float velocity = 0.0; // m/s
-    float flow = 0.0;     // L/min
+    float flow = 0.0;     // L/min (promedio)
+    float currentFlow = 0.0; // L/min (valor más reciente)
     bool isReady = false;    
     
     void begin()
@@ -51,25 +52,44 @@ public:
             readData();
             Serial.print("Velocidad: ");
             Serial.print(velocity);
-            Serial.print(" m/s, Flujo: ");
+            Serial.print(" m/s, Flujo actual: ");
+            Serial.print(currentFlow);
+            Serial.print(" L/min, Flujo promedio: ");
             Serial.print(flow);
             Serial.println(" L/min");
             delay(500);
         }
     }
+    
     void readData()
     {      
         if(!isReady)
         {
             velocity = -1;
             flow = -1;
+            currentFlow = -1;
             return;
         }
         velocity = sensor.readMetersPerSecond();
-        flow = getFlow(velocity);
+        currentFlow = getFlow(velocity);
+        
+        // Guardar en el buffer circular
+        flowBuffer[bufferIndex] = currentFlow;
+        bufferIndex = (bufferIndex + 1) % MAX_AVG_VALUES;
+        
+        // Calcular promedio
+        float sum = 0.0;
+        for (int i = 0; i < MAX_AVG_VALUES; i++) {
+            sum += flowBuffer[i];
+        }
+        flow = sum / MAX_AVG_VALUES;
     }
 
 private:
+    static const int MAX_AVG_VALUES = 16;
+    float flowBuffer[MAX_AVG_VALUES] = {0};
+    int bufferIndex = 0;
+    
     float getFlow(float speed) const
     {
         static const float velocityPoints[] = {0.06, 0.34, 0.7, 1.06, 1.42, 1.74, 2.02, 2.30, 2.60, 2.80, 3.00, 3.33};
