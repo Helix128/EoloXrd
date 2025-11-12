@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "../Config.h"
 
-#define MAX_PWM 4095
+#define MAX_PWM 2047 // 11-bit 
 
 class MotorManager
 {
@@ -13,7 +13,7 @@ public:
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static constexpr int ledcChannels[2] = {0, 1};
   static const int freq = 400;
-  static const int resolution = 12;
+  static const int resolution = 11;
   int pwmValues[sizeof(motors) / sizeof(motors[0])];
   bool isReady = false;
 

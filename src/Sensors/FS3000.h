@@ -37,6 +37,18 @@ public:
             }
             
             sensor.setRange(AIRFLOW_RANGE_15_MPS);
+#if 1
+            // Inicializar buffer de promedio y tomar lecturas para estabilizar
+            for (int i = 0; i < MAX_AVG_VALUES; i++) {
+                flowBuffer[i] = 0.0f;
+            }
+            bufferIndex = 0;
+            // Tomar varias lecturas rápidas para llenar el buffer
+            for (int i = 0; i < MAX_AVG_VALUES * 2; i++) {
+                readData();
+                delay(50);
+            }
+#endif
             isReady = true;
 #if CHECK_SENSORS
             testSensor();

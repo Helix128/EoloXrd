@@ -4,6 +4,7 @@
 #include "SceneManager.h"
 #include "../Scenes/LogoScene.h"
 #include "../Scenes/InicioScene.h"
+#include "../Scenes/Setup/CalibrationScene.h"
 #include "../Scenes/Setup/TimeScene.h"
 #include "../Scenes/Setup/FlujoScene.h"
 #include "../Scenes/Setup/InstantFlujoScene.h"
@@ -25,6 +26,7 @@ void registerAllScenes()
 { 
     SceneManager::addScene("splash", new LogoScene());
     SceneManager::addScene("inicio", new InicioScene());
+    SceneManager::addScene("calibration", new CalibrationScene());
     SceneManager::addScene("flujo", new FlujoScene());
     SceneManager::addScene("flujo_now", new InstantFlujoScene());
     SceneManager::addScene("tiempo", new TimeScene());

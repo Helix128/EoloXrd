@@ -271,7 +271,8 @@ public:
             Serial.println("s");
         }
 
-        session.targetFlow = targetFlowStr.toInt();
+            // Use toFloat() to preserve fractional flow values (e.g., 5.2 L/min)
+            session.targetFlow = targetFlowStr.toFloat();
         session.capturedVolume = capturedVolumeStr.toFloat();
         session.usePlantower = usePlantowerStr == "1";
 
@@ -333,13 +334,20 @@ public:
             initSD();
         }
         String filename = String(eoloDir) + "/calibracion.csv";
+        if (SD.exists(filename.c_str()))
+        {
+            SD.remove(filename.c_str());
+            delay(5); 
+        }
 
         File file = SD.open(filename.c_str(), "w+");
         if (!file)
         {
-            Serial.println("No se pudo abrir el archivo de calibración para escribir");
+            Serial.println("No se pudo crear el archivo de calibración para escribir");
             return;
         }
+
+
 
         file.println("motor,flujo");
         for (int i = 0; i < numCalPoints; i++)
@@ -409,6 +417,27 @@ public:
         }
         file.close();
 
+            // Ordenar los puntos por flujo ascendente por si el CSV estaba desordenado
+            if (numCalPoints > 1)
+            {
+                for (int i = 0; i < numCalPoints - 1; i++)
+                {
+                    for (int j = 0; j < numCalPoints - i - 1; j++)
+                    {
+                        if (calFlows[j] > calFlows[j + 1])
+                        {
+                            float tf = calFlows[j];
+                            calFlows[j] = calFlows[j + 1];
+                            calFlows[j + 1] = tf;
+
+                            float tm = calMotorPcts[j];
+                            calMotorPcts[j] = calMotorPcts[j + 1];
+                            calMotorPcts[j + 1] = tm;
+                        }
+                    }
+                }
+            }
+
             isCalibrationLoaded = true;
             Serial.println("Calibración cargada desde SD:");
             Serial.print(" Número de puntos: ");
@@ -437,42 +466,221 @@ public:
     void runCalibration()
     {
         Serial.println("=== Iniciando calibración Motor-Flujo ===");
-        Serial.println("ADVERTENCIA: Este proceso tardará aproximadamente 2 minutos");
+        Serial.println("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
 
+        // Inicializar
         numCalPoints = 0;
-        float currentPct = 0;
-        float lastFlow = -1;
+        float currentPct = 0.0f;
 
-        while (currentPct <= 100 && numCalPoints < MAX_CAL_POINTS)
+        // Asegurar estabilización del sensor antes de empezar
+        components.motor.setPowerPct(0);
+        for (int i = 0; i < 20; i++) {
+            components.flowSensor.readData();
+            delay(50);
+        }
+
+        const int samples = 5; // número de samples por punto de calibración
+
+        while (currentPct <= 100.0f && numCalPoints < MAX_CAL_POINTS)
         {
             components.motor.setPowerPct(currentPct);
-            delay(2500); // Estabilizar motores
+            // dar tiempo para estabilizar el caudal al nuevo setpoint
+            delay(1200);
 
-            components.flowSensor.readData();
-            float measuredFlow = components.flowSensor.flow;
+            // promediar varias lecturas para reducir ruido
+            float sumFlow = 0.0f;
+            for (int s = 0; s < samples; s++)
+            {
+                components.flowSensor.readData();
+                sumFlow += components.flowSensor.flow;
+                delay(150);
+            }
+            float measuredFlow = sumFlow / samples;
 
             Serial.print("Motor ");
             Serial.print(currentPct, 1);
-            Serial.print("% -> Flujo medido: ");
-            Serial.print(measuredFlow, 2);
+            Serial.print("% -> Flujo medido (prom): ");
+            Serial.print(measuredFlow, 3);
             Serial.println(" L/min");
 
             calMotorPcts[numCalPoints] = currentPct;
             calFlows[numCalPoints] = measuredFlow;
             numCalPoints++;
 
-            lastFlow = measuredFlow;
-            currentPct += 2.0f; // Incrementar 1%
+            currentPct += 1.0f; // Incrementar 1%
         }
 
         components.motor.setPowerPct(0);
 
-        Serial.println("Calibración completa.");
+        // Si no se capturaron suficientes puntos, abortar y mantener no cargada
+        if (numCalPoints < 2)
+        {
+            Serial.println("ERROR: Pocos puntos de calibración capturados. Repetir calibración.");
+            isCalibrationLoaded = false;
+            return;
+        }
+
+        // Ordenar los puntos por flujo ascendente (simple bubble sort por robustez)
+        Serial.println("Ordenando puntos de calibración por flujo...");
+        for (int i = 0; i < numCalPoints - 1; i++)
+        {
+            for (int j = 0; j < numCalPoints - i - 1; j++)
+            {
+                if (calFlows[j] > calFlows[j + 1])
+                {
+                    float tf = calFlows[j];
+                    calFlows[j] = calFlows[j + 1];
+                    calFlows[j + 1] = tf;
+
+                    float tm = calMotorPcts[j];
+                    calMotorPcts[j] = calMotorPcts[j + 1];
+                    calMotorPcts[j + 1] = tm;
+                }
+            }
+        }
+
+        Serial.println("Calibración completa y ordenada.");
         Serial.print("Puntos capturados: ");
         Serial.println(numCalPoints);
 
         saveCalibration();
         isCalibrationLoaded = true;
+    }
+    
+    void testCalibration()
+    {
+        Context &ctx = *this;
+
+        Serial.println("\n========================================");
+        Serial.println("DIAGNÓSTICO DE CALIBRACIÓN");
+        Serial.println("========================================");
+        
+        if(!ctx.isCalibrationLoaded || ctx.numCalPoints == 0)
+        {
+            Serial.println("ERROR: No hay calibración cargada!");
+            delay(3000);
+            return;
+        }
+        
+        Serial.print("Puntos de calibración: ");
+        Serial.println(ctx.numCalPoints);
+        Serial.println("\nTabla completa Motor% -> Flujo:");
+        Serial.println("Motor%  | Flujo(L/min)");
+        Serial.println("--------+-------------");
+        for(int i = 0; i < ctx.numCalPoints; i++)
+        {
+            Serial.print(ctx.calMotorPcts[i], 1);
+            Serial.print("%");
+            if(ctx.calMotorPcts[i] < 10) Serial.print("  ");
+            else if(ctx.calMotorPcts[i] < 100) Serial.print(" ");
+            Serial.print("     | ");
+            Serial.println(ctx.calFlows[i], 2);
+        }
+        
+        Serial.println("\n========================================");
+        Serial.println("PRUEBA DE INTERPOLACIÓN");
+        Serial.println("========================================");
+        
+        // Probar todo el rango de flujo calibrado
+        float minFlow = ctx.calFlows[0];
+        float maxFlow = ctx.calFlows[ctx.numCalPoints - 1];
+        int numTests = 10;
+        float step = (maxFlow - minFlow) / (numTests - 1);
+
+        Serial.println("Flujo Obj. | Motor% Calc. | Esperado");
+        Serial.println("-----------+--------------+---------");
+        for(int i = 0; i < numTests; i++)
+        {
+            float targetFlow = minFlow + i * step;
+            float calculatedPct = ctx.getTargetMotorPct(targetFlow);
+            
+            Serial.print(targetFlow, 2);
+            Serial.print(" L/min");
+            if(targetFlow < 10) Serial.print("  ");
+            Serial.print(" | ");
+            Serial.print(calculatedPct, 1);
+            Serial.print("%");
+            if(calculatedPct < 10) Serial.print("  ");
+            else if(calculatedPct < 100) Serial.print(" ");
+            Serial.print("       | ");
+            
+            // Buscar en la tabla el motor% esperado
+            bool found = false;
+            for(int j = 0; j < ctx.numCalPoints - 1; j++)
+            {
+                if(targetFlow >= ctx.calFlows[j] && targetFlow <= ctx.calFlows[j+1])
+                {
+                    float ratio = (targetFlow - ctx.calFlows[j]) / (ctx.calFlows[j+1] - ctx.calFlows[j]);
+                    float expectedPct = ctx.calMotorPcts[j] + ratio * (ctx.calMotorPcts[j+1] - ctx.calMotorPcts[j]);
+                    Serial.print(expectedPct, 1);
+                    Serial.print("%");
+                    found = true;
+                    break;
+                }
+            }
+            if(!found) Serial.print("fuera rango");
+            Serial.println();
+        }
+        
+        Serial.println("\n========================================");
+        Serial.println("PRUEBA EN TIEMPO REAL");
+        Serial.println("========================================");
+        Serial.println("Probando todo el rango de flujo calibrado...");
+
+        for(int i = 0; i < numTests; i++)
+        {
+            float targetFlow = minFlow + i * step;
+            float calculatedPct = ctx.getTargetMotorPct(targetFlow);
+
+            Serial.print("\nAplicando motor al ");
+            Serial.print(calculatedPct, 1);
+            Serial.print("% para ");
+            Serial.print(targetFlow, 2);
+            Serial.println(" L/min");
+
+            ctx.components.motor.setPowerPct(calculatedPct);
+
+            // Limpiar buffer del sensor
+            for(int j = 0; j < 20; j++)
+            {
+                ctx.components.flowSensor.readData();
+                delay(100);
+            }
+
+            Serial.println("Tiempo | Flujo Real | Diferencia");
+            Serial.println("-------+------------+-----------");
+            for(int t = 0; t < 5; t++)
+            {
+                ctx.components.flowSensor.readData();
+                float realFlow = ctx.components.flowSensor.flow;
+                float diff = realFlow - targetFlow;
+                
+                Serial.print(t);
+                Serial.print("s     | ");
+                Serial.print(realFlow, 2);
+                Serial.print(" L/min | ");
+                if(diff >= 0) Serial.print("+");
+                Serial.print(diff, 2);
+                Serial.println(" L/min");
+                
+                delay(1000);
+            }
+        }
+        
+        ctx.components.motor.setPowerPct(0);
+        
+        Serial.println("\n========================================");
+        Serial.println("Diagnóstico completado");
+        Serial.println("Presiona el botón para volver");
+        Serial.println("========================================\n");
+        
+        // Esperar a que se presione el botón
+        while(!ctx.components.input.isButtonPressed())
+        {
+            ctx.components.input.poll();
+            delay(100);
+        }
+        ctx.components.input.resetCounter();
     }
 
     float getTargetMotorPct(float targetFlow)
@@ -488,23 +696,33 @@ public:
         if (targetFlow <= calFlows[0])
             return calMotorPcts[0];
 
-        // Buscar el rango calibrado
+        // Si el objetivo está por encima del flujo calibrado máximo
+        if (targetFlow >= calFlows[numCalPoints - 1])
+            return calMotorPcts[numCalPoints - 1];
+
+        // Buscar el rango calibrado e interpolar
         for (int i = 0; i < numCalPoints - 1; i++)
         {
-            if (targetFlow >= calFlows[i] && targetFlow <= calFlows[i + 1])
-            {
-                // Interpolación lineal
-                float flowRange = calFlows[i + 1] - calFlows[i];
-                if (flowRange == 0)
-                    return calMotorPcts[i];
+            float f0 = calFlows[i];
+            float f1 = calFlows[i + 1];
+            float m0 = calMotorPcts[i];
+            float m1 = calMotorPcts[i + 1];
 
-                float motorRange = calMotorPcts[i + 1] - calMotorPcts[i];
-                float flowDelta = targetFlow - calFlows[i];
-                return calMotorPcts[i] + (flowDelta / flowRange) * motorRange;
-            }
+                if (targetFlow >= f0 && targetFlow <= f1)
+                {
+                // Interpolación lineal entre puntos (proteger división por cero)
+                float denom = (f1 - f0);
+                if (fabs(denom) < 1e-6f)
+                {
+                    // puntos de flujo idénticos, devolver promedio de potencias
+                    return (m0 + m1) / 2.0f;
+                }
+                float t = (targetFlow - f0) / denom;
+                return m0 + t * (m1 - m0);
+                }
         }
 
-        // Si el objetivo está por encima del flujo calibrado máximo
+        // Si no se encuentra, devolver el último valor
         return calMotorPcts[numCalPoints - 1];
     }
 
@@ -682,8 +900,9 @@ public:
     {
         isCapturing = false;
         isEnd = true;
-
+        
         Serial.println("Captura finalizada.");
+        components.motor.setPowerPct(0);
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
         enableDisplay();
@@ -694,17 +913,52 @@ public:
         isCapturing = false;
         isPaused = false;
         session = Session();
+        components.motor.setPowerPct(0);
+        components.input.resetCounter();
         session.elapsedTime = 0;
         Serial.println("Estado de captura reiniciado.");
     }
 
     void updateMotors()
     {
+        static float lastTargetFlow = -1.0f;
+        static float lastAppliedPct = -1.0f;
+
         if (isCalibrationLoaded && numCalPoints > 0)
         {
-            // Use calibration-based control
+            // Use calibration-based control (suavizado/rampa)
             float targetMotorPct = getTargetMotorPct(session.targetFlow);
-            components.motor.setPowerPct(targetMotorPct);
+
+            // Inicializar lastAppliedPct con el valor actual si es la primera vez
+            if (lastAppliedPct < 0.0f)
+                lastAppliedPct = (float)components.motor.getPowerPct();
+
+            // Print cuando cambia el objetivo para diagnóstico
+            if (lastTargetFlow != session.targetFlow)
+            {
+                Serial.print("Flujo objetivo: ");
+                Serial.print(session.targetFlow, 2);
+                Serial.print(" L/min -> Motor calculado: ");
+                Serial.print(targetMotorPct, 2);
+                Serial.println("%");
+                lastTargetFlow = session.targetFlow;
+            }
+
+            // Aplicar rampa para evitar cambios bruscos (max 2% por ciclo)
+            float delta = targetMotorPct - lastAppliedPct;
+            const float maxStep = 2.0f; // % por ciclo
+            if (fabs(delta) > maxStep)
+            {
+                lastAppliedPct += (delta > 0.0f) ? maxStep : -maxStep;
+            }
+            else
+            {
+                lastAppliedPct = targetMotorPct;
+            }
+
+            // Asegurar rango
+            lastAppliedPct = constrain(lastAppliedPct, 0.0f, 100.0f);
+            components.motor.setPowerPct(lastAppliedPct);
         }
         else
         {
@@ -712,7 +966,9 @@ public:
             float currentFlow = components.flowSensor.flow;
             float targetFlow = session.targetFlow;
             float error = targetFlow - currentFlow;
-            components.motor.setPowerPct(components.motor.getPowerPct() + error * 0.1f);
+            float newPct = (float)components.motor.getPowerPct() + error * 0.1f;
+            newPct = constrain(newPct, 0.0f, 100.0f);
+            components.motor.setPowerPct(newPct);
         }
     }
 
