@@ -1,10 +1,6 @@
 // -- EOLO --
 // Centro de Investigación en Tecnologías para la Sociedad (C+)
-// Universidad del Desarrollo - Concepción
-// https://cmas.udd.cl/
-
-// Repositorio de Github
-// https://github.com/Helix128/EoloXrd
+// Universidad del Desarrollo
 
 // Librerías para display y comunicación I2C
 #include <U8g2lib.h>
