@@ -13,8 +13,11 @@
 typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
   MotorManager motor; // Control de motor
-  // AFM07 flowSensor;    // Sensor de flujo
-  FS3K flowSensor;     // Sensor de velocidad de aire
+  #ifdef EOLO_GRANDE
+    AFM07 flowSensor;    // Sensor de flujo
+  #else
+    FS3K flowSensor;     // Sensor de velocidad de aire
+  #endif
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
@@ -24,13 +27,14 @@ typedef struct Components{
   void begin(){
     input.begin();
     motor.begin();
-    motor.setPowerPct(100); // ENCENDER MOTORES AL MAXIMO
+   // motor.setPowerPct(100); // ENCENDER MOTORES AL MAXIMO
     flowSensor.begin();
-    motor.setPowerPct(0); // APAGAR MOTORES
+   // motor.setPowerPct(0); // APAGAR MOTORES
     bme.begin();
     plantower.begin();
     rtc.begin();
 
+    battery.begin();
     int batteryLevel = battery.getLevel();
     float batteryPct = battery.getPct();
     Serial.print("Nivel de batería: ");
@@ -38,7 +42,6 @@ typedef struct Components{
     Serial.print(" (");
     Serial.print(batteryPct);
     Serial.println("%)");
-
     Serial.println("Inicialización de componentes completa");
     
   }

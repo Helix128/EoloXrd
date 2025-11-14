@@ -39,7 +39,7 @@ typedef struct Context
     const char *logsDir = "/EOLO/logs";
 
     // Datos de calibración
-    static const int MAX_CAL_POINTS = 101; 
+    static const int MAX_CAL_POINTS = 200;
     int numCalPoints = 0;
     float calMotorPcts[MAX_CAL_POINTS];
     float calFlows[MAX_CAL_POINTS];
@@ -51,6 +51,20 @@ public:
     void begin()
     {
         instance = this;
+
+        bool grande = false;
+        #ifdef EOLO_GRANDE
+            grande = true;
+        #endif
+        Serial.print("EOLO");
+        if (grande)
+        {
+            Serial.println(" (grande)");
+        }
+        else
+        {
+            Serial.println(" (chico)");
+        }
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
         if (!isDisplayReady)
@@ -374,13 +388,16 @@ public:
         {
             initSD();
         }
+
+        if(!isSdReady){ // si tras reintentar el initSD sigue sin estar lista, se asume un fallo y no se carga la calib.
+            return false;
+        }
         String filename = String(eoloDir) + "/calibracion.csv";
 
         if (!SD.exists(filename.c_str()))
         {
             Serial.println("Archivo de calibración no existe");
             isCalibrationLoaded = false;
-            runCalibration();
             return false;
         }
 
@@ -389,7 +406,6 @@ public:
         {
             Serial.println("No se pudo abrir el archivo de calibración para leer");
             isCalibrationLoaded = false;
-            runCalibration();
             return false;
         }
 
@@ -455,96 +471,11 @@ public:
                 {
                 Serial.println("Calibración inválida detectada (rango 0-0). Ejecutando nueva calibración...");
                 isCalibrationLoaded = false;
-                runCalibration();
                 return false;
                 }
             }
 
         return true;
-    }
-
-    void runCalibration()
-    {
-        Serial.println("=== Iniciando calibración Motor-Flujo ===");
-        Serial.println("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
-
-        // Inicializar
-        numCalPoints = 0;
-        float currentPct = 0.0f;
-
-        // Asegurar estabilización del sensor antes de empezar
-        components.motor.setPowerPct(0);
-        for (int i = 0; i < 20; i++) {
-            components.flowSensor.readData();
-            delay(50);
-        }
-
-        const int samples = 5; // número de samples por punto de calibración
-
-        while (currentPct <= 100.0f && numCalPoints < MAX_CAL_POINTS)
-        {
-            components.motor.setPowerPct(currentPct);
-            // dar tiempo para estabilizar el caudal al nuevo setpoint
-            delay(1200);
-
-            // promediar varias lecturas para reducir ruido
-            float sumFlow = 0.0f;
-            for (int s = 0; s < samples; s++)
-            {
-                components.flowSensor.readData();
-                sumFlow += components.flowSensor.flow;
-                delay(150);
-            }
-            float measuredFlow = sumFlow / samples;
-
-            Serial.print("Motor ");
-            Serial.print(currentPct, 1);
-            Serial.print("% -> Flujo medido (prom): ");
-            Serial.print(measuredFlow, 3);
-            Serial.println(" L/min");
-
-            calMotorPcts[numCalPoints] = currentPct;
-            calFlows[numCalPoints] = measuredFlow;
-            numCalPoints++;
-
-            currentPct += 1.0f; // Incrementar 1%
-        }
-
-        components.motor.setPowerPct(0);
-
-        // Si no se capturaron suficientes puntos, abortar y mantener no cargada
-        if (numCalPoints < 2)
-        {
-            Serial.println("ERROR: Pocos puntos de calibración capturados. Repetir calibración.");
-            isCalibrationLoaded = false;
-            return;
-        }
-
-        // Ordenar los puntos por flujo ascendente (simple bubble sort por robustez)
-        Serial.println("Ordenando puntos de calibración por flujo...");
-        for (int i = 0; i < numCalPoints - 1; i++)
-        {
-            for (int j = 0; j < numCalPoints - i - 1; j++)
-            {
-                if (calFlows[j] > calFlows[j + 1])
-                {
-                    float tf = calFlows[j];
-                    calFlows[j] = calFlows[j + 1];
-                    calFlows[j + 1] = tf;
-
-                    float tm = calMotorPcts[j];
-                    calMotorPcts[j] = calMotorPcts[j + 1];
-                    calMotorPcts[j + 1] = tm;
-                }
-            }
-        }
-
-        Serial.println("Calibración completa y ordenada.");
-        Serial.print("Puntos capturados: ");
-        Serial.println(numCalPoints);
-
-        saveCalibration();
-        isCalibrationLoaded = true;
     }
     
     void testCalibration()

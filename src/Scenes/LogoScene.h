@@ -43,6 +43,14 @@ public:
         return val;
     }
 
+    // Nueva función: smootherstep para suavizar t en [0,1] usando 6t^5 - 15t^4 + 10t^3
+    float smootherstep(float t)
+    {
+        t = constrain(t, 0.0f, 1.0f);
+        // 6t^5 - 15t^4 + 10t^3
+        return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+    }
+
     void drawAnimatedFill(Context &ctx, float t_norm)
     {
         float t = constrain(t_norm, 0.0f, 1.0f);
@@ -70,13 +78,42 @@ public:
         ctx.u8g2.setDrawColor(1);
     }
 
-    void drawFrame(Context &ctx, int xPos, float t_dither_norm)
+    void drawFrame(Context &ctx, int xPos, float t_dither_norm, float t_layout_norm)
     {
         ctx.u8g2.clearBuffer();
 
         ctx.u8g2.setBitmapMode(1);
-        ctx.u8g2.drawXBM((int)xPos, 0, 128, 64, cmas);
-        ctx.u8g2.drawXBM(64 - (int)xPos, 0, 128, 64, cmas);
+        ctx.u8g2.drawXBM((int)xPos - 34, 0, 128, 64, cmas);
+        ctx.u8g2.drawXBM(30 - (int)xPos, 0, 128, 64, cmas);
+
+        // Posiciones Y finales
+        static const int FINAL_Y_TITLE = 30;
+        static const int FINAL_Y_SUB1 = 45;
+        static const int FINAL_Y_SUB2 = 55;
+        static const int CENTER_Y = 32;
+        
+        int yTitle = (int)(CENTER_Y + (FINAL_Y_TITLE - CENTER_Y));
+        int ySub1 = (int)(CENTER_Y + (FINAL_Y_SUB1 - CENTER_Y));
+        int ySub2 = (int)(CENTER_Y + (FINAL_Y_SUB2 - CENTER_Y));
+
+        char* title = "C+";
+        char* subtitle1 = "Universidad";
+        char* subtitle2 = "del Desarrollo";
+        ctx.u8g2.setFont(u8g2_font_helvB24_tf);
+        ctx.u8g2.drawStr(64 - xPos + 32, yTitle, title);
+        ctx.u8g2.setFont(FONT_REGULAR_S);
+        ctx.u8g2.drawStr(64 - xPos + 32+32*(1-t_layout_norm), ySub1, subtitle1);
+        ctx.u8g2.drawStr(64 - xPos + 32+64*(1-t_layout_norm), ySub2, subtitle2);
+
+        // línea vertical centrada que crece desde el centro (1px) hasta 48px
+        {
+            int centerX = 128-32 - xPos-4;
+            int minH = 1;
+            int maxH = 48;
+            int h = (int)(minH + (maxH - minH) * t_layout_norm);
+            int y = (64 - h) / 2;
+            ctx.u8g2.drawVLine(centerX, y, h);
+        }
 
         drawAnimatedFill(ctx, t_dither_norm);
 
@@ -89,6 +126,7 @@ public:
         unsigned long elapsedTime = currentTime - phaseStartTime;
 
         float t_dither_norm = 0.0f;
+        float t_layout_norm = 0.0f;
         int xPos = 32;
 
         switch (currentState)
@@ -96,15 +134,19 @@ public:
         case FADING_IN:
         {
             t_dither_norm = (float)elapsedTime / (float)FADE_DURATION;
-            xPos = smoothstep(-32, 32, (elapsedTime * 1000) / ANIM_DURATION);
+            // calcular t_layout crudo y aplicar smootherstep para un movimiento más suave
+            float t_layout_raw = (float)elapsedTime / (float)ANIM_DURATION;
+            t_layout_norm = smootherstep(t_layout_raw);
+             xPos = smoothstep(-32, 32, (elapsedTime * 1000) / ANIM_DURATION);
 
-            if (elapsedTime > FADE_DURATION)
-            {
-                t_dither_norm = 1.0f;
-                xPos = 32;
-                currentState = INITIALIZING;
-            }
-            break;
+             if (elapsedTime > FADE_DURATION)
+             {
+                 t_dither_norm = 1.0f;
+                t_layout_norm = 1.0f; // ya está en 1 tras easing si elapsedTime grande
+                 xPos = 32;
+                 currentState = INITIALIZING;
+             }
+             break;
         }
 
         case INITIALIZING:
@@ -128,6 +170,7 @@ public:
         case FADING_OUT:
         {
             xPos = 32;
+            t_layout_norm = 1.0f;
             float t_fade_norm = (float)elapsedTime / (float)FADE_OUT_DURATION;
             t_dither_norm = 1.0f - t_fade_norm;
 
@@ -142,6 +185,7 @@ public:
         case DONE:
         {
             t_dither_norm = 0.0f;
+            t_layout_norm = 1.0f;
             xPos = 32;
             
             ctx.u8g2.clearBuffer();
@@ -155,8 +199,9 @@ public:
         }
 
         t_dither_norm = constrain(t_dither_norm, 0.0f, 1.0f);
+        t_layout_norm = constrain(t_layout_norm, 0.0f, 1.0f);
 
-        drawFrame(ctx, xPos, t_dither_norm);
+        drawFrame(ctx, xPos, t_dither_norm, t_layout_norm);
     }
 };
 #endif

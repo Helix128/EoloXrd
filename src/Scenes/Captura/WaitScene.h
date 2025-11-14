@@ -10,9 +10,13 @@
 class WaitScene : public IScene
 {
 public:
+
+    int lastRead = 0;
+    const int READ_INTERVAL = 1000;
     void enter(Context &ctx) override
     {   
-
+        ctx.components.flowSensor.readData();
+        lastRead = millis();
     }
 
     void update(Context &ctx) override
@@ -43,6 +47,11 @@ public:
 
         ctx.u8g2.setFont(FONT_REGULAR_S);
         char flowStr[10];
+
+        if(millis() - lastRead >= READ_INTERVAL){
+            ctx.components.flowSensor.readData();
+            lastRead = millis();
+        }
 
         float flow = ctx.components.flowSensor.flow;
 
