@@ -14,10 +14,12 @@ typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
   MotorManager motor; // Control de motor
   #ifdef EOLO_GRANDE
-    AFM07 flowSensor;    // Sensor de flujo
+    Anemometer anemometer; // Anemómetro ultrasónico
+    AFM07 flowSensor;    // Sensor de flujo de aire
   #else
     FS3K flowSensor;     // Sensor de velocidad de aire
   #endif
+  
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
@@ -33,6 +35,10 @@ typedef struct Components{
     bme.begin();
     plantower.begin();
     rtc.begin();
+    
+    #ifdef EOLO_GRANDE
+      anemometer.begin();
+    #endif
 
     battery.begin();
     int batteryLevel = battery.getLevel();

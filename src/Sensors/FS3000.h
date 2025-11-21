@@ -104,7 +104,11 @@ private:
     int bufferIndex = 0;
     
     float getFlow(float speed) const
-    {
+    {   
+        if(speed<=0) {
+            return -1.0f; // Indica error en la lectura
+        }
+        
         static const float velocityPoints[] = {0.06, 0.34, 0.7, 1.06, 1.42, 1.74, 2.02, 2.30, 2.60, 2.80, 3.00, 3.33};
         static const float flowPoints[] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0};
         static const int numPoints = 12;

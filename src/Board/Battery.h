@@ -6,13 +6,13 @@
 class Battery
 {
 public:
+
     const int BATTERY_COUNT = 2;
     uint8_t BATTERY_PIN = 34;
     const int ADC_MAX = 4095;
     const float ADC_VREF = 3.3f;
     const float DIVIDER_RATIO = 7.8f;
     const float BATT_MAX_VOLTAGE = 16.8f;
-    const int CELLS = 4;
 
     void begin(uint8_t batteryPin = 34, float ema_alpha = 0.005f) {
         pinMode(batteryPin, INPUT);

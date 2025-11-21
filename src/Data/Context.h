@@ -56,6 +56,7 @@ public:
         #ifdef EOLO_GRANDE
             grande = true;
         #endif
+
         Serial.print("EOLO");
         if (grande)
         {
@@ -65,6 +66,7 @@ public:
         {
             Serial.println(" (chico)");
         }
+
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
         if (!isDisplayReady)
@@ -682,7 +684,11 @@ public:
                 return;
             }
 
+            #ifdef EOLO_GRANDE
+            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct");
+            #else
             file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct");
+            #endif
             file.close();
 
             Serial.println("Archivo de log creado: " + filename);
@@ -735,6 +741,18 @@ public:
             file.print(components.plantower.pm10);
             file.print(",");
 
+            #ifdef EOLO_GRANDE
+
+            // wind_speed
+            file.print(components.anemometer.getWindSpeed());
+            file.print(",");
+
+            // wind_direction
+            file.print(components.anemometer.getWindDirection());
+            file.print(",");
+
+            #endif
+
             // battery_pct
             file.print(components.battery.getPct());
             file.println();
@@ -767,7 +785,18 @@ public:
         }
         sdStatus = SD_OK;
         Serial.println("Log completado con éxito.");
+
+        #ifdef EOLO_GRANDE
+            uploadData();
+        #endif
+
         saveSession();
+    }
+
+    void uploadData(){
+        // TODO
+        Serial.println("Funcionalidad de subida de datos no implementada aún.");
+        delay(1000); 
     }
 
     void update()
@@ -943,6 +972,11 @@ public:
             ctx.components.plantower.setPower(ctx.session.usePlantower);
             ctx.components.plantower.readData();
             ctx.session.capturedVolume += (ctx.components.flowSensor.flow / 60.0f) * (ctx.CAPTURE_INTERVAL);
+
+            #ifdef EOLO_GRANDE
+                ctx.components.anemometer.readData();
+            #endif
+            
             logData();
 
 #else

@@ -9,7 +9,13 @@
 class MotorManager
 {
 public:
+  #ifdef EOLO_GRANDE
+  // los motores del eolo grande no son del mismo tamaño
+  // por lo tanto se guardan aparte por si es necesario reordenarlos
+  static constexpr int motors[2] = {26, 27}; 
+  #else
   static constexpr int motors[2] = {26, 27};
+  #endif
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static constexpr int ledcChannels[2] = {0, 1};
   static const int freq = 400;
@@ -43,7 +49,7 @@ public:
       ledcWrite(ledcChannels[i], 0);
     }
 #if CHECK_SENSORS
-    testMotors();
+    testMotors(); 
 #endif
 
     isReady = true;

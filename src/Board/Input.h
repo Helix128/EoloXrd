@@ -121,7 +121,7 @@ private:
   volatile bool prevButtonRaw = false;
 
   const bool FLIP_ENCODER = false; // Poner a true si el encoder va invertido
-  const int BUTTON_DEBOUNCE_MS = 100; 
+  const int BUTTON_DEBOUNCE_MS = 150; 
   const int ENCODER_DEBOUNCE_MS = 50;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;

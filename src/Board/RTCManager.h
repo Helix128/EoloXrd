@@ -12,8 +12,8 @@ class RTCManager
 {
 private:
     RTC_DS3231 rtc;
-
-public:
+    
+public:  
     bool ok = false;
     // Inicializa I2C y el RTC. Devuelve true si está presente.
     bool begin()

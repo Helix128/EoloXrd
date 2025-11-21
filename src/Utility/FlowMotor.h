@@ -7,7 +7,7 @@
 float GetTargetMotorPct(float targetFlow, float* calMotorPcts, float* calFlows, int numPoints)
 {
     if (targetFlow <= calFlows[0])
-        return calMotorPcts[0];
+        return calMoteorPcts[0];
     
     for (int i = 0; i < numPoints; i++) {
         if (calFlows[i] >= targetFlow) {
