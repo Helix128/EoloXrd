@@ -9,12 +9,15 @@
 #include "../Sensors/Plantower.h"
 #include "../Sensors/BME280.h"
 #include "../Board/Battery.h"
+#include "../Board/Modem.h"
+#include "../Sensors/Anemometer.h"
 
 typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
   MotorManager motor; // Control de motor
+  Anemometer anemometer;  
   #ifdef EOLO_GRANDE
-    Anemometer anemometer; // Anemómetro ultrasónico
+    // Anemómetro ultrasónico
     AFM07 flowSensor;    // Sensor de flujo de aire
   #else
     FS3K flowSensor;     // Sensor de velocidad de aire
@@ -35,6 +38,7 @@ typedef struct Components{
     bme.begin();
     plantower.begin();
     rtc.begin();
+    anemometer.begin();
     
     #ifdef EOLO_GRANDE
       anemometer.begin();

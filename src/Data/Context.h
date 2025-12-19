@@ -6,6 +6,7 @@
 #include "../Config.h"
 #include "../Drawing/SceneManager.h"
 #include <SD.h>
+#include <Preferences.h>
 
 enum SDStatus
 {
@@ -45,6 +46,8 @@ typedef struct Context
     float calFlows[MAX_CAL_POINTS];
     bool isCalibrationLoaded = false;
 
+    Preferences preferences;
+
 public:
     Context(DisplayModel &display) : u8g2(display) {}
 
@@ -74,14 +77,17 @@ public:
             Serial.println("Iniciando pantalla...");
             u8g2.begin();
             u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
+            u8g2.clearBuffer();
+            u8g2.drawDisc(64,32,30,U8G2_DRAW_ALL);
+            u8g2.sendBuffer();
             isDisplayReady = true;
             Serial.println("Pantalla iniciada");
         }
         components.begin();
 
-        initSD();
-        loadCalibration();
-        Serial.println("Contexto inicializado");
+        loadCalibration();  // Ya no depende de SD
+        initSD();           // Solo para logs
+       
     }
 
     void setDisplayPower(bool on)
@@ -202,84 +208,61 @@ public:
 
     void saveSession()
     {
-        if (!isSdReady)
-        {
-            initSD();
-        }
-        String filename = String(eoloDir) + "/session.txt";
+        preferences.begin("eolo_session", false);
 
-        String startStr = session.startDate.timestamp();
-        String durationStr = String(session.duration);
-        String elapsedStr = String(session.elapsedTime);
-        String targetFlowStr = String(session.targetFlow);
-        String capturedVolumeStr = String(session.capturedVolume);
-        String usePlantowerStr = session.usePlantower ? "1" : "0";
+        preferences.putULong("startDate", session.startDate.unixtime());
+        preferences.putUInt("duration", session.duration);
+        preferences.putULong("elapsedTime", session.elapsedTime);
+        preferences.putFloat("targetFlow", session.targetFlow);
+        preferences.putFloat("capturedVol", session.capturedVolume);
+        preferences.putBool("usePlantower", session.usePlantower);
 
-        File file = SD.open(filename.c_str(), "w+");
-        if (!file)
-        {
-            Serial.println("No se pudo abrir el archivo de sesión para escribir");
-            return;
-        }
+        preferences.end();
 
-        file.println(startStr);
-        file.println(durationStr);
-        file.println(elapsedStr);
-        file.println(targetFlowStr);
-        file.println(capturedVolumeStr);
-        file.println(usePlantowerStr);
-        file.close();
-
-        Serial.println("Sesión guardada en SD:");
+        Serial.println("Sesión guardada en Flash:");
         Serial.print(" startDate: ");
-        Serial.println(startStr);
+        Serial.println(session.startDate.timestamp());
         Serial.print(" duration: ");
-        Serial.println(durationStr);
+        Serial.println(session.duration);
         Serial.print(" elapsedTime: ");
-        Serial.println(elapsedStr);
+        Serial.println(session.elapsedTime);
         Serial.print(" targetFlow: ");
-        Serial.println(targetFlowStr);
+        Serial.println(session.targetFlow);
         Serial.print(" capturedVolume: ");
-        Serial.println(capturedVolumeStr);
+        Serial.println(session.capturedVolume);
         Serial.print(" usePlantower: ");
-        Serial.println(usePlantowerStr);
+        Serial.println(session.usePlantower);
     }
 
     bool loadSession()
     {
-        if (!isSdReady)
-        {
-            initSD();
-        }
-        String filename = String(eoloDir) + "/session.txt";
+        preferences.begin("eolo_session", true);
 
-        File file = SD.open(filename.c_str(), "r+");
-        if (!file)
+        if (!preferences.isKey("startDate"))
         {
-            Serial.println("No se pudo abrir el archivo de sesión para leer");
+            preferences.end();
+            Serial.println("No se encontró sesión guardada en Flash");
             return false;
         }
 
-        String startStr = file.readStringUntil('\n');
-        String durationStr = file.readStringUntil('\n');
-        String elapsedStr = file.readStringUntil('\n');
-        String targetFlowStr = file.readStringUntil('\n');
-        String capturedVolumeStr = file.readStringUntil('\n');
-        String usePlantowerStr = file.readStringUntil('\n');
-        file.close();
+        uint32_t startUnix = preferences.getULong("startDate", 0);
+        uint32_t durationVal = preferences.getUInt("duration", 0);
+        unsigned long elapsedTime = preferences.getULong("elapsedTime", 0);
+        float targetFlowVal = preferences.getFloat("targetFlow", 5.0f);
+        float capturedVolumeVal = preferences.getFloat("capturedVol", 0.0f);
+        bool usePlantowerVal = preferences.getBool("usePlantower", true);
 
-        long elapsedTime = elapsedStr.toInt();
+        preferences.end();
 
-        DateTime loadedStart = DateTime(startStr.c_str());
+        DateTime loadedStart = DateTime(startUnix);
         session.startDate = loadedStart;
-        session.duration = durationStr.toInt();
+        session.duration = durationVal;
         session.elapsedTime = 0;
 
-        if (session.startDate < components.rtc.now()) // reajusta tiempo solo si la fecha de inicio ya pasó
+        if (session.startDate < components.rtc.now())
         {
             session.startDate = components.rtc.now();
-            session.duration = durationStr.toInt();
-            session.duration -= elapsedTime;
+            session.duration = durationVal - elapsedTime;
             session.elapsedTime = 0;
 
             Serial.print("Tiempo transcurrido restaurado: ");
@@ -287,24 +270,23 @@ public:
             Serial.println("s");
         }
 
-            // Use toFloat() to preserve fractional flow values (e.g., 5.2 L/min)
-            session.targetFlow = targetFlowStr.toFloat();
-        session.capturedVolume = capturedVolumeStr.toFloat();
-        session.usePlantower = usePlantowerStr == "1";
+        session.targetFlow = targetFlowVal;
+        session.capturedVolume = capturedVolumeVal;
+        session.usePlantower = usePlantowerVal;
 
-        Serial.println("Sesión cargada desde SD:");
+        Serial.println("Sesión cargada desde Flash:");
         Serial.print(" startDate: ");
-        Serial.println(startStr);
+        Serial.println(session.startDate.timestamp());
         Serial.print(" duration: ");
-        Serial.println(durationStr);
+        Serial.println(session.duration);
         Serial.print(" elapsedTime: ");
-        Serial.println(elapsedStr);
+        Serial.println(elapsedTime);
         Serial.print(" targetFlow: ");
-        Serial.println(targetFlowStr);
+        Serial.println(session.targetFlow);
         Serial.print(" capturedVolume: ");
-        Serial.println(capturedVolumeStr);
+        Serial.println(capturedVolumeVal);
         Serial.print(" usePlantower: ");
-        Serial.println(usePlantowerStr);
+        Serial.println(session.usePlantower);
 
         saveSession();
         return true;
@@ -312,170 +294,98 @@ public:
 
     bool canLoadSession()
     {
-        String filename = String(eoloDir) + "/session.txt";
-        if (!SD.exists(filename.c_str()))
-            return false;
-
-        File file = SD.open(filename.c_str(), "r+");
-        if (!file)
-            return false;
-
-        size_t fileSize = file.size();
-        file.close();
-        return fileSize > 0;
+        preferences.begin("eolo_session", true);
+        bool hasSession = preferences.isKey("startDate");
+        preferences.end();
+        return hasSession;
     }
 
     void clearSession()
     {
-        String filename = String(eoloDir) + "/session.txt";
-        if (SD.exists(filename.c_str()))
-        {
-            SD.remove(filename.c_str());
-            delay(5);
-            if (!SD.exists(filename.c_str()))
-            {
-                Serial.println("Archivo de sesión eliminado de SD");
-            }
-            else
-            {
-                Serial.println("No se pudo eliminar el archivo de sesión de SD");
-            }
-        }
+        preferences.begin("eolo_session", false);
+        preferences.clear();
+        preferences.end();
+        Serial.println("Sesión eliminada de Flash");
     }
 
     void saveCalibration()
     {
-        if (!isSdReady)
-        {
-            initSD();
-        }
-        String filename = String(eoloDir) + "/calibracion.csv";
-        if (SD.exists(filename.c_str()))
-        {
-            SD.remove(filename.c_str());
-            delay(5); 
-        }
+        preferences.begin("eolo_calib", false);
 
-        File file = SD.open(filename.c_str(), "w+");
-        if (!file)
-        {
-            Serial.println("No se pudo crear el archivo de calibración para escribir");
-            return;
-        }
+        preferences.putInt("numPoints", numCalPoints);
+        preferences.putBytes("motorPcts", calMotorPcts, numCalPoints * sizeof(float));
+        preferences.putBytes("flows", calFlows, numCalPoints * sizeof(float));
 
+        preferences.end();
 
-
-        file.println("motor,flujo");
-        for (int i = 0; i < numCalPoints; i++)
-        {
-            file.print(calMotorPcts[i], 2);
-            file.print(",");
-            file.println(calFlows[i], 2);
-        }
-        file.close();
-
-        Serial.println("Calibración guardada en SD:");
+        Serial.println("Calibración guardada en Flash:");
         Serial.print(" Número de puntos: ");
         Serial.println(numCalPoints);
-        Serial.print(" Rango de flujo: ");
-        Serial.print(calFlows[0], 2);
-        Serial.print(" - ");
-        Serial.print(calFlows[numCalPoints - 1], 2);
-        Serial.println(" L/min");
+        if (numCalPoints > 0)
+        {
+            Serial.print(" Rango de flujo: ");
+            Serial.print(calFlows[0], 2);
+            Serial.print(" - ");
+            Serial.print(calFlows[numCalPoints - 1], 2);
+            Serial.println(" L/min");
+        }
     }
 
     bool loadCalibration()
     {
-        if (!isSdReady)
-        {
-            initSD();
-        }
+        preferences.begin("eolo_calib", true);
 
-        if(!isSdReady){ // si tras reintentar el initSD sigue sin estar lista, se asume un fallo y no se carga la calib.
-            return false;
-        }
-        String filename = String(eoloDir) + "/calibracion.csv";
-
-        if (!SD.exists(filename.c_str()))
+        if (!preferences.isKey("numPoints"))
         {
-            Serial.println("Archivo de calibración no existe");
+            preferences.end();
+            Serial.println("No hay calibración guardada en Flash");
             isCalibrationLoaded = false;
             return false;
         }
 
-        File file = SD.open(filename.c_str(), "r+");
-        if (!file)
+        numCalPoints = preferences.getInt("numPoints", 0);
+
+        if (numCalPoints <= 0 || numCalPoints > MAX_CAL_POINTS)
         {
-            Serial.println("No se pudo abrir el archivo de calibración para leer");
+            preferences.end();
+            Serial.println("Calibración inválida en Flash");
             isCalibrationLoaded = false;
+            numCalPoints = 0;
             return false;
         }
 
-        // Omitir header
-        file.readStringUntil('\n');
+        size_t motorBytes = preferences.getBytes("motorPcts", calMotorPcts, numCalPoints * sizeof(float));
+        size_t flowBytes = preferences.getBytes("flows", calFlows, numCalPoints * sizeof(float));
 
-        numCalPoints = 0;
-        while (file.available() && numCalPoints < MAX_CAL_POINTS)
+        preferences.end();
+
+        if (motorBytes != numCalPoints * sizeof(float) || flowBytes != numCalPoints * sizeof(float))
         {
-            String line = file.readStringUntil('\n');
-            line.trim();
-            if (line.length() == 0)
-                break;
-
-            int commaIndex = line.indexOf(',');
-            if (commaIndex == -1)
-                continue;
-
-            String motorStr = line.substring(0, commaIndex);
-            String flowStr = line.substring(commaIndex + 1);
-
-            calMotorPcts[numCalPoints] = motorStr.toFloat();
-            calFlows[numCalPoints] = flowStr.toFloat();
-            numCalPoints++;
+            Serial.println("Error al leer calibración desde Flash");
+            isCalibrationLoaded = false;
+            numCalPoints = 0;
+            return false;
         }
-        file.close();
 
-            // Ordenar los puntos por flujo ascendente por si el CSV estaba desordenado
-            if (numCalPoints > 1)
+        isCalibrationLoaded = true;
+        Serial.println("Calibración cargada desde Flash:");
+        Serial.print(" Número de puntos: ");
+        Serial.println(numCalPoints);
+        if (numCalPoints > 0)
+        {
+            Serial.print(" Rango de flujo: ");
+            Serial.print(calFlows[0], 2);
+            Serial.print(" - ");
+            Serial.print(calFlows[numCalPoints - 1], 2);
+            Serial.println(" L/min");
+
+            if (calFlows[0] == 0 && calFlows[numCalPoints - 1] == 0)
             {
-                for (int i = 0; i < numCalPoints - 1; i++)
-                {
-                    for (int j = 0; j < numCalPoints - i - 1; j++)
-                    {
-                        if (calFlows[j] > calFlows[j + 1])
-                        {
-                            float tf = calFlows[j];
-                            calFlows[j] = calFlows[j + 1];
-                            calFlows[j + 1] = tf;
-
-                            float tm = calMotorPcts[j];
-                            calMotorPcts[j] = calMotorPcts[j + 1];
-                            calMotorPcts[j + 1] = tm;
-                        }
-                    }
-                }
-            }
-
-            isCalibrationLoaded = true;
-            Serial.println("Calibración cargada desde SD:");
-            Serial.print(" Número de puntos: ");
-            Serial.println(numCalPoints);
-            if (numCalPoints > 0)
-            {
-                Serial.print(" Rango de flujo: ");
-                Serial.print(calFlows[0], 2);
-                Serial.print(" - ");
-                Serial.print(calFlows[numCalPoints - 1], 2);
-                Serial.println(" L/min");
-                
-                // Verificar si el rango es inválido (0 - 0)
-                if (calFlows[0] == 0 && calFlows[numCalPoints - 1] == 0)
-                {
                 Serial.println("Calibración inválida detectada (rango 0-0). Ejecutando nueva calibración...");
                 isCalibrationLoaded = false;
                 return false;
-                }
             }
+        }
 
         return true;
     }
@@ -621,8 +531,8 @@ public:
         if (!isCalibrationLoaded || numCalPoints == 0)
         {
             // Fallback
-            Serial.println("Advertencia: No hay calibración cargada, usando mapeo lineal");
-            return constrain(targetFlow * 12.5f, 0.0f, 100.0f); // Estimado aproximado: 8 L/min a 100%
+            Serial.println("Advertencia: No hay calibración cargada.");
+            return 0;
         }
 
         // Si el objetivo está por debajo del flujo calibrado mínimo
@@ -882,18 +792,11 @@ public:
     void updateMotors()
     {
         static float lastTargetFlow = -1.0f;
-        static float lastAppliedPct = -1.0f;
 
         if (isCalibrationLoaded && numCalPoints > 0)
         {
-            // Use calibration-based control (suavizado/rampa)
             float targetMotorPct = getTargetMotorPct(session.targetFlow);
 
-            // Inicializar lastAppliedPct con el valor actual si es la primera vez
-            if (lastAppliedPct < 0.0f)
-                lastAppliedPct = (float)components.motor.getPowerPct();
-
-            // Print cuando cambia el objetivo para diagnóstico
             if (lastTargetFlow != session.targetFlow)
             {
                 Serial.print("Flujo objetivo: ");
@@ -904,31 +807,14 @@ public:
                 lastTargetFlow = session.targetFlow;
             }
 
-            // Aplicar rampa para evitar cambios bruscos (max 2% por ciclo)
-            float delta = targetMotorPct - lastAppliedPct;
-            const float maxStep = 2.0f; // % por ciclo
-            if (fabs(delta) > maxStep)
-            {
-                lastAppliedPct += (delta > 0.0f) ? maxStep : -maxStep;
-            }
-            else
-            {
-                lastAppliedPct = targetMotorPct;
-            }
-
-            // Asegurar rango
-            lastAppliedPct = constrain(lastAppliedPct, 0.0f, 100.0f);
-            components.motor.setPowerPct(lastAppliedPct);
+            targetMotorPct = constrain(targetMotorPct, 0.0f, 100.0f);
+            components.motor.setPowerPct(targetMotorPct);
         }
         else
         {
-            // Fallback to PID-like control
-            float currentFlow = components.flowSensor.flow;
-            float targetFlow = session.targetFlow;
-            float error = targetFlow - currentFlow;
-            float newPct = (float)components.motor.getPowerPct() + error * 0.1f;
-            newPct = constrain(newPct, 0.0f, 100.0f);
-            components.motor.setPowerPct(newPct);
+            // Sin calibración, motor apagado
+            Serial.println("Advertencia: No hay calibración cargada, motor apagado");
+            components.motor.setPowerPct(0);
         }
     }
 

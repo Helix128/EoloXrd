@@ -4,12 +4,12 @@
 #include <SoftwareSerial.h>
 #include "../Config.h"
 
-#define ANEM_RE 33
-#define ANEM_DE 32
+#define ANEM_RE 26
+#define ANEM_DE 26
 
 // RX, TX para SoftwareSerial (igual que el sketch original)
-static const uint8_t ANEM_RX_PIN = 25;
-static const uint8_t ANEM_TX_PIN = 35;
+static const uint8_t ANEM_RX_PIN = 35;
+static const uint8_t ANEM_TX_PIN = 33;
 
 class Anemometer
 {
@@ -99,6 +99,16 @@ public:
             windKph = -1.0f;
             direction = -1;
         }
+    }
+
+    float getWindSpeed()
+    {
+        return velocity;
+    }
+
+    int getWindDirection()
+    {
+        return direction;
     }
 
 #if CHECK_SENSORS
