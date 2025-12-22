@@ -1,7 +1,7 @@
 // -- EOLO --
 // Centro de Investigación en Tecnologías para la Sociedad (C+)
 // Universidad del Desarrollo
-// Diego Muñoz <d.munoza@udd.cl>
+// Diego Muñoz | Helix128
 // https://github.com/Helix128
 
 #ifdef EOLO_GRANDE
