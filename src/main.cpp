@@ -48,9 +48,7 @@ void setup()
   registerAllScenes();
 
   // Carga la escena inicial (splash)
-  SceneManager::setScene("splash", ctx);
-
-  
+  SceneManager::setScene("splash", ctx);  
 }
 
 const int targetMs = 50;
@@ -60,6 +58,7 @@ void loop()
   if(millis() - lastFrameMs < targetMs){
     return;
   }
+  
   lastFrameMs = millis();
   // Actualizar el contexto de la app y la escena actual
   ctx.update();
