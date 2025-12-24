@@ -23,6 +23,7 @@ typedef struct Components{
     FS3K flowSensor;     // Sensor de velocidad de aire
   #endif
   
+  Modem modem;        // Módem celular
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería

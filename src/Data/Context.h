@@ -67,22 +67,23 @@ public:
         }
         else
         {
-            Serial.println(" (chico)");
+            Serial.println(" (pequeño)");
         }
 
+        delay(50);
         Serial.println("Inicializando contexto...");
         setDisplayPower(true);
         if (!isDisplayReady)
         {
             Serial.println("Iniciando pantalla...");
             u8g2.begin();
-            u8g2.setBusClock(150000UL); // 150kHz (fix pantalla - para que la señal sea más cuadrada)
+            u8g2.setBusClock(125000UL); // 125kH1z (fix pantalla - para que la señal sea más cuadrada)
             u8g2.clearBuffer();
-            u8g2.drawDisc(64,32,30,U8G2_DRAW_ALL);
             u8g2.sendBuffer();
             isDisplayReady = true;
             Serial.println("Pantalla iniciada");
         }
+        delay(50);
         components.begin();
 
         loadCalibration();  // Ya no depende de SD

@@ -43,7 +43,7 @@ void setup()
   
   // Inicialización del contexto de la app
   ctx.begin();
-  digitalWrite(14,LOW);
+  
   // Registrar todas las escenas (SceneRegistry)
   registerAllScenes();
 
@@ -58,7 +58,7 @@ void loop()
   if(millis() - lastFrameMs < targetMs){
     return;
   }
-  
+
   lastFrameMs = millis();
   // Actualizar el contexto de la app y la escena actual
   ctx.update();
