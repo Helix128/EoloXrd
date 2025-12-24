@@ -25,11 +25,11 @@ public:
             Serial.println("Iniciando captura.");
         }
 
-        if(ctx.session.usePlantower&&!ctx.components.plantower.isActive)
+        if(ctx.session.usePlantower)
         {
             ctx.components.plantower.setPower(true);
         }
-        else if(!ctx.session.usePlantower&&ctx.components.plantower.isActive)
+        else if(!ctx.session.usePlantower)
         {
             ctx.components.plantower.setPower(false);
         }

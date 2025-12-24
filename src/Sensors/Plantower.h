@@ -3,155 +3,83 @@
 
 #include "../Config.h"
 
-#define PT_TX 16
-#define PT_RX 17
+#define PT_TX 32
+#define PT_RX 34
 #define PT_PWR 4
-
-// https://wiki.dfrobot.com/Air_Quality_Monitor__PM_2.5_Temperature_and_Humidity_Sensor__SKU__SEN0233
 class Plantower
 {
 private:
-    unsigned char bufferRTT[32] = {}; // Buffer para datos recibidos
-    
-    bool validateChecksum()
-    {
+    unsigned char bufferRTT[32] = {};
+    bool validateChecksum() {
         unsigned int CR1 = (bufferRTT[30] << 8) + bufferRTT[31];
         unsigned int CR2 = 0;
-        for (int i = 0; i < 30; i++)
-            CR2 += bufferRTT[i];
+        for (int i = 0; i < 30; i++) CR2 += bufferRTT[i];
         return (CR1 == CR2);
     }
 
 public:
-    float pm1 = -1.0;
-    float pm25 = -1.0;
-    float pm10 = -1.0;
-    bool isReady = false;
+    float pm1 = -1.0, pm25 = -1.0, pm10 = -1.0;
+
     bool isActive = false;
-
-    void begin()
-    {   
-        if (isReady) {
-            Serial.println("Plantower ya inicializado, skipping...");
-            return;
-        }
-
+    void begin() {   
         Serial2.begin(9600, SERIAL_8N1, PT_RX, PT_TX);
+        Serial2.setTimeout(100); 
         pinMode(PT_PWR, OUTPUT);
-        setPower(false);
-#if CHECK_SENSORS
-        testSensor();
-#endif
-        
-        isReady = true;
+        digitalWrite(PT_PWR, HIGH);
+        delay(500);
+        while(Serial2.available()) Serial2.read();
+        isActive = true;
+        Serial.println("Plantower inicializado");
     }
 
-    void setPower(bool active)
-    {   
-        if(isActive == active)
-            return;
-        Serial.print("Plantower power ");
-        Serial.println(active ? "ON" : "OFF");
-        isActive = active;
-        digitalWrite(PT_PWR, active ? HIGH : LOW); // Controla la alimentación
-        delay(50);
-        for (int i = 0; i < 14; i++)
-        {   
-            readData(); 
-            delay(350);
+    void setPower(bool active){
+        // stub, ya no se usa.
+    }
+
+    void readData(int maxRetries = 32) {
+        Serial.println("Leyendo datos Plantower...");
+        if (!isActive) return;
+        bool dataRead = false;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            if (readDataAttempt()){
+                dataRead = true;
+                break;
+            }
+            delay(25); 
         }
-        Serial.println("OK!");
-    }
-
-    void testSensor()
-    {
-        Serial.println("Probando Plantower...");
-        setPower(false);
-        delay(500);
-        readData();
-        delay(500);
-        Serial.println("Lectura apagada (debería ser -1):");
-        Serial.print(pm1);
-        Serial.print(" - ");
-        Serial.print(pm25);
-        Serial.print(" - ");
-        Serial.println(pm10);
-        delay(500);
-        Serial.println("Encendiendo Plantower...");
-        setPower(true);
-        delay(500);
-        for (int i = 0; i < 10; i++)
-        {
-            readData();
-            Serial.print("PM1.0: ");
+        if (!dataRead) {
+            pm1 = -1.0;
+            pm25 = -1.0;
+            pm10 = -1.0;
+            Serial.println("Error leyendo datos Plantower.");
+        }
+        else{
+            Serial.print("Datos Plantower leídos: PM1.0=");
             Serial.print(pm1);
-            Serial.print(" µg/m3, PM2.5: ");
+            Serial.print(" µg/m3, PM2.5=");
             Serial.print(pm25);
-            Serial.print(" µg/m3, PM10: ");
+            Serial.print(" µg/m3, PM10=");
             Serial.print(pm10);
             Serial.println(" µg/m3");
-            delay(1000);
         }
     }
 
-    void readData()
-    {
-        if (!Serial2.available())
-        {   
-            // Si el sensor está apagado no hay datos
-            pm1 = -1;
-            pm25 = -1;
-            pm10 = -1;
-            return;
-        }
-
-        while (Serial2.available() > 0)
-        {
-            // Lee 32 bytes de datos
-            for (int i = 0; i < 32; i++)
-            {
-                if (Serial2.available())
-                {
-                    bufferRTT[i] = Serial2.read();
-                    delay(2);
-                }
+    bool readDataAttempt(){
+        if (!isActive) return true; 
+        while (Serial2.available() >= 32) {
+            if (Serial2.peek() != 0x42) {
+                Serial2.read(); 
+                continue;       
             }
-
-            Serial2.flush();
-
-            // Valida que el mensaje esté correcto
-            if (validateChecksum())
-            {
-                // PM 1.0
-                unsigned int PMSa1 = bufferRTT[10];
-                unsigned int PMSb1 = bufferRTT[11];
-                unsigned int PMS1 = (PMSa1 << 8) + PMSb1;
-                pm1 = (float)PMS1;
-
-                // PM 2.5
-                unsigned int PMSa2_5 = bufferRTT[12];
-                unsigned int PMSb2_5 = bufferRTT[13];
-                unsigned int PMS2_5 = (PMSa2_5 << 8) + PMSb2_5;
-                pm25 = (float)PMS2_5;
-
-                // PM 10
-                unsigned int PMSa10 = bufferRTT[14];
-                unsigned int PMSb10 = bufferRTT[15];
-                unsigned int PMS10 = (PMSa10 << 8) + PMSb10;
-                pm10 = (float)PMS10;
-            }
-            else
-            {
-                // Checksum fallido, asignar -1
-                // SOLO PUEDE OCURRIR SI
-                // - EL SENSOR ESTÁ APAGADO
-                // - HAY ALGUN PROBLEMA DE COMUNICACIÓN
-                pm1 = -1;
-                pm25 = -1;
-                pm10 = -1;
+            if (Serial2.readBytes(bufferRTT, 32) != 32) return false; 
+            if (validateChecksum()) {
+                pm1  = (float)((bufferRTT[10] << 8) + bufferRTT[11]);
+                pm25 = (float)((bufferRTT[12] << 8) + bufferRTT[13]);
+                pm10 = (float)((bufferRTT[14] << 8) + bufferRTT[15]);
+                return true;
             }
         }
+        return false; 
     }
 };
-
-#endif
+#endif // PLANTOWER_H

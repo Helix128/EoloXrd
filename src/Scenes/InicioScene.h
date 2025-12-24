@@ -5,7 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/GUI.h"
 #include "../Drawing/SceneManager.h"
-
+#include "ESPJob.h"
 
 typedef struct MenuOption{
     const char* label;
@@ -43,10 +43,23 @@ public:
         availableOptions[optionCount++] = menuOptions[2]; // Captura rapida
         availableOptions[optionCount++] = menuOptions[3]; // Calibrar motor
         selectIndex = 0;
+       job = Job::RunOnCore(1,LAMBDA(void){
+             ctx.components.modem.begin();
+        char* buffer = new char[512];
+        char* url = "http://example.com/";
+        ctx.components.modem.get(url, buffer, 512);
+        Serial.print("Respuesta del servidor: ");
+        Serial.println(buffer);
+        delete[] buffer;
+        ctx.components.modem.end();
+       },NOCALLBACK);
     }
 
+    JobHandle job;
     void update(Context &ctx) override
-    {
+    {   if(!job.isRunning()){
+        job.run();
+    }
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
         
@@ -117,6 +130,7 @@ public:
         ctx.u8g2.drawVLine(0, knobY, knobHeight);
 
         ctx.u8g2.sendBuffer();
+        
     }
 };
 #endif
