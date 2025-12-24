@@ -49,7 +49,8 @@ public:
         }
         if (!dataRead) {
             pm1 = -1.0;
-            pm25 = -1.0;
+            pm25 = -1.0;  delay(500);
+        while(Serial2.available()) Serial2.read();
             pm10 = -1.0;
             Serial.println("Error leyendo datos Plantower.");
         }
