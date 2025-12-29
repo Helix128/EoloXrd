@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Wire.h>
+#include "Wire.h"
 #ifndef I2C_UTIL_H
 #define I2C_UTIL_H
 class I2CUtility {

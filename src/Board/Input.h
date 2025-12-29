@@ -6,7 +6,7 @@
 #if SERIAL_INPUT == false
 
 #include <Arduino.h>
-#include <Wire.h>
+#include "Wire.h"
 
 // Clase para manejar el input del encoder con botón
 class Input

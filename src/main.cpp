@@ -12,7 +12,7 @@
 
 // Librerías para display y comunicación I2C
 #include <U8g2lib.h>
-#include <Wire.h>
+#include "Wire.h"
 
 // Módulos principales
 #include "Data/Context.h"
