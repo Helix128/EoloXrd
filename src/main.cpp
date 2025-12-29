@@ -1,4 +1,4 @@
-// -- EOLO --
+// -- EOLO MP --
 // Centro de Investigación en Tecnologías para la Sociedad (C+)
 // Universidad del Desarrollo
 // Diego Muñoz | Helix128

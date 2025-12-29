@@ -167,8 +167,15 @@ private:
     
   // Función interna para leer datos del encoder desde el ATTiny
   void readEncoderData()
-  { 
-    if (Wire.requestFrom(ATTINY_ADDRESS, 3) == 3)
+  {   
+    int readResult = Wire.requestFrom(ATTINY_ADDRESS, 3);
+    if(readResult==-1){
+      Serial.println("Error I2C al leer encoder, reinicializando...");
+      isReady = false;
+      begin(); // reintentar inicializar encoder
+      return;
+    }
+    if (readResult == 3)
     {
       short int prevCounter = rawCounter;
       bool prevButton = rawButton;
