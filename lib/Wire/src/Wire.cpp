@@ -31,6 +31,7 @@ extern "C" {
 
 #include "esp32-hal-i2c.h"
 #include "esp32-hal-i2c-slave.h"
+#include "esp_debug_helpers.h"
 #include "Wire.h"
 #include "Arduino.h"
 
@@ -472,7 +473,7 @@ uint8_t TwoWire::endTransmission(bool sendStop)
 }
 
 size_t TwoWire::requestFrom(uint16_t address, size_t size, bool sendStop)
-{
+{   
     if(is_slave){
         log_e("Bus is in Slave Mode");
         return 0;
@@ -489,6 +490,7 @@ size_t TwoWire::requestFrom(uint16_t address, size_t size, bool sendStop)
     ){
         if(address != txAddress){
             log_e("Unfinished Repeated Start transaction! Expected address do not match! %u != %u", address, txAddress);
+            esp_backtrace_print(10);
             return 0;
         }
         nonStop = false;
@@ -496,14 +498,15 @@ size_t TwoWire::requestFrom(uint16_t address, size_t size, bool sendStop)
         rxLength = 0;
         err = i2cWriteReadNonStop(num, address, txBuffer, txLength, rxBuffer, size, _timeOutMillis, &rxLength);
         if(err){
-            log_e("i2cWriteReadNonStop returned Error %d", err);
-            return -1;
+            log_e("i2cWriteReadNonStop returned Error %s", esp_err_to_name(err));
+            esp_backtrace_print(10);
         }
     } else {
 #if !CONFIG_DISABLE_HAL_LOCKS
         //acquire lock
         if(lock == NULL || xSemaphoreTake(lock, portMAX_DELAY) != pdTRUE){
             log_e("could not acquire lock");
+            esp_backtrace_print(10);
             return 0;
         }
 #endif
@@ -512,6 +515,7 @@ size_t TwoWire::requestFrom(uint16_t address, size_t size, bool sendStop)
         err = i2cRead(num, address, rxBuffer, size, _timeOutMillis, &rxLength);
         if(err){
             log_e("i2cRead returned Error %d", err);
+            esp_backtrace_print(10);
         }
     }
 #if !CONFIG_DISABLE_HAL_LOCKS

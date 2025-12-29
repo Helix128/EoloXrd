@@ -1,7 +1,7 @@
 #ifndef BMESENSOR_H
 #define BMESENSOR_H
 
-#include <Adafruit_BME280.h>
+#include "Adafruit_BME280.h"
 #include "../Config.h"
 
 // Clase para manejar el sensor BME280 (temperatura, humedad, presión)
@@ -23,12 +23,13 @@ public:
             Serial.println("BME280 ya inicializado, skipping...");
             return;
         }
-
-        if(!bme.begin(0x76)){
+        
+        /*if(!bme.begin(0x76)){
             Serial.println("Fallo al inicializar BME280");
             isReady = false;
             return;
         }
+            */
         
         Serial.println("BME280 inicializado");
         isReady = true;
@@ -55,7 +56,7 @@ public:
     }
     void readData()
     {   
-        if(!isReady)
+        if(!isReady||true)
         {
             temperature = -1000;
             humidity = -1;
