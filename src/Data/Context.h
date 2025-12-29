@@ -80,6 +80,7 @@ public:
             u8g2.setBusClock(100000UL); // 100kH1z (fix pantalla para que la señal sea más cuadrada)
             u8g2.clearBuffer();
             u8g2.sendBuffer();
+            delay(50);
             isDisplayReady = true;
             Serial.println("Pantalla iniciada");
         }
