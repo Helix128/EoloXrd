@@ -167,7 +167,7 @@ private:
     
   // Función interna para leer datos del encoder desde el ATTiny
   void readEncoderData()
-  {
+  { 
     if (Wire.requestFrom(ATTINY_ADDRESS, 3) == 3)
     {
       short int prevCounter = rawCounter;

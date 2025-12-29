@@ -7,9 +7,10 @@
 #include "../Drawing/SceneManager.h"
 #include "ESPJob.h"
 
-typedef struct MenuOption{
-    const char* label;
-    const char* scene;
+typedef struct MenuOption
+{
+    const char *label;
+    const char *scene;
 } MenuOption;
 
 // Escena de logo/splash al iniciar la app
@@ -20,80 +21,93 @@ private:
         {"Nueva sesion", "flujo"},
         {"Continuar sesion", "wait"},
         {"Captura rapida", "flujo_now"},
-        {"Calibrar bombas", "calibration"}
-    };
+        {"Calibrar bombas", "calibration"}};
     MenuOption availableOptions[4];
     int optionCount = 0;
-public:
 
+public:
     int selectIndex = 0;
     bool canLoad = false;
     void enter(Context &ctx) override
-    {   
+    {
         canLoad = ctx.canLoadSession();
-        
+
         optionCount = 0;
         availableOptions[optionCount++] = menuOptions[0]; // Nueva sesion
-        if(canLoad){
+        if (canLoad)
+        {
             Serial.println("Carga de sesión disponible");
             availableOptions[optionCount++] = menuOptions[1]; // Cargar sesion
-        } else {
+        }
+        else
+        {
             Serial.println("No hay sesión para cargar");
         }
         availableOptions[optionCount++] = menuOptions[2]; // Captura rapida
         availableOptions[optionCount++] = menuOptions[3]; // Calibrar motor
         selectIndex = 0;
-       job = Job::RunOnCore(1,LAMBDA(void){
-             ctx.components.modem.begin();
-        char* buffer = new char[512];
-        char* url = "http://example.com/";
-        ctx.components.modem.get(url, buffer, 512);
-        Serial.print("Respuesta del servidor: ");
-        Serial.println(buffer);
-        delete[] buffer;
-        ctx.components.modem.end();
-       },NOCALLBACK);
+        #ifdef EOLO_GRANDE
+            job = Job::RunOnCore(1, LAMBDA(void) {
+                ctx.components.modem.begin();
+            char* buffer = new char[512];
+            char* url = "http://example.com/";
+            ctx.components.modem.get(url, buffer, 512);
+            Serial.print("Respuesta del servidor: ");
+            Serial.println(buffer);
+            delete[] buffer;
+            ctx.components.modem.end(); }, NOCALLBACK);
+        #endif
     }
 
     JobHandle job;
     void update(Context &ctx) override
-    {   if(!job.isRunning()){
-        job.run();
-    }
+    {
+        if (!job.isRunning())
+        {
+            job.run();
+        }
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
-        
+
         selectIndex += ctx.components.input.getEncoderDelta();
         selectIndex = constrain(selectIndex, 0, optionCount - 1);
-        
-        if(ctx.components.input.isButtonPressed()){
+
+        if (ctx.components.input.isButtonPressed())
+        {
             ctx.components.input.resetCounter();
-            if(strcmp(availableOptions[selectIndex].label, "Continuar sesion") == 0){
+            if (strcmp(availableOptions[selectIndex].label, "Continuar sesion") == 0)
+            {
                 Serial.println("Cargando sesión guardada...");
                 ctx.loadSession();
             }
             SceneManager::setScene(availableOptions[selectIndex].scene, ctx);
         }
-        
+
         ctx.u8g2.setFont(FONT_REGULAR);
-        
+
         // Calcular ventana de 3 elementos (offset)
         int offset = 0;
-        if (optionCount > 3) {
+        if (optionCount > 3)
+        {
             offset = selectIndex - 1;
-            if (offset < 0) offset = 0;
-            if (offset > optionCount - 3) offset = optionCount - 3;
+            if (offset < 0)
+                offset = 0;
+            if (offset > optionCount - 3)
+                offset = optionCount - 3;
         }
 
         for (int i = offset; i < offset + min(optionCount - offset, 3); i++)
-        {   
+        {
             int e = i - offset;
             bool highlight = (selectIndex == i);
-            if(highlight){
+            if (highlight)
+            {
                 ctx.u8g2.drawBox(2, 32 + e * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
                 ctx.u8g2.setFont(FONT_BOLD);
-            } else {
+            }
+            else
+            {
                 ctx.u8g2.setDrawColor(1);
                 ctx.u8g2.setFont(FONT_REGULAR);
             }
@@ -107,13 +121,15 @@ public:
         // Indicador de si hay más arriba/abajo (triángulos animados)
         ctx.u8g2.setDrawColor(1);
         unsigned long currentTime = millis();
-        int animOffset = ((currentTime / 200) % 2) * 2; 
+        int animOffset = ((currentTime / 200) % 2) * 2;
 
-        if (offset > 0) {
+        if (offset > 0)
+        {
             // Hay elementos arriba -> dibujar triángulo arriba
             ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
         }
-        if (offset + 3 < optionCount) {
+        if (offset + 3 < optionCount)
+        {
             // Hay elementos abajo -> dibujar triángulo abajo
             ctx.u8g2.drawTriangle(120, 60 - animOffset, 128, 60 - animOffset, 124, 64 - animOffset);
         }
@@ -122,15 +138,16 @@ public:
         int trackTop = 18;
         int trackHeight = 48;
         int knobHeight = optionCount > 0 ? trackHeight / optionCount : trackHeight;
-        if (knobHeight < 3) knobHeight = 3;
+        if (knobHeight < 3)
+            knobHeight = 3;
         int knobY = trackTop;
-        if (optionCount > 1) {
+        if (optionCount > 1)
+        {
             knobY = trackTop + ((trackHeight - knobHeight) * selectIndex) / (optionCount - 1);
         }
         ctx.u8g2.drawVLine(0, knobY, knobHeight);
 
         ctx.u8g2.sendBuffer();
-        
     }
 };
 #endif

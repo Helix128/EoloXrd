@@ -9,12 +9,13 @@
 #pragma message("REVISAR MODEM! No está listo.")
 
 #include "ESPJob.h"
+#include "../Config.h"
 
 class Modem
 {
 public:
   // pines
-  const int powerPin = 13;
+  const int powerPin = MODEM_PWR_PIN;
   const int MODEM_RX = 16;
   const int MODEM_TX = 17;
 

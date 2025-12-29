@@ -27,11 +27,11 @@ Context ctx(u8g2); // Aquí se procesa toda la lógica
 
 void setup()
 {   
-  pinMode(4,OUTPUT); // perifericos
-  pinMode(13,OUTPUT); // modem
+  pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
+  pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   
-  digitalWrite(4,HIGH); // perifericos
-  digitalWrite(13,HIGH); // modem
+  digitalWrite(PPH_PWR_PIN,HIGH); // perifericos
+  digitalWrite(MODEM_PWR_PIN,HIGH); // modem
   
   Serial.begin(115200);
   while(!Serial){
