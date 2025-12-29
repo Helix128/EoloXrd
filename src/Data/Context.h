@@ -237,7 +237,7 @@ public:
 
     bool loadSession()
     {
-        preferences.begin("eolo_session", true);
+        preferences.begin("eolo_session", false);
 
         if (!preferences.isKey("startDate"))
         {
@@ -295,7 +295,7 @@ public:
 
     bool canLoadSession()
     {
-        preferences.begin("eolo_session", true);
+        preferences.begin("eolo_session", false);
         bool hasSession = preferences.isKey("startDate");
         preferences.end();
         return hasSession;
@@ -334,7 +334,7 @@ public:
 
     bool loadCalibration()
     {
-        preferences.begin("eolo_calib", true);
+        preferences.begin("eolo_calib", false);
 
         if (!preferences.isKey("numPoints"))
         {
