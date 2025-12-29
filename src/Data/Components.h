@@ -15,15 +15,11 @@
 typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
   MotorManager motor; // Control de motor
-  Anemometer anemometer;  
   #ifdef EOLO_GRANDE
-    // Anemómetro ultrasónico
-    AFM07 flowSensor;    // Sensor de flujo de aire
-  #else
-    FS3K flowSensor;     // Sensor de velocidad de aire
+    Anemometer anemometer; // Anemómetro ultrasónico
+    Modem modem;           // Módem celular    
   #endif
-  
-  Modem modem;        // Módem celular
+  AFM07 flowSensor;    // Sensor de flujo de aire
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
@@ -39,8 +35,7 @@ typedef struct Components{
     bme.begin();
     plantower.begin();
     rtc.begin();
-    anemometer.begin();
-    
+
     #ifdef EOLO_GRANDE
       anemometer.begin();
     #endif

@@ -46,4 +46,9 @@
 #define FONT_BOLD_L u8g2_font_helvB12_tf
 #define FONT_REGULAR_L u8g2_font_helvR12_tf
 
+// extras EOLO grande
+#define PPH_PWR_PIN 13 // perifericos
+#define MODEM_PWR_PIN 4 // modem
+
 #endif // CONFIG_H
+
