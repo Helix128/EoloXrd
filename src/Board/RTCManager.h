@@ -2,7 +2,7 @@
 #define RTC_H
 
 #include <Arduino.h>
-#include <Wire.h>
+#include "Wire.h"
 #include <RTClib.h>
 #include "../Config.h"
 
