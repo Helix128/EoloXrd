@@ -128,7 +128,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
    // src/Data/Context.h
    bool loadCalibration()
    {
-       preferences.begin("eolo_calib", true);
+       preferences.begin("eolo_calib", false);
 
        if (!preferences.isKey("numPoints"))
        {
