@@ -13,6 +13,7 @@ private:
 public:
     void enter(Context &ctx) override
     {
+        SceneManager::setScene("wait",ctx);
         enablePM = ctx.session.usePlantower;
     }
 
@@ -34,7 +35,7 @@ public:
             SceneManager::setScene("captura",ctx);
         }
          ctx.u8g2.setFont(FONT_BOLD);
-        char* text = "Usar sensor PM";
+        const char* text = "Usar sensor PM";
         int textWidth = ctx.u8g2.getStrWidth(text);
         int textX = (128 - textWidth) / 2;
         ctx.u8g2.drawStr(textX,28, text);
@@ -61,7 +62,7 @@ public:
             ctx.u8g2.drawFrame(leftBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(1);  
         }
-        char* siStr = "Si";
+        const char* siStr = "Si";
         int siWidth = ctx.u8g2.getStrWidth(siStr);
         int siX = leftBoxX + (boxWidth - siWidth) / 2;
         ctx.u8g2.drawStr(siX, textY, siStr);
@@ -77,14 +78,14 @@ public:
             ctx.u8g2.drawFrame(rightBoxX, boxY, boxWidth, boxHeight);  
             ctx.u8g2.setDrawColor(1);  
         }
-        char* noStr = "No";
+        const char* noStr = "No";
         int noWidth = ctx.u8g2.getStrWidth(noStr);
         int noX = rightBoxX + (boxWidth - noWidth) / 2;
         ctx.u8g2.drawStr(noX, textY, noStr);
 
         ctx.u8g2.setFont(FONT_REGULAR_S);
         ctx.u8g2.setDrawColor(1); 
-        char* infoStr = "+ consumo de energia";
+        const char* infoStr = "+ consumo de energia";
         int infoWidth = ctx.u8g2.getStrWidth(infoStr);
         int infoX = (128 - infoWidth) / 2;
         ctx.u8g2.drawStr(infoX, 60, infoStr);

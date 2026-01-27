@@ -16,22 +16,22 @@ public:
     void begin()
     {
         if (isReady) {
-            Serial.println("FS3000 ya inicializado, skipping...");
+            LOG_LN("FS3000 ya inicializado, skipping...");
             return;
         }
 
         if(!sensor.begin())
         {
-            Serial.println("Fallo al inicializar FS3000");
+            LOG_LN("Fallo al inicializar FS3000");
             isReady = false;
         }
         else
         {
-            Serial.println("FS3000 inicializado");
+            LOG_LN("FS3000 inicializado");
             bool isConnected = sensor.isConnected();
             if (!isConnected)
             {
-                Serial.println("FS3000 no conectado");
+                LOG_LN("FS3000 no conectado");
                 isReady = false;
                 return;
             }
@@ -59,7 +59,7 @@ public:
     
     void testSensor()
     {
-        Serial.println("Probando FS3000...");
+        LOG_LN("Probando FS3000...");
         for (int i = 0; i < 20; i++)
         {
             readData();
@@ -69,7 +69,7 @@ public:
             Serial.print(currentFlow);
             Serial.print(" L/min, Flujo promedio: ");
             Serial.print(flow);
-            Serial.println(" L/min");
+            LOG_LN(" L/min");
             delay(500);
         }
     }

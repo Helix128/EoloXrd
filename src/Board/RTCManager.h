@@ -5,6 +5,7 @@
 #include "Wire.h"
 #include <RTClib.h>
 #include "../Config.h"
+#include "ESPJob.h"
 
 #if BAREBONES == false
 // Manejo del RTC (DS3231 via RTClib)
@@ -12,14 +13,18 @@ class RTCManager
 {
 private:
     RTC_DS3231 rtc;
-    
-public:  
+
+public:
     bool ok = false;
     // Inicializa I2C y el RTC. Devuelve true si está presente.
     bool begin()
     {
-        Wire.begin();
+        LOG_LN("Iniciando RTC...");
         ok = true;
+
+        const int TIMEOUT_MS = 5000;
+        int startTime = millis();
+    
         if (!rtc.begin())
         {
             ok = false;
@@ -28,19 +33,22 @@ public:
         if (rtc.lostPower())
         {
             rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-        }
-        
-        #if CHECK_SENSORS
+        } 
+
+    
+#if CHECK_SENSORS
         testRTC();
-        #endif
+#endif
         return ok;
     }
 
-    void testRTC(){
-        if(!ok){
-            Serial.println("RTC no está inicializado correctamente");
+    void testRTC()
+    {
+        if (!ok)
+        {
+            LOG_LN("RTC no está inicializado correctamente");
         }
-        Serial.println("Probando RTC...");
+        LOG_LN("Probando RTC...");
         DateTime now = rtc.now();
         Serial.print("Fecha y hora actual: ");
         Serial.print(now.year(), DEC);
@@ -59,7 +67,7 @@ public:
     // Devuelve la fecha/hora actual en formato "YYYY-MM-DD HH:MM:SS"
     String getTimeString()
     {
-        if(!ok)
+        if (!ok)
             return String("0000-00-00 00:00:00");
 
         DateTime now = rtc.now();
@@ -72,7 +80,7 @@ public:
 
     String getTimeString(DateTime time)
     {
-        if(!ok)
+        if (!ok)
             return String("0000-00-00 00:00:00");
 
         char buf[20];
@@ -84,8 +92,8 @@ public:
 
     // Opcional: devuelve el objeto DateTime para uso avanzado
     DateTime now()
-    {   
-        if(!ok)
+    {
+        if (!ok)
             return DateTime();
         return rtc.now();
     }
@@ -102,9 +110,9 @@ public:
     {
         // El RTC interno no requiere inicialización especial.
         ok = true;
-        #if CHECK_SENSORS
+#if CHECK_SENSORS
         testRTC();
-        #endif
+#endif
         return ok;
     }
 
@@ -112,15 +120,15 @@ public:
     {
         if (!ok)
         {
-            Serial.println("RTC no está inicializado correctamente");
+            LOG_LN("RTC no está inicializado correctamente");
         }
-        Serial.println("Probando RTC...");
+        LOG_LN("Probando RTC...");
         time_t now;
         struct tm timeinfo;
         time(&now);
         localtime_r(&now, &timeinfo);
         Serial.print("Fecha y hora actual: ");
-        Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n",
+        LOG_F("%04d/%02d/%02d %02d:%02d:%02d\n",
                       timeinfo.tm_year + 1900,
                       timeinfo.tm_mon + 1,
                       timeinfo.tm_mday,
@@ -158,8 +166,8 @@ public:
         time(&now);
         localtime_r(&now, &timeinfo);
 
-        DateTime dt = DateTime(timeinfo.tm_sec+timeinfo.tm_min*60+timeinfo.tm_hour*3600+
-                                  timeinfo.tm_mday*86400+(timeinfo.tm_mon+timeinfo.tm_year*365)*86400);
+        DateTime dt = DateTime(timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600 +
+                               timeinfo.tm_mday * 86400 + (timeinfo.tm_mon + timeinfo.tm_year * 365) * 86400);
         return dt;
     }
 };

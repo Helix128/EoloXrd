@@ -1,82 +1,84 @@
 #ifndef AFM07_HPP
 #define AFM07_HPP
 
-#include <ModbusMaster.h>
+#include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "./Board/RS485.h" 
 
-// Clase para manejar el sensor de flujo AFM07
-class AFM07
-{
+#define AFM_ID 0x14
+
+struct FlowData {
+    float flow;
+    float velocity;
+    bool valid;
+};
+
+class AFM07 {
 private:
-    // Definición de pines
-    static const uint8_t RS485_TX = 17;
-    static const uint8_t RS485_RX = 16;
-    static const uint8_t RS485_DE_RE_PIN = 4;
-
-    // Registros del sensor
-    static const uint8_t AFM07_ID = 0x01;
+    TaskHandle_t _taskHandle = nullptr;
+    SemaphoreHandle_t _dataMutex;
+    FlowData _data;
     static const uint16_t REG_INSTANT_FLOW = 0x0000;
+    static const uint8_t FACTOR_LECTURA = 10;
 
-    static const uint8_t FACTOR_LECTURA = 100;
+    static void taskWorker(void* arg) {
+        AFM07* self = (AFM07*)arg;
+        
+        TickType_t xLastWakeTime = xTaskGetTickCount();
+        const TickType_t xFrequency = pdMS_TO_TICKS(500); 
 
-    HardwareSerial ModbusSerial;
-    ModbusMaster node;
+        uint16_t rawData[1];
 
-    static void preTransmission()
-    {
-        digitalWrite(RS485_DE_RE_PIN, HIGH); // Configura módulo RS485 en modo transmisión
-    }
+        while (true) {
+            bool success = RS485::readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
-    static void postTransmission()
-    {
-        digitalWrite(RS485_DE_RE_PIN, LOW); // Configura módulo RS485 en modo recepción
+            if (!success) {
+                Serial.println("DEBUG AFM: RS485 falló internamente (Timeout o CRC)");
+            } else {
+                Serial.println("DEBUG AFM: Lectura Exitosa, actualizando datos...");
+            }
+            if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                if (success) {
+                    float val = (float)rawData[0] / FACTOR_LECTURA;
+                    self->_data.flow = val;
+                    self->_data.velocity = val; 
+                    self->_data.valid = true;
+                } else {
+                    self->_data.valid = false;
+                }
+                xSemaphoreGive(self->_dataMutex);
+            }
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        }
     }
 
 public:
-    AFM07() : ModbusSerial(2)
-    {
+    AFM07() {
+        _dataMutex = xSemaphoreCreateMutex();
+        _data.valid = false;
+        _data.flow = 0.0;
+        _data.velocity = 0.0;
     }
 
-    float velocity = 0.0; // m/s
-    float flow = 0.0;    // L/min
-    bool isReady = false;
-
-    void begin()
-    {
-        if (isReady) {
-            Serial.println("AFM07 ya inicializado, skipping...");
-            return;
-        }
-
-        pinMode(RS485_DE_RE_PIN, OUTPUT);
-        digitalWrite(RS485_DE_RE_PIN, LOW); // Configura módulo RS485 en modo recepción
-
-        ModbusSerial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX); //
-
-        node.begin(AFM07_ID, ModbusSerial);
-        node.preTransmission(preTransmission);
-        node.postTransmission(postTransmission);
-        
-        Serial.println("AFM07 inicializado");
-        isReady = true;
+    ~AFM07() {
+        if (_taskHandle) vTaskDelete(_taskHandle);
+        if (_dataMutex) vSemaphoreDelete(_dataMutex);
     }
 
-    void readData()
-    {
-        uint8_t result;
+    void begin() {
+        RS485::begin();
+        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
+    }
 
-        result = node.readHoldingRegisters(REG_INSTANT_FLOW, 1); // Lee el registro de flujo instantáneo
-
-        if (result == node.ku8MBSuccess)
-        {
-            uint16_t valorCrudo = node.getResponseBuffer(0);
-            flow = (float)valorCrudo / FACTOR_LECTURA;
-            velocity = flow; // TODO: CALCULAR VALOR REAL (?) Innecesario tal vez
+    bool getData(FlowData& output) {
+        bool success = false;
+        if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            output = _data;
+            success = _data.valid;
+            xSemaphoreGive(_dataMutex);
         }
-        else
-        {
-            flow = -1.0;
-            velocity = -1.0;
-        }
+        return success;
     }
 };
 

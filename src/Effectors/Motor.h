@@ -40,7 +40,7 @@ public:
   {
     if (isReady)
     {
-      Serial.println("Motores ya inicializados, skipping...");
+      LOG_LN("Motores ya inicializados, skipping...");
       return;
     }
 
@@ -65,7 +65,7 @@ public:
     {
       Serial.print("Prueba de motores: ");
       Serial.print(i);
-      Serial.println("%");
+      LOG_LN("%");
       setPowerPct(i);
       delay(500);
     }
@@ -84,14 +84,14 @@ public:
       if (pwm >= MAX_PWM)
       {
         if (pwmValues[i] != MAX_PWM)
-          Serial.println("Motor " + String(i) + " a " + String(MAX_PWM));
+          LOG_LN("Motor " + String(i) + " a " + String(MAX_PWM));
         pwmValues[i] = MAX_PWM;
         pwm -= MAX_PWM;
       }
       else
       {
         if (pwmValues[i] != pwm)
-          Serial.println("Motor " + String(i) + " a " + String(pwm));
+          LOG_LN("Motor " + String(i) + " a " + String(pwm));
         pwmValues[i] = pwm;
         pwm = 0;
       }

@@ -30,31 +30,30 @@ void setup()
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   
-  digitalWrite(PPH_PWR_PIN,HIGH); // perifericos
-  digitalWrite(MODEM_PWR_PIN,HIGH); // modem
-  
   Serial.begin(115200);
-  while(!Serial){
-    delay(50);
-  }
-  
+
+  /*
   I2CUtility::begin();
   I2CUtility::scan();
+  */
+  // Registrar todas las escenas (SceneRegistry)
   
+  registerAllScenes();
   // Inicialización del contexto de la app
   ctx.begin();
-  
-  // Registrar todas las escenas (SceneRegistry)
-  registerAllScenes();
 
   // Carga la escena inicial (splash)
   SceneManager::setScene("splash", ctx);  
 }
 
-const int targetMs = 50;
+const int targetMs = 16;
 unsigned long int lastFrameMs = 0;
 void loop()
-{
+{ 
+  if(SceneManager::getSceneIndex()<=1){
+    ctx.components.motor.setPowerPct(0);
+  }
+
   if(millis() - lastFrameMs < targetMs){
     return;
   }

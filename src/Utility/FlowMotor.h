@@ -19,9 +19,9 @@ float GetTargetMotorPct(float targetFlow, float* calMotorPcts, float* calFlows, 
 
 void testFlowMotor(Context &ctx)
 {   
-    Serial.println("=== Test Motor-Flujo ===");
+    LOG_LN("=== Test Motor-Flujo ===");
 
-    Serial.println("Calibrando...");
+    LOG_LN("Calibrando...");
     
     int maxCalPoints = 100;
     int numCalPoints = 0;
@@ -34,8 +34,13 @@ void testFlowMotor(Context &ctx)
         ctx.components.motor.setPowerPct(currentPct);
         delay(1000); 
 
-        ctx.components.flowSensor.readData();
-        float measuredFlow = ctx.components.flowSensor.flow;
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            LOG_LN("Error al leer sensor de flujo durante calibración");
+            continue;
+        }
+        float measuredFlow = flowData.flow;
         if(measuredFlow-lastFlow<0.1f && currentPct!=0)
         {
             //currentPct += 1.0f;
@@ -46,7 +51,7 @@ void testFlowMotor(Context &ctx)
         Serial.print(currentPct);
         Serial.print("% -> Flujo medido: ");
         Serial.print(measuredFlow, 2);
-        Serial.println(" L/min");
+        LOG_LN(" L/min");
 
         calMotorPcts[numCalPoints] = currentPct;
         calFlows[numCalPoints] = measuredFlow;
@@ -67,28 +72,28 @@ void testFlowMotor(Context &ctx)
             file.println(calFlows[i]);
         }
         file.close();
-        Serial.println("Calibración guardada en calibracion.csv");
+        LOG_LN("Calibración guardada en calibracion.csv");
     } else {
-        Serial.println("Error al abrir calibracion.csv");
+        LOG_LN("Error al abrir calibracion.csv");
     }
     return;
-    Serial.println("Calibración completa.");
+    LOG_LN("Calibración completa.");
     Serial.print("Rango de flujo medido: ");
     Serial.print(calFlows[0]);
     Serial.print(" - ");
     Serial.print(calFlows[10]);
-    Serial.println(" L/min");
+    LOG_LN(" L/min");
 
-    Serial.println("Ingresa valor de flujo (0-8 L/min) via Serial");
-    Serial.println("Escribe 'exit' para salir");
-    Serial.println();
+    LOG_LN("Ingresa valor de flujo (0-8 L/min) via Serial");
+    LOG_LN("Escribe 'exit' para salir");
+    LOG_LN();
     
     ctx.components.motor.setPowerPct(0);
 
     ctx.session.targetFlow = 0.0;
     Serial.print("Flujo objetivo actual: ");
     Serial.print(ctx.session.targetFlow, 1);
-    Serial.println(" L/min");
+    LOG_LN(" L/min");
     
     String inputBuffer = "";
     
@@ -109,7 +114,7 @@ void testFlowMotor(Context &ctx)
                     if (inputBuffer.equalsIgnoreCase("exit"))
                     {
                         ctx.components.motor.setPowerPct(0);
-                        Serial.println("Saliendo de la prueba...");
+                        LOG_LN("Saliendo de la prueba...");
                         return;
                     }
                     
@@ -119,11 +124,11 @@ void testFlowMotor(Context &ctx)
                         ctx.session.targetFlow = newTarget;
                         Serial.print("Nuevo flujo objetivo: ");
                         Serial.print(ctx.session.targetFlow, 1);
-                        Serial.println(" L/min");
+                        LOG_LN(" L/min");
                     }
                     else
                     {
-                        Serial.println("Valor inválido. Ingresa 0-8 L/min o 'exit'");
+                        LOG_LN("Valor inválido. Ingresa 0-8 L/min o 'exit'");
                     }
                     
                     inputBuffer = "";
@@ -136,8 +141,14 @@ void testFlowMotor(Context &ctx)
         }
         
         // Leer un sample del sensor de flujo por ciclo
-        ctx.components.flowSensor.readData();
-        float newFlow = ctx.components.flowSensor.flow;
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            LOG_LN("Error al leer sensor de flujo");
+            delay(100);
+            continue;
+        }   
+        float newFlow = flowData.flow;
         samples[sampleIndex] = newFlow;
         sampleIndex = (sampleIndex + 1) % numSamples;
         if (validSamples < numSamples) validSamples++;
@@ -160,7 +171,7 @@ void testFlowMotor(Context &ctx)
             Serial.print(ctx.session.targetFlow, 1);
             Serial.print(" L/min | Potencia motor: ");
             Serial.print(ctx.components.motor.getPowerPct(), 1);
-            Serial.println("%");
+            LOG_LN("%");
         }
         
         delay(10);

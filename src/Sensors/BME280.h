@@ -2,6 +2,7 @@
 #define BMESENSOR_H
 
 #include "Adafruit_BME280.h"
+#include "ESPJob.h"
 #include "../Config.h"
 
 // Clase para manejar el sensor BME280 (temperatura, humedad, presión)
@@ -14,49 +15,51 @@ public:
     float temperature = 0.0;
     float humidity = 0.0;
     float pressure = 0.0;
-
     bool isReady = false;
-    
+
     void begin()
     {
-        if (isReady) {
-            Serial.println("BME280 ya inicializado, skipping...");
+        if (isReady)
+        {
+            LOG_LN("BME280 ya inicializado, skipping...");
             return;
         }
-        
-        /*if(!bme.begin(0x76)){
-            Serial.println("Fallo al inicializar BME280");
+
+        LOG_LN("Iniciando BME280...");
+        if (!bme.begin(0x76))
+        {
+            LOG_LN("Fallo al inicializar BME280");
             isReady = false;
             return;
         }
-            */
-        
-        Serial.println("BME280 inicializado");
+
+        LOG_LN("BME280 inicializado");
         isReady = true;
 #if CHECK_SENSORS
         testSensor();
 #endif
     }
 
-    void testSensor(){
+    void testSensor()
+    {
         for (int i = 0; i < 5; i++)
         {
             readData();
             Serial.print("Temperature: ");
             Serial.print(temperature);
-            Serial.println(" °C");
+            LOG_LN(" °C");
             Serial.print("Humidity: ");
             Serial.print(humidity);
-            Serial.println(" %");
+            LOG_LN(" %");
             Serial.print("Pressure: ");
             Serial.print(pressure);
-            Serial.println(" hPa");
+            LOG_LN(" hPa");
             delay(100);
         }
     }
     void readData()
-    {   
-        if(!isReady||true)
+    {
+        if (!isReady)
         {
             temperature = -1000;
             humidity = -1;

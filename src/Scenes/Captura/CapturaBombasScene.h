@@ -18,7 +18,7 @@ public:
 
     void update(Context &ctx) override
     {
-        ctx.components.flowSensor.readData();
+
 
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
@@ -30,7 +30,13 @@ public:
 
         int pwm1 = ctx.components.motor.pwmValues[0];
         int pwm2 = ctx.components.motor.pwmValues[1];
-        float flow = ctx.components.flowSensor.flow;
+
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;   
+        }
+        float flow = flowData.flow;
 
         char pwm1Str[6];
         snprintf(pwm1Str, sizeof(pwm1Str), "%d", pwm1);
