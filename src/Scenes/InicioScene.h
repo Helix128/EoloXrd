@@ -5,7 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/GUI.h"
 #include "../Drawing/SceneManager.h"
-#include "ESPJob.h"
+#include "Profiler.h" 
 
 typedef struct MenuOption
 {
@@ -36,38 +36,21 @@ public:
         availableOptions[optionCount++] = menuOptions[0]; // Nueva sesion
         if (canLoad)
         {
-            Serial.println("Carga de sesión disponible");
+            LOG_LN("Carga de sesión disponible");
             availableOptions[optionCount++] = menuOptions[1]; // Cargar sesion
         }
         else
         {
-            Serial.println("No hay sesión para cargar");
+            LOG_LN("No hay sesión para cargar");
         }
         availableOptions[optionCount++] = menuOptions[2]; // Captura rapida
         availableOptions[optionCount++] = menuOptions[3]; // Calibrar motor
         selectIndex = 0;
-        #ifdef EOLO_GRANDE
-            job = Job::RunOnCore(1, LAMBDA(void) {
-                ctx.components.modem.begin();
-            char* buffer = new char[512];
-            char* url = "http://example.com/";
-            ctx.components.modem.get(url, buffer, 512);
-            Serial.print("Respuesta del servidor: ");
-            Serial.println(buffer);
-            delete[] buffer;
-            ctx.components.modem.end(); }, NOCALLBACK);
-        #endif
     }
 
-    JobHandle job;
     void update(Context &ctx) override
     {
-        if (!job.isRunning())
-        {
-            job.run();
-        }
-        ctx.u8g2.clearBuffer();
-        GUI::displayHeader(ctx);
+        //Profiler p("InicioScene update");
 
         selectIndex += ctx.components.input.getEncoderDelta();
         selectIndex = constrain(selectIndex, 0, optionCount - 1);
@@ -77,12 +60,20 @@ public:
             ctx.components.input.resetCounter();
             if (strcmp(availableOptions[selectIndex].label, "Continuar sesion") == 0)
             {
-                Serial.println("Cargando sesión guardada...");
+                LOG_LN("Cargando sesión guardada...");
                 ctx.loadSession();
             }
             SceneManager::setScene(availableOptions[selectIndex].scene, ctx);
         }
+        //p.end();
+        draw(ctx);
+    }
 
+    void draw(Context &ctx) 
+    {
+        //Profiler p("InicioScene draw");
+        ctx.u8g2.clearBuffer();
+        GUI::displayHeader(ctx);
         ctx.u8g2.setFont(FONT_REGULAR);
 
         // Calcular ventana de 3 elementos (offset)

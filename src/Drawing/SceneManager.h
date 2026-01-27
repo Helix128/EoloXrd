@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include "../Scenes/IScene.h"
+#include "Profiler.h" 
 
 // Declaración adelantada de Context
 struct Context;
@@ -13,19 +14,21 @@ class SceneManager
 {
 private:
     static std::map<std::string, IScene *> scenes;
+    static std::map<int, IScene *> sceneIndices;
     static IScene *currentScene;
     static std::string currentSceneName;
-
+    static int currentSceneIndex;
 public:
     static void addScene(const std::string &name, IScene *scene)
     {
         scenes[name] = scene;
+        sceneIndices[sceneIndices.size()] = scene;
     }
 
     static bool parseSceneCmd(const std::string &cmd, Context &ctx)
     {
         if(cmd=="RESET"){
-            Serial.println("Reiniciando EOLO...");
+            LOG_LN("Reiniciando EOLO...");
             ESP.restart();
             return false;
         } 
@@ -45,17 +48,27 @@ public:
             currentSceneName = name;
             currentScene->enter(ctx); // Llamar método enter de la nueva escena
             Serial.print("Cambiando a escena: ");
-            Serial.println(name.c_str());
+
+            currentSceneIndex = 0;
+            for(const auto& pair : sceneIndices){
+                if(pair.second == currentScene){
+                    currentSceneIndex = pair.first;
+                    break;
+                }
+            }
+
+            LOG_F("%s (index %d)\n", name.c_str(), currentSceneIndex);
         }
         else
         {
             Serial.print("Escena no encontrada: ");
-            Serial.println(name.c_str());
+            LOG_LN(name.c_str());
         }
     }
 
     static void update(Context &ctx)
-    {
+    {   
+        //Profiler p("SceneManager update");
         if (currentScene != nullptr)
         {
             currentScene->update(ctx);
@@ -71,12 +84,17 @@ public:
     {
         return currentScene;
     }
+    static int getSceneIndex(){
+        return currentSceneIndex;
+    }
 };
 
 // Definiciones de miembros
 // inline para que funcionen con static
 inline std::map<std::string, IScene *> SceneManager::scenes;
+inline std::map<int, IScene *> SceneManager::sceneIndices;
 inline IScene *SceneManager::currentScene = nullptr;
 inline std::string SceneManager::currentSceneName = "";
+inline int SceneManager::currentSceneIndex = -1;
 
 #endif

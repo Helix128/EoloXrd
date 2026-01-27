@@ -32,9 +32,6 @@ private:
         }},
         {"Ajustar flujo", [](Context &ctx) {
             SceneManager::setScene("captura_flujo", ctx);
-        }},
-        {"Usar sensor PM", [](Context &ctx) {
-            SceneManager::setScene("plantower_fin", ctx);
         }}
     };
 public:

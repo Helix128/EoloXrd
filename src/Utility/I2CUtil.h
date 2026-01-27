@@ -10,12 +10,12 @@ public:
   static void begin() {
     while (!Serial) {}
     Wire.begin();
-    Serial.println("I2C Scanner iniciado");
+    LOG_LN("I2C Scanner iniciado");
   }
 
   static void scan() {
     count = 0;
-    Serial.println("Escaneando bus I2C...");
+    LOG_LN("Escaneando bus I2C...");
     
     for (uint8_t addr = 1; addr < 127; addr++) {
       Wire.beginTransmission(addr);
@@ -27,7 +27,7 @@ public:
         Serial.print(addr, HEX);
         Serial.print(" (");
         Serial.print(addr);
-        Serial.println(")");
+        LOG_LN(")");
         count++;
       } else if (error == 4) {
         Serial.print("Error desconocido en 0x");
@@ -37,13 +37,13 @@ public:
     }
 
     if (count == 0) {
-      Serial.println("No se encontraron dispositivos I2C.");
+      LOG_LN("No se encontraron dispositivos I2C.");
     } else {
       Serial.print("Total: ");
       Serial.print(count);
-      Serial.println(" dispositivo(s) encontrados.");
+      LOG_LN(" dispositivo(s) encontrados.");
     }
-    Serial.println();
+    LOG_LN();
   }
 };
 

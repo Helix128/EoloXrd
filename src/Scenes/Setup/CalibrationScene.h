@@ -42,8 +42,8 @@ public:
         lastSampleTime = 0;
         stateStartTime = millis();
         
-        Serial.println("=== Iniciando calibración Motor-Flujo ===");
-        Serial.println("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
+        LOG_LN("=== Iniciando calibración Motor-Flujo ===");
+        LOG_LN("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
         
         // Inicializar arrays de calibración
         ctx.numCalPoints = 0;
@@ -51,7 +51,7 @@ public:
         // Apagar motor y estabilizar sensor
         ctx.components.motor.setPowerPct(0);
         for (int i = 0; i < 20; i++) {
-            ctx.components.flowSensor.readData();
+             ;
             delay(50);
         }
     }
@@ -178,8 +178,15 @@ public:
             case SAMPLING:
                 if (millis() - lastSampleTime >= SAMPLE_INTERVAL_MS)
                 {
-                    ctx.components.flowSensor.readData();
-                    sumFlow += ctx.components.flowSensor.flow;
+                    FlowData flowData;
+                    if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+                    {
+                        LOG_LN("Error al leer sensor de flujo durante muestreo");
+                    }
+                    else
+                    {
+                        sumFlow += flowData.flow;
+                    }
                     sampleCount++;
                     lastSampleTime = millis();
                     
@@ -191,7 +198,7 @@ public:
                         Serial.print(currentPct, 1);
                         Serial.print("% -> Flujo medido (prom): ");
                         Serial.print(measuredFlow, 3);
-                        Serial.println(" L/min");
+                        LOG_LN(" L/min");
                         
                         ctx.calMotorPcts[ctx.numCalPoints] = currentPct;
                         ctx.calFlows[ctx.numCalPoints] = measuredFlow;
@@ -208,14 +215,14 @@ public:
                 
                 if (ctx.numCalPoints < 2)
                 {
-                    Serial.println("ERROR: Pocos puntos de calibración capturados.");
+                    LOG_LN("ERROR: Pocos puntos de calibración capturados.");
                     ctx.isCalibrationLoaded = false;
                     state = COMPLETE;
                     break;
                 }
                 
                 // Ordenar puntos por flujo ascendente
-                Serial.println("Ordenando puntos de calibración por flujo...");
+                LOG_LN("Ordenando puntos de calibración por flujo...");
                 for (int i = 0; i < ctx.numCalPoints - 1; i++)
                 {
                     for (int j = 0; j < ctx.numCalPoints - i - 1; j++)
@@ -233,9 +240,9 @@ public:
                     }
                 }
                 
-                Serial.println("Calibración completa y ordenada.");
+                LOG_LN("Calibración completa y ordenada.");
                 Serial.print("Puntos capturados: ");
-                Serial.println(ctx.numCalPoints);
+                LOG_LN(ctx.numCalPoints);
                 
                 state = SAVING;
                 break;

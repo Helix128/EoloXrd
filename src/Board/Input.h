@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include "Wire.h"
+#include "Profiler.h" 
 
 // Clase para manejar el input del encoder con botón
 class Input
@@ -43,6 +44,7 @@ public:
 
   int getEncoderDelta(int exponent = 2)
   {
+    Profiler p("Input getEncoderDelta");
     int delta = intPow(encoderDelta, exponent);
     if (encoderDelta < 0 && exponent % 2 == 0)
     {
@@ -54,13 +56,13 @@ public:
   void begin()
   {
     if (isReady) {
-      Serial.println("Input ya inicializado, skipping...");
+      LOG_LN("Input ya inicializado, skipping...");
       return;
     }
 
     Wire.begin(SDA_PIN, SCL_PIN); // Inicializa Wire para comunicación I2C
-    Wire.setClock(100000);        // 100kHz
-    Serial.println("Encoder inicializado");
+    Wire.setClock(I2C_CLOCK);        
+    LOG_LN("Encoder inicializado");
     delay(100);
     resetButton();
     resetCounter();
@@ -77,6 +79,7 @@ public:
   // Actualizar lecturas desde el driver
   void poll()
   {
+    Profiler p("Input poll");
     readEncoderData();
     debounce();  
   }
@@ -136,8 +139,7 @@ private:
         prevButtonPressed = buttonPressed;
         buttonPressed = rawButton;
         lastButtonMs = currentMs;
-        Serial.print("Botón cambiado a: ");
-        Serial.println(buttonPressed);
+        LOG_F("Botón cambiado a: %d\n", buttonPressed);
       }
     }
     if(rawCounter!=prevRawCounter){
@@ -159,8 +161,7 @@ private:
         prevRawCounter = rawCounter;
         
         lastEncoderMs = currentMs;
-        Serial.print("Encoder delta cambiado a: ");
-        Serial.println(encoderDelta);
+        LOG_F("Encoder cambiado a: %d\n", encoderDelta);
       }
     }
   }
@@ -169,12 +170,6 @@ private:
   void readEncoderData()
   {     
     int readResult = Wire.requestFrom(ATTINY_ADDRESS, 3);
-    if(readResult<=0){
-      Serial.println("Reinicializando encoder");
-      isReady = false;
-      begin(); // reintentar inicializar encoder
-      return;
-    }
     if (readResult == 3)
     {
       short int prevCounter = rawCounter;
@@ -187,21 +182,18 @@ private:
       
       if (rawCounter != prevCounter)
       {
-        Serial.print("Encoder: Contador cambio a ");
-        Serial.println(rawCounter);
+        LOG_F("Encoder: Contador cambio a %d\n", rawCounter);
         hasChanged = true;
       }
       if(rawDirection != prevDirection)
       { 
         
-        Serial.print("Encoder: Dirección cambio a ");
-        Serial.println(rawDirection);
+        LOG_F("Encoder: Dirección cambio a %d\n", rawDirection);
         hasChanged = true;
       }
       if (rawButton != prevButton)
       {
-        Serial.print("Encoder: Boton pulsado? ");
-        Serial.println(rawButton);
+        LOG_F("Encoder: Boton pulsado? %d\n", rawButton);
         hasChanged = true;
       }
     }
@@ -218,10 +210,10 @@ class Input{
 
     void begin() {
         if (isReady) {
-            Serial.println("Input simulado ya inicializado, skipping...");
+            LOG_LN("Input simulado ya inicializado, skipping...");
             return;
         }
-        Serial.println("Input simulado iniciado");
+        LOG_LN("Input simulado iniciado");
         isReady = true;
     }
 
@@ -233,17 +225,17 @@ class Input{
             if (command == 'd') {
                 encoderDelta++;
                 hasChanged = true;
-                Serial.println("Encoder derecha");
+                LOG_LN("Encoder derecha");
             }
             else if (command == 'a') {
                 encoderDelta--;
                 hasChanged = true;
-                Serial.println("Encoder izquierda");
+                LOG_LN("Encoder izquierda");
             } 
             else if (command == 's') {
                 buttonPressed = true;
                 hasChanged = true;
-                Serial.println("Botón pulsado");
+                LOG_LN("Botón pulsado");
             }
         }
     }

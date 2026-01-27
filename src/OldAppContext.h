@@ -166,9 +166,15 @@ typedef struct AppContext
         // Guardar muestra en SD si está disponible
         if (Logger::status == SD_OK)
         {
+          FlowData flowData;
+          if (!flowSensor.getData(flowData))
+          {
+            flowData.flow = -1.0;
+          }
+          
           logger.capture(
               now,
-              flowSensor.flow,
+              flowData.flow,
               flujoObjetivo,
               bme.temperature,
               bme.humidity,
@@ -350,8 +356,7 @@ typedef struct AppContext
   // Helper para obtener % de batería para display
   int getBatteryPercentage()
   {
-    int rawLevel = battery.getLevel();
-    return map(rawLevel, 0, 255, 0, 100);
+    return (int)battery.getPct();
   }
 } AppContext;
 

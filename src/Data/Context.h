@@ -5,8 +5,10 @@
 #include "Components.h"
 #include "../Config.h"
 #include "../Drawing/SceneManager.h"
+#include "ESPJob.h"
 #include <SD.h>
 #include <Preferences.h>
+#include "Profiler.h"
 
 enum SDStatus
 {
@@ -53,43 +55,51 @@ public:
 
     void begin()
     {
+        Profiler p("Context begin");
         instance = this;
 
         bool grande = false;
-        #ifdef EOLO_GRANDE
-            grande = true;
-        #endif
+#ifdef EOLO_GRANDE
+        grande = true;
+#endif
+        const char *versionType = grande ? "Standard" : "Express";
+        LOG_F("Iniciando EOLO %s\n", versionType);
 
-        Serial.print("EOLO");
-        if (grande)
-        {
-            Serial.println(" (grande)");
-        }
-        else
-        {
-            Serial.println(" (pequeño)");
-        }
+        components.motor.begin();
+        components.motor.setPWM(0); // Asegurar que los motores estén apagados
 
+        LOG_LN("Iniciando pantalla...");
         delay(50);
-        Serial.println("Inicializando contexto...");
-        setDisplayPower(true);
-        if (!isDisplayReady)
-        {
-            Serial.println("Iniciando pantalla...");
-            u8g2.begin();
-            u8g2.setBusClock(100000UL); // 100kH1z (fix pantalla para que la señal sea más cuadrada)
-            u8g2.clearBuffer();
-            u8g2.sendBuffer();
-            delay(50);
-            isDisplayReady = true;
-            Serial.println("Pantalla iniciada");
-        }
-        delay(50);
+        digitalWrite(PPH_PWR_PIN, HIGH);
+        initDisplay();
+        LOG_LN("Pantalla iniciada");
+        LOG_LN("Inicializando contexto...");
         components.begin();
 
-        loadCalibration();  // Ya no depende de SD
-        initSD();           // Solo para logs
-       
+        initDisplay();
+        delay(50);
+
+        loadCalibration(); // ya no depende de SD
+        initSD();          // solo para logs
+    }
+
+    void initDisplay()
+    {
+        bool began = u8g2.begin();
+        if (!began)
+        {
+            LOG_LN("Fallo al iniciar pantalla");
+            return;
+        }
+        u8g2.setBusClock(I2C_CLOCK); // 125kHz (fix pantalla para que la señal sea más cuadrada)
+        u8g2.clearBuffer();
+        u8g2.setFont(FONT_BOLD_L);
+        int textWidth = u8g2.getStrWidth("EOLO");
+        int x = (u8g2.getDisplayWidth() - textWidth) / 2;
+        int y = (u8g2.getDisplayHeight() / 2) + (u8g2.getAscent() / 2);
+        u8g2.drawStr(x, y, "EOLO");
+        u8g2.sendBuffer();
+        isDisplayReady = true;
     }
 
     void setDisplayPower(bool on)
@@ -129,7 +139,7 @@ public:
 
         if (!SD.begin(SD_CS_PIN))
         {
-            Serial.println("Fallo al inicializar SD");
+            LOG_LN("Fallo al inicializar SD");
             sdStatus = SD_ERROR;
             isSdReady = false;
             return false;
@@ -138,7 +148,7 @@ public:
         sdcard_type_t sdType = SD.cardType();
         if (sdType == CARD_NONE)
         {
-            Serial.println("No se detectó tarjeta SD");
+            LOG_LN("No se detectó tarjeta SD");
             sdStatus = SD_ERROR;
             return false;
         }
@@ -183,33 +193,34 @@ public:
         {
             sdStatus = SD_WRITING;
             SD.mkdir(eoloDir);
-            Serial.println("Directorio /EOLO creado en SD");
+            LOG_LN("Directorio /EOLO creado en SD");
             sdStatus = SD_OK;
         }
         else
         {
-            Serial.println("Directorio /EOLO ya existe en SD");
+            LOG_LN("Directorio /EOLO ya existe en SD");
         }
 
         if (!SD.exists(logsDir))
         {
             sdStatus = SD_WRITING;
             SD.mkdir(logsDir);
-            Serial.println("Directorio /EOLO/logs creado en SD");
+            LOG_LN("Directorio /EOLO/logs creado en SD");
             sdStatus = SD_OK;
         }
         else
         {
-            Serial.println("Directorio /EOLO/logs ya existe en SD");
+            LOG_LN("Directorio /EOLO/logs ya existe en SD");
         }
 
-        Serial.println("SD inicializada");
+        LOG_LN("SD inicializada");
         sdStatus = SD_OK;
         return true;
     }
 
     void saveSession()
     {
+        LOG_LN("Guardando sesión en Flash...");
         preferences.begin("eolo_session", false);
 
         preferences.putULong("startDate", session.startDate.unixtime());
@@ -221,7 +232,7 @@ public:
 
         preferences.end();
 
-        Serial.println("Sesión guardada en Flash:");
+        LOG_LN("Sesión guardada en Flash:");
         Serial.print(" startDate: ");
         Serial.println(session.startDate.timestamp());
         Serial.print(" duration: ");
@@ -233,7 +244,7 @@ public:
         Serial.print(" capturedVolume: ");
         Serial.println(session.capturedVolume);
         Serial.print(" usePlantower: ");
-        Serial.println(session.usePlantower);
+        LOG_LN(session.usePlantower);
     }
 
     bool loadSession()
@@ -243,7 +254,7 @@ public:
         if (!preferences.isKey("startDate"))
         {
             preferences.end();
-            Serial.println("No se encontró sesión guardada en Flash");
+            LOG_LN("No se encontró sesión guardada en Flash");
             return false;
         }
 
@@ -276,7 +287,7 @@ public:
         session.capturedVolume = capturedVolumeVal;
         session.usePlantower = usePlantowerVal;
 
-        Serial.println("Sesión cargada desde Flash:");
+        LOG_LN("Sesión cargada desde Flash:");
         Serial.print(" startDate: ");
         Serial.println(session.startDate.timestamp());
         Serial.print(" duration: ");
@@ -307,7 +318,7 @@ public:
         preferences.begin("eolo_session", false);
         preferences.clear();
         preferences.end();
-        Serial.println("Sesión eliminada de Flash");
+        LOG_LN("Sesión eliminada de Flash");
     }
 
     void saveCalibration()
@@ -320,7 +331,7 @@ public:
 
         preferences.end();
 
-        Serial.println("Calibración guardada en Flash:");
+        LOG_LN("Calibración guardada en Flash:");
         Serial.print(" Número de puntos: ");
         Serial.println(numCalPoints);
         if (numCalPoints > 0)
@@ -340,7 +351,7 @@ public:
         if (!preferences.isKey("numPoints"))
         {
             preferences.end();
-            Serial.println("No hay calibración guardada en Flash");
+            LOG_LN("No hay calibración guardada en Flash");
             isCalibrationLoaded = false;
             return false;
         }
@@ -350,7 +361,7 @@ public:
         if (numCalPoints <= 0 || numCalPoints > MAX_CAL_POINTS)
         {
             preferences.end();
-            Serial.println("Calibración inválida en Flash");
+            LOG_LN("Calibración inválida en Flash");
             isCalibrationLoaded = false;
             numCalPoints = 0;
             return false;
@@ -363,14 +374,14 @@ public:
 
         if (motorBytes != numCalPoints * sizeof(float) || flowBytes != numCalPoints * sizeof(float))
         {
-            Serial.println("Error al leer calibración desde Flash");
+            LOG_LN("Error al leer calibración desde Flash");
             isCalibrationLoaded = false;
             numCalPoints = 0;
             return false;
         }
 
         isCalibrationLoaded = true;
-        Serial.println("Calibración cargada desde Flash:");
+        LOG_LN("Calibración cargada desde Flash:");
         Serial.print(" Número de puntos: ");
         Serial.println(numCalPoints);
         if (numCalPoints > 0)
@@ -383,7 +394,7 @@ public:
 
             if (calFlows[0] == 0 && calFlows[numCalPoints - 1] == 0)
             {
-                Serial.println("Calibración inválida detectada (rango 0-0). Ejecutando nueva calibración...");
+                LOG_LN("Calibración inválida detectada (rango 0-0). Ejecutando nueva calibración...");
                 isCalibrationLoaded = false;
                 return false;
             }
@@ -391,7 +402,7 @@ public:
 
         return true;
     }
-    
+
     void testCalibration()
     {
         Context &ctx = *this;
@@ -399,33 +410,35 @@ public:
         Serial.println("\n========================================");
         Serial.println("DIAGNÓSTICO DE CALIBRACIÓN");
         Serial.println("========================================");
-        
-        if(!ctx.isCalibrationLoaded || ctx.numCalPoints == 0)
+
+        if (!ctx.isCalibrationLoaded || ctx.numCalPoints == 0)
         {
-            Serial.println("ERROR: No hay calibración cargada!");
+            LOG_LN("ERROR: No hay calibración cargada!");
             delay(3000);
             return;
         }
-        
+
         Serial.print("Puntos de calibración: ");
         Serial.println(ctx.numCalPoints);
         Serial.println("\nTabla completa Motor% -> Flujo:");
         Serial.println("Motor%  | Flujo(L/min)");
         Serial.println("--------+-------------");
-        for(int i = 0; i < ctx.numCalPoints; i++)
+        for (int i = 0; i < ctx.numCalPoints; i++)
         {
             Serial.print(ctx.calMotorPcts[i], 1);
             Serial.print("%");
-            if(ctx.calMotorPcts[i] < 10) Serial.print("  ");
-            else if(ctx.calMotorPcts[i] < 100) Serial.print(" ");
+            if (ctx.calMotorPcts[i] < 10)
+                Serial.print("  ");
+            else if (ctx.calMotorPcts[i] < 100)
+                Serial.print(" ");
             Serial.print("     | ");
             Serial.println(ctx.calFlows[i], 2);
         }
-        
+
         Serial.println("\n========================================");
         Serial.println("PRUEBA DE INTERPOLACIÓN");
         Serial.println("========================================");
-        
+
         // Probar todo el rango de flujo calibrado
         float minFlow = ctx.calFlows[0];
         float maxFlow = ctx.calFlows[ctx.numCalPoints - 1];
@@ -434,45 +447,49 @@ public:
 
         Serial.println("Flujo Obj. | Motor% Calc. | Esperado");
         Serial.println("-----------+--------------+---------");
-        for(int i = 0; i < numTests; i++)
+        for (int i = 0; i < numTests; i++)
         {
             float targetFlow = minFlow + i * step;
             float calculatedPct = ctx.getTargetMotorPct(targetFlow);
-            
+
             Serial.print(targetFlow, 2);
             Serial.print(" L/min");
-            if(targetFlow < 10) Serial.print("  ");
+            if (targetFlow < 10)
+                Serial.print("  ");
             Serial.print(" | ");
             Serial.print(calculatedPct, 1);
             Serial.print("%");
-            if(calculatedPct < 10) Serial.print("  ");
-            else if(calculatedPct < 100) Serial.print(" ");
+            if (calculatedPct < 10)
+                Serial.print("  ");
+            else if (calculatedPct < 100)
+                Serial.print(" ");
             Serial.print("       | ");
-            
+
             // Buscar en la tabla el motor% esperado
             bool found = false;
-            for(int j = 0; j < ctx.numCalPoints - 1; j++)
+            for (int j = 0; j < ctx.numCalPoints - 1; j++)
             {
-                if(targetFlow >= ctx.calFlows[j] && targetFlow <= ctx.calFlows[j+1])
+                if (targetFlow >= ctx.calFlows[j] && targetFlow <= ctx.calFlows[j + 1])
                 {
-                    float ratio = (targetFlow - ctx.calFlows[j]) / (ctx.calFlows[j+1] - ctx.calFlows[j]);
-                    float expectedPct = ctx.calMotorPcts[j] + ratio * (ctx.calMotorPcts[j+1] - ctx.calMotorPcts[j]);
+                    float ratio = (targetFlow - ctx.calFlows[j]) / (ctx.calFlows[j + 1] - ctx.calFlows[j]);
+                    float expectedPct = ctx.calMotorPcts[j] + ratio * (ctx.calMotorPcts[j + 1] - ctx.calMotorPcts[j]);
                     Serial.print(expectedPct, 1);
                     Serial.print("%");
                     found = true;
                     break;
                 }
             }
-            if(!found) Serial.print("fuera rango");
+            if (!found)
+                Serial.print("fuera rango");
             Serial.println();
         }
-        
+
         Serial.println("\n========================================");
         Serial.println("PRUEBA EN TIEMPO REAL");
         Serial.println("========================================");
         Serial.println("Probando todo el rango de flujo calibrado...");
 
-        for(int i = 0; i < numTests; i++)
+        for (int i = 0; i < numTests; i++)
         {
             float targetFlow = minFlow + i * step;
             float calculatedPct = ctx.getTargetMotorPct(targetFlow);
@@ -486,41 +503,48 @@ public:
             ctx.components.motor.setPowerPct(calculatedPct);
 
             // Limpiar buffer del sensor
-            for(int j = 0; j < 20; j++)
+            for (int j = 0; j < 20; j++)
             {
-                ctx.components.flowSensor.readData();
+                ;
                 delay(100);
             }
 
             Serial.println("Tiempo | Flujo Real | Diferencia");
             Serial.println("-------+------------+-----------");
-            for(int t = 0; t < 5; t++)
+            for (int t = 0; t < 5; t++)
             {
-                ctx.components.flowSensor.readData();
-                float realFlow = ctx.components.flowSensor.flow;
+                FlowData flowData;
+                if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+                {
+                    Serial.println("Error al leer sensor de flujo");
+                    continue;
+                }
+                float realFlow = flowData.flow;
+
                 float diff = realFlow - targetFlow;
-                
+
                 Serial.print(t);
                 Serial.print("s     | ");
                 Serial.print(realFlow, 2);
                 Serial.print(" L/min | ");
-                if(diff >= 0) Serial.print("+");
+                if (diff >= 0)
+                    Serial.print("+");
                 Serial.print(diff, 2);
                 Serial.println(" L/min");
-                
+
                 delay(1000);
             }
         }
-        
+
         ctx.components.motor.setPowerPct(0);
-        
+
         Serial.println("\n========================================");
         Serial.println("Diagnóstico completado");
         Serial.println("Presiona el botón para volver");
         Serial.println("========================================\n");
-        
+
         // Esperar a que se presione el botón
-        while(!ctx.components.input.isButtonPressed())
+        while (!ctx.components.input.isButtonPressed())
         {
             ctx.components.input.poll();
             delay(100);
@@ -533,7 +557,7 @@ public:
         if (!isCalibrationLoaded || numCalPoints == 0)
         {
             // Fallback
-            Serial.println("Advertencia: No hay calibración cargada.");
+            LOG_LN("Advertencia: No hay calibración cargada.");
             return 0;
         }
 
@@ -553,8 +577,8 @@ public:
             float m0 = calMotorPcts[i];
             float m1 = calMotorPcts[i + 1];
 
-                if (targetFlow >= f0 && targetFlow <= f1)
-                {
+            if (targetFlow >= f0 && targetFlow <= f1)
+            {
                 // Interpolación lineal entre puntos (proteger división por cero)
                 float denom = (f1 - f0);
                 if (fabs(denom) < 1e-6f)
@@ -564,7 +588,7 @@ public:
                 }
                 float t = (targetFlow - f0) / denom;
                 return m0 + t * (m1 - m0);
-                }
+            }
         }
 
         // Si no se encuentra, devolver el último valor
@@ -573,9 +597,12 @@ public:
 
     void logData()
     {
+        LOG_LN("Iniciando log de datos en SD...");
+        Profiler p("Context logData");
+
         if (sdStatus == SD_ERROR)
         {
-            Serial.println("Aviso: SD anteriormente falló!");
+            LOG_LN("Aviso: SD anteriormente falló!");
         }
         sdStatus = SD_WRITING;
 
@@ -592,28 +619,28 @@ public:
             if (!file)
             {
                 sdStatus = SD_ERROR;
-                Serial.println("No se pudo abrir el archivo para escribir/crear");
+                LOG_LN("No se pudo abrir el archivo para escribir/crear");
                 return;
             }
 
-            #ifdef EOLO_GRANDE
+#ifdef EOLO_GRANDE
             file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct");
-            #else
+#else
             file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct");
-            #endif
+#endif
             file.close();
 
-            Serial.println("Archivo de log creado: " + filename);
+            LOG_LN("Archivo de log creado: " + filename);
         }
         else
         {
-            Serial.println("Archivo de log ya existe: " + filename);
+            LOG_LN("Archivo de log ya existe: " + filename);
 
             File file = SD.open(filename.c_str(), "a+");
             if (!file)
             {
                 sdStatus = SD_ERROR;
-                Serial.println("No se pudo abrir el archivo para escribir");
+                LOG_LN("No se pudo abrir el archivo para escribir");
                 return;
             }
 
@@ -622,7 +649,12 @@ public:
             file.print(",");
 
             // flow
-            file.print(components.flowSensor.flow);
+            FlowData flowData;
+            if (!components.flowSensor.getData(flowData) || !flowData.valid)
+            {
+                flowData.flow = -1.0;
+            }
+            file.print(flowData.flow);
             file.print(",");
 
             // flow_target
@@ -641,39 +673,47 @@ public:
             file.print(components.bme.pressure);
             file.print(",");
 
+            PlantowerData ptowerData;
+            bool ptOk = components.plantower.getData(ptowerData);
+
             // pm1
-            file.print(components.plantower.pm1);
+            file.print(ptowerData.pm1_0);
             file.print(",");
 
             // pm25
-            file.print(components.plantower.pm25);
+            file.print(ptowerData.pm2_5);
             file.print(",");
 
             // pm10
-            file.print(components.plantower.pm10);
+            file.print(ptowerData.pm10_0);
             file.print(",");
 
-            #ifdef EOLO_GRANDE
+#ifdef EOLO_GRANDE
 
+            AnemometerData anemoData;
+            if (!components.anemometer.getData(anemoData) || !anemoData.valid)
+            {
+                LOG_LN("Error al leer anemómetro para log");
+            }
             // wind_speed
-            file.print(components.anemometer.getWindSpeed());
+            file.print(anemoData.speed);
             file.print(",");
 
             // wind_direction
-            file.print(components.anemometer.getWindDirection());
+            file.print(anemoData.direction);
             file.print(",");
 
-            #endif
+#endif
 
             // battery_pct
             file.print(components.battery.getPct());
             file.println();
 
-            Serial.println("Datos registrados en SD: ");
+            LOG_LN("Datos registrados en SD: ");
             Serial.print(" Time: ");
             Serial.println(components.rtc.now().timestamp());
             Serial.print(" Flow: ");
-            Serial.println(components.flowSensor.flow);
+            Serial.println(flowData.flow);
             Serial.print(" Flow_target: ");
             Serial.println(session.targetFlow);
             Serial.print(" Temp: ");
@@ -683,37 +723,67 @@ public:
             Serial.print(" Pres: ");
             Serial.println(components.bme.pressure);
             Serial.print(" PM1: ");
-            Serial.println(components.plantower.pm1);
+            Serial.println(ptowerData.pm1_0);
             Serial.print(" PM2.5: ");
-            Serial.println(components.plantower.pm25);
+            Serial.println(ptowerData.pm2_5);
             Serial.print(" PM10: ");
-            Serial.println(components.plantower.pm10);
+            Serial.println(ptowerData.pm10_0);
             Serial.print(" Battery: ");
             Serial.println(components.battery.getPct());
-
             file.close();
 
-            Serial.println("Archivo de log escrito!");
+            LOG_LN("Archivo de log escrito!");
         }
         sdStatus = SD_OK;
-        Serial.println("Log completado con éxito.");
-
-        #ifdef EOLO_GRANDE
-            uploadData();
-        #endif
-
+        LOG_LN("Log completado con éxito.");
         saveSession();
+#ifdef EOLO_GRANDE
+        uploadData();
+#endif
     }
 
-    void uploadData(){
-        // TODO
-        Serial.println("Funcionalidad de subida de datos no implementada aún.");
-        delay(1000); 
+    void uploadData()
+    {
+        Profiler p("Context uploadData");
+        components.api.begin();
+        AnemometerData anemoData;
+        bool anemoOk = components.anemometer.getData(anemoData);
+        components.api.addData(748, 5, anemoData.speed);      // velocidad del viento
+        components.api.addData(748, 17, anemoData.direction); // direccion del viento
+        components.api.addData(749, 3, -69);                  // temperatura (deberia ser del Plantower)
+        components.api.addData(749, 6, -420);                 // humedad (deberia ser del Plantower)
+        PlantowerData ptowerData;
+        bool ptOk = components.plantower.getData(ptowerData);
+        components.api.addData(749, 7, ptowerData.pm1_0);           // PM1.0
+        components.api.addData(749, 8, ptowerData.pm2_5);           // PM2.5
+        components.api.addData(749, 9, ptowerData.pm10_0);          // PM10
+        components.api.addData(750, 3, components.bme.temperature); // temperatura
+        components.api.addData(750, 6, components.bme.humidity);    // humedad
+        components.api.addData(750, 13, components.bme.pressure);   // presion
+        components.api.addData(751, 48, session.targetFlow);        // flujo objetivo
+        components.api.addData(751, 49, session.capturedVolume);    // volumen capturado
+        FlowData flowData;
+        if (!components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;
+        }
+        components.api.addData(751, 50, flowData.flow);                  // flujo
+        components.api.addData(752, 3, components.bme.temperature);      // temperatura
+        components.api.addData(753, 4, components.battery.getVoltage()); // voltaje batería
+        // GPS (no hay GPS aun asi que todo -1)
+        components.api.addData(754, 11, -1); // latitud
+        components.api.addData(754, 12, -1); // longitud
+        components.api.addData(754, 15, -1); // intensidad de señal
+        components.api.addData(754, 45, -1); // velocidad
+        components.api.addData(754, 46, -1); // satélites
+        components.api.send();
     }
 
     void update()
     {
+        Profiler p("Context update");
         components.input.poll();
+        components.poll();
 
         if (components.input.hasChanged)
         {
@@ -740,7 +810,7 @@ public:
         session.elapsedTime = 0;
         isCapturing = true;
         session.capturedVolume = 0.0;
-        Serial.println("Iniciando captura...");
+        LOG_LN("Iniciando captura...");
         SceneManager::setScene("captura", *this);
         enableDisplay();
     }
@@ -751,7 +821,7 @@ public:
         components.input.resetCounter();
         if (!isCapturing || isPaused)
             return;
-        Serial.println("Pausando captura...");
+        LOG_LN("Pausando captura...");
         isPaused = true;
         pauseTime = getUnixTime();
     }
@@ -761,7 +831,7 @@ public:
         components.input.resetCounter();
         if (!isCapturing || !isPaused)
             return;
-        Serial.println("Resumiendo captura...");
+        LOG_LN("Resumiendo captura...");
         isPaused = false;
         unsigned long now = getUnixTime();
         unsigned long pauseDelta = now - pauseTime;
@@ -772,8 +842,8 @@ public:
     {
         isCapturing = false;
         isEnd = true;
-        
-        Serial.println("Captura finalizada.");
+
+        LOG_LN("Captura finalizada.");
         components.motor.setPowerPct(0);
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
@@ -788,7 +858,7 @@ public:
         components.motor.setPowerPct(0);
         components.input.resetCounter();
         session.elapsedTime = 0;
-        Serial.println("Estado de captura reiniciado.");
+        LOG_LN("Estado de captura reiniciado.");
     }
 
     void updateMotors()
@@ -814,14 +884,13 @@ public:
         }
         else
         {
-            // Sin calibración, motor apagado
-            Serial.println("Advertencia: No hay calibración cargada, motor apagado");
             components.motor.setPowerPct(0);
         }
     }
 
     void updateCapture()
     {
+        // LOG_LN("Actualizando estado de captura...");
         Context &ctx = *this;
 
         if (!ctx.isCapturing || ctx.isPaused)
@@ -832,7 +901,7 @@ public:
         ctx.session.elapsedTime = ctx.session.duration - (endTime.unixtime() - now);
         if (now >= endTime.unixtime())
         {
-            Serial.println("Duración de captura alcanzada.");
+            LOG_LN("Duración de captura alcanzada.");
             Serial.print("Tiempo transcurrido: ");
             Serial.println(ctx.session.elapsedTime);
 
@@ -844,32 +913,36 @@ public:
         }
 
 #if !BAREBONES
-        ctx.components.flowSensor.readData();
+        // LOG_LN("Actualizando motores...");
         updateMotors();
 #else
         ctx.components.flowSensor.flow = ctx.session.targetFlow + millis() % 2;
 #endif
-
         if (now - ctx.session.lastLog >= ctx.CAPTURE_INTERVAL)
         {
             ctx.session.lastLog = now;
+            LOG_LN("Leyendo datos de sensores...");
+            LOG_LN("Leyendo flujo...");
+            ;
 
 #if !BAREBONES
+            LOG_LN("Leyendo BME280...");
             ctx.components.bme.readData();
-
-            ctx.components.plantower.setPower(ctx.session.usePlantower);
-            ctx.components.plantower.readData();
-            ctx.session.capturedVolume += (ctx.components.flowSensor.flow / 60.0f) * (ctx.CAPTURE_INTERVAL);
-
-            #ifdef EOLO_GRANDE
-                ctx.components.anemometer.readData();
-            #endif
-            
-            logData();
-
-#else
-            Serial.println("Capturando datos... (modo barebones, solo serial)");
+            FlowData flowData;
+            if (ctx.components.flowSensor.getData(flowData))
+            {
+                ctx.session.capturedVolume += (flowData.flow / 60.0f) * (ctx.CAPTURE_INTERVAL);
+            }
+            else
+            {
+                LOG_LN("Error al leer sensor de flujo para volumen capturado");
+            }
 #endif
+#if true
+
+#endif
+            LOG_LN("Registrando datos...");
+            logData();
         }
     }
 

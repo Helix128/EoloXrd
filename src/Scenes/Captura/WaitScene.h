@@ -15,7 +15,7 @@ public:
     const int READ_INTERVAL = 1000;
     void enter(Context &ctx) override
     {   
-        ctx.components.flowSensor.readData();
+         ;
         lastRead = millis();
     }
 
@@ -49,11 +49,15 @@ public:
         char flowStr[10];
 
         if(millis() - lastRead >= READ_INTERVAL){
-            ctx.components.flowSensor.readData();
             lastRead = millis();
         }
 
-        float flow = ctx.components.flowSensor.flow;
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;
+        }
+        float flow = flowData.flow;
 
         #if BAREBONES == true // valores inventados para testing
         flow = millis() % 20;

@@ -16,29 +16,21 @@ public:
     {
         if (ctx.isPaused)
         {
+            LOG_LN("Resumiendo captura.");
             ctx.resumeCapture();
-            Serial.println("Resumiendo captura.");
+            LOG_LN("Captura reanudada.");
         }
         else if (!ctx.isCapturing)
         {
+            LOG_LN("Iniciando captura.");
             ctx.beginCapture();
-            Serial.println("Iniciando captura.");
-        }
-
-        if(ctx.session.usePlantower)
-        {
-            ctx.components.plantower.setPower(true);
-        }
-        else if(!ctx.session.usePlantower)
-        {
-            ctx.components.plantower.setPower(false);
+            LOG_LN("Captura iniciada.");
         }
     }
 
     void update(Context &ctx) override
     {
         ctx.updateCapture();
-
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
@@ -67,8 +59,13 @@ public:
     }
 
     void mainPanel(Context &ctx)
-    {
-        float lmin = ctx.components.flowSensor.flow;
+    {   
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;
+        }
+        float lmin = flowData.flow;
         float volume = ctx.session.capturedVolume; 
 
         char lminStr[10];
@@ -215,9 +212,12 @@ public:
                 cycleFooter += ctx.components.input.getEncoderDelta();
                 break;
             }
-            float pm1 = ctx.components.plantower.pm1;
-            float pm25 = ctx.components.plantower.pm25;
-            float pm10 = ctx.components.plantower.pm10;
+
+            PlantowerData  ptowerData;
+            bool ptOk = ctx.components.plantower.getData( ptowerData);
+            float pm1 =  ptowerData.pm1_0;
+            float pm25 =  ptowerData.pm2_5;
+            float pm10 =  ptowerData.pm10_0;
 
 #if BAREBONES == true
             pm1 = 512;

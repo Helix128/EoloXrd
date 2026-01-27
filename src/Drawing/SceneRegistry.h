@@ -24,7 +24,7 @@
 // Función para registrar todas las escenas con el SceneManager
 void registerAllScenes()
 { 
-    SceneManager::addScene("splash", new LogoScene());
+    SceneManager::addScene("splash", new LogoScene());     
     SceneManager::addScene("inicio", new InicioScene());
     SceneManager::addScene("calibration", new CalibrationScene());
     SceneManager::addScene("flujo", new FlujoScene());
@@ -40,7 +40,7 @@ void registerAllScenes()
     SceneManager::addScene("end", new FinScene());
     SceneManager::addScene("end_menu", new EndMenuScene());
     SceneManager::addScene("captura_bombas", new CapturaBombasScene());
-    Serial.println("Todas las escenas registradas");
+    LOG_LN("Todas las escenas registradas");
 }
 
 #endif

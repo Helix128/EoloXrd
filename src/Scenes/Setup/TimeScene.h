@@ -110,11 +110,11 @@ public:
             unsigned long int nowUnix = ctx.getUnixTime();
             unsigned long int targetUnix = targetTime.unixtime();
             Serial.print("Now Unix: ");
-            Serial.println(nowUnix);
+            LOG_LN(nowUnix);
             Serial.print("Target Unix: ");
-            Serial.println(targetUnix);
-            Serial.println("Delta");
-            Serial.println(targetUnix - nowUnix);
+            LOG_LN(targetUnix);
+            LOG_LN("Delta");
+            LOG_LN(targetUnix - nowUnix);
             if (isEndTime)
             {
                 ctx.components.input.resetCounter();
@@ -122,9 +122,9 @@ public:
                 ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
 
                 Serial.print("Duracion establecida: "); 
-                Serial.println(ctx.session.duration);
+                LOG_LN(ctx.session.duration);
                 Serial.print("Hora de fin establecida:");
-                Serial.println(targetTime.timestamp());
+                LOG_LN(targetTime.timestamp());
 
                 delay(10);
                 ctx.saveSession();
