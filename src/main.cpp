@@ -2,7 +2,7 @@
 // Centro de Investigación en Tecnologías para la Sociedad (C+)
 // Universidad del Desarrollo
 // Diego Muñoz | Helix128
-// https://github.com/Helix128
+// https://github.com/Helix128/EoloXrd
 
 #ifdef EOLO_GRANDE
   #pragma message("Compilando para EOLO grande.");

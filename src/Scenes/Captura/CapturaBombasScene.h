@@ -18,8 +18,6 @@ public:
 
     void update(Context &ctx) override
     {
-
-
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 

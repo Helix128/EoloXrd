@@ -3,20 +3,18 @@
 
 #include <Arduino.h>
 #include <ModbusMaster.h>
-#include <SoftwareSerial.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-// PINES (Pin 26 ELIMINADO porque tu módulo es automático)
 #define RS485_RX_PIN 35
 #define RS485_TX_PIN 33
+#define RS485_DE_RE_PIN 26
 #define RS485_BAUD_RATE 4800
 
 class RS485 {
 private:
-    static SoftwareSerial& _getSerial() {
-        static SoftwareSerial swSerial;
-        return swSerial;
+    static HardwareSerial& _getSerial() {
+        return Serial1;
     }
 
     static ModbusMaster& _getNode() {
@@ -34,30 +32,30 @@ private:
         return initialized;
     }
 
-    // --- ELIMINAMOS CONTROL MANUAL DE/RE ---
-    // Tu módulo azul hace esto solo, no necesitamos código aquí.
     static void _preTransmission() {
-        // Nada que hacer, el hardware es automático
+        digitalWrite(RS485_DE_RE_PIN, HIGH);
+        delayMicroseconds(25);
     }
 
     static void _postTransmission() {
-        // Nada que hacer
+        delayMicroseconds(25);
+        digitalWrite(RS485_DE_RE_PIN, LOW);
     }
 
 public:
     static void begin() {
         if (_isInitialized()) return;
 
-        // Iniciamos SoftwareSerial en los pines 35 y 33
-        SoftwareSerial& serial = _getSerial();
-        serial.begin(RS485_BAUD_RATE, SWSERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
-        
+        pinMode(RS485_DE_RE_PIN, OUTPUT);
+        digitalWrite(RS485_DE_RE_PIN, LOW);
+
+        HardwareSerial& serial = _getSerial();
+        serial.begin(RS485_BAUD_RATE, SERIAL_8N2, RS485_RX_PIN, RS485_TX_PIN);
+
         ModbusMaster& node = _getNode();
-        
-        // Aunque las funciones estén vacías, ModbusMaster las pide.
         node.preTransmission(_preTransmission);
         node.postTransmission(_postTransmission);
-        
+
         _isInitialized() = true;
     }
 
@@ -67,11 +65,10 @@ public:
 
         if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
             ModbusMaster& node = _getNode();
-            SoftwareSerial& serial = _getSerial();
-            
+            HardwareSerial& serial = _getSerial();
+
             node.begin(slaveId, serial);
-            
-            // Limpieza buffer
+
             while(serial.available()) serial.read();
 
             uint8_t result = node.readHoldingRegisters(startReg, count);
@@ -80,12 +77,9 @@ public:
                 for (uint8_t i = 0; i < count; i++) {
                     dataBuffer[i] = node.getResponseBuffer(i);
                 }
-                Serial.printf("Modbus ID %d: Lectura exitosa de %d registros desde 0x%04X\n", slaveId, count, startReg);
                 success = true;
             }
-            // Debug opcional
-            else { Serial.printf("Error Modbus ID %d: 0x%02X\n", slaveId, result); }
-
+            
             xSemaphoreGive(mutex);
         }
         return success;

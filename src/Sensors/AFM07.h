@@ -6,7 +6,7 @@
 #include "freertos/semphr.h"
 #include "./Board/RS485.h" 
 
-#define AFM_ID 0x14
+#define AFM_ID 2
 
 struct FlowData {
     float flow;
@@ -26,10 +26,11 @@ private:
         AFM07* self = (AFM07*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(500); 
+        const TickType_t xFrequency = pdMS_TO_TICKS(1000); 
 
         uint16_t rawData[1];
 
+        vTaskDelay(250 / portTICK_PERIOD_MS);
         while (true) {
             bool success = RS485::readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
@@ -44,6 +45,7 @@ private:
                     self->_data.flow = val;
                     self->_data.velocity = val; 
                     self->_data.valid = true;
+                    LOG_F("AFM07: Flujo %.2f L/min, Velocidad %.2f m/s\n", self->_data.flow, self->_data.velocity);
                 } else {
                     self->_data.valid = false;
                 }
