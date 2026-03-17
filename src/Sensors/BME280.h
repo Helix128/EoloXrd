@@ -2,7 +2,6 @@
 #define BMESENSOR_H
 
 #include "Adafruit_BME280.h"
-#include "ESPJob.h"
 #include "../Config.h"
 
 // Clase para manejar el sensor BME280 (temperatura, humedad, presión)

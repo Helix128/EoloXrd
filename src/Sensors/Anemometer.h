@@ -6,7 +6,7 @@
 #include "freertos/semphr.h"
 #include "./Board/RS485.h"
 
-#define ANEM_ID 0x01
+#define ANEM_ID 1
 
 struct AnemometerData {
     float speed;
@@ -28,7 +28,7 @@ private:
         Anemometer* self = (Anemometer*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(500);
+        const TickType_t xFrequency = pdMS_TO_TICKS(1000);
 
         uint16_t buffer[2];
 
@@ -42,6 +42,7 @@ private:
                     self->_data.windKph = self->_data.speed * 3.6f;
                     self->_data.direction = (int)buffer[1];
                     self->_data.valid = true;
+                    LOG_F("Anemómetro: Velocidad %.2f m/s, Dirección %d°\n", self->_data.speed, self->_data.direction);
                 } else {
                     self->_data.valid = false;
                 }

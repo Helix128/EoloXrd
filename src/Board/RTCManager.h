@@ -8,6 +8,7 @@
 #include "ESPJob.h"
 
 #if BAREBONES == false
+
 // Manejo del RTC (DS3231 via RTClib)
 class RTCManager
 {
@@ -16,7 +17,7 @@ private:
 
 public:
     bool ok = false;
-    // Inicializa I2C y el RTC. Devuelve true si está presente.
+    
     bool begin()
     {
         LOG_LN("Iniciando RTC...");
