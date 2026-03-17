@@ -33,7 +33,7 @@ private:
         uint16_t buffer[2];
 
         while (true) {
-            bool success = RS485::readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
+            bool success = RS485::getInstance().readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
             LOG_F("Anemómetro: Lectura RS485 %s\n", success ? "exitosa" : "fallida");
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -68,7 +68,7 @@ public:
     }
 
     void begin() {
-        RS485::begin();
+        RS485::getInstance().begin();
         xTaskCreatePinnedToCore(taskWorker, "AnemTask", 4096, this, 1, &_taskHandle, 1);
     }
 

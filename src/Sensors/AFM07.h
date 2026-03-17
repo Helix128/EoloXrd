@@ -30,9 +30,9 @@ private:
 
         uint16_t rawData[1];
 
-        vTaskDelay(250 / portTICK_PERIOD_MS);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
         while (true) {
-            bool success = RS485::readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
+            bool success = RS485::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
             if (!success) {
                 Serial.println("DEBUG AFM: RS485 falló internamente (Timeout o CRC)");
@@ -69,8 +69,8 @@ public:
     }
 
     void begin() {
-        RS485::begin();
-        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
+        RS485::getInstance().begin();
+        //xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
     }
 
     bool getData(FlowData& output) {
