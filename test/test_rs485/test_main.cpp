@@ -1,0 +1,190 @@
+#include <Arduino.h>
+#include <unity.h>
+#include "../../src/Board/RS485.h"
+#include "../../src/Config.h"
+
+// Por defecto, las pruebas no requieren tener el sensor real conectado.
+// Para ejecutar las pruebas con sensor real:
+//   -DRS485_TEST_ENABLE_REAL_SENSOR=1
+//   -DRS485_TEST_VALID_SLAVE_ID=1 (o el ID real)
+
+#ifndef RS485_TEST_ENABLE_REAL_SENSOR
+#define RS485_TEST_ENABLE_REAL_SENSOR 1
+#endif
+
+#ifndef RS485_TEST_VALID_SLAVE_ID
+#define RS485_TEST_VALID_SLAVE_ID 1
+#endif
+
+#ifndef RS485_TEST_VALID_START_REG
+#define RS485_TEST_VALID_START_REG 0x0000
+#endif
+
+#ifndef RS485_TEST_VALID_REG_COUNT
+#define RS485_TEST_VALID_REG_COUNT 2
+#endif
+
+#ifndef RS485_TEST_INVALID_SLAVE_ID
+#define RS485_TEST_INVALID_SLAVE_ID 247
+#endif
+
+#ifndef RS485_TEST_MAX_INVALID_READ_MS
+#define RS485_TEST_MAX_INVALID_READ_MS 3500UL
+#endif
+
+#ifndef RS485_TEST_POWER_PIN
+#define RS485_TEST_POWER_PIN PPH_PWR_PIN
+#endif
+
+#ifndef RS485_TEST_POWER_ACTIVE_LEVEL
+#define RS485_TEST_POWER_ACTIVE_LEVEL HIGH
+#endif
+
+#ifndef RS485_TEST_CONCURRENT_WAIT_MS
+#define RS485_TEST_CONCURRENT_WAIT_MS 30000UL
+#endif
+
+static void powerOnRs485Module() {
+	pinMode(RS485_TEST_POWER_PIN, OUTPUT);
+	digitalWrite(RS485_TEST_POWER_PIN, RS485_TEST_POWER_ACTIVE_LEVEL);
+	delay(200);
+}
+
+struct ConcurrentReadCtx {
+	volatile bool done;
+	volatile bool anySuccess;
+};
+
+void concurrentReadTask(void* arg) {
+	ConcurrentReadCtx* ctx = (ConcurrentReadCtx*)arg;
+	uint16_t buffer[2] = {0, 0};
+
+	for (int i = 0; i < 6; ++i) {
+		bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+		if (ok) {
+			ctx->anySuccess = true;
+		}
+		vTaskDelay(pdMS_TO_TICKS(5));
+	}
+
+	ctx->done = true;
+	vTaskDelete(nullptr);
+}
+
+void test_begin_is_idempotent_and_pin_state_is_rx_mode() {
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+	RS485::getInstance().begin();
+
+	int deReState = digitalRead(RS485_DE_RE_PIN);
+	TEST_ASSERT_EQUAL_MESSAGE(LOW, deReState, "DE/RE debe quedar en LOW (modo recepción) tras begin().");
+}
+
+void test_invalid_slave_returns_false_and_buffer_is_not_overwritten() {
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+
+	uint16_t buffer[2] = {0xAAAA, 0x5555};
+	bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+
+	TEST_ASSERT_FALSE_MESSAGE(ok, "Con slave inexistente, readRegisters debe retornar false.");
+	TEST_ASSERT_EQUAL_HEX16_MESSAGE(0xAAAA, buffer[0], "No debe sobreescribir buffer en fallo.");
+	TEST_ASSERT_EQUAL_HEX16_MESSAGE(0x5555, buffer[1], "No debe sobreescribir buffer en fallo.");
+}
+
+void test_invalid_slave_returns_within_reasonable_timeout() {
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+
+	uint16_t buffer[2] = {0, 0};
+	unsigned long t0 = millis();
+	bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+	unsigned long dt = millis() - t0;
+
+	TEST_ASSERT_FALSE_MESSAGE(ok, "Con slave inexistente no debe retornar éxito.");
+	TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
+		RS485_TEST_MAX_INVALID_READ_MS,
+		dt,
+		"Timeout excesivo: posible bloqueo/espera anómala en lectura inválida."
+	);
+}
+
+void test_concurrent_reads_do_not_deadlock() {
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+
+	ConcurrentReadCtx a = {false, false};
+	ConcurrentReadCtx b = {false, false};
+
+	TaskHandle_t ta = nullptr;
+	TaskHandle_t tb = nullptr;
+
+	BaseType_t ra = xTaskCreatePinnedToCore(concurrentReadTask, "rs485_ta", 4096, &a, 1, &ta, 1);
+	BaseType_t rb = xTaskCreatePinnedToCore(concurrentReadTask, "rs485_tb", 4096, &b, 1, &tb, 1);
+
+	TEST_ASSERT_EQUAL(pdPASS, ra);
+	TEST_ASSERT_EQUAL(pdPASS, rb);
+
+	unsigned long t0 = millis();
+	while (!(a.done && b.done) && (millis() - t0 < RS485_TEST_CONCURRENT_WAIT_MS)) {
+		vTaskDelay(pdMS_TO_TICKS(10));
+	}
+
+	TEST_ASSERT_TRUE_MESSAGE(a.done && b.done, "Lecturas concurrentes no deben quedar bloqueadas (deadlock). ");
+}
+
+void test_real_sensor_success_read_and_stability() {
+#if RS485_TEST_ENABLE_REAL_SENSOR
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+
+	const int N = 60;
+	int successCount = 0;
+	int alternatingPatternHits = 0;
+	bool lastOk = false;
+	bool hasLast = false;
+
+	uint16_t data[RS485_TEST_VALID_REG_COUNT];
+
+	for (int i = 0; i < N; ++i) {
+		bool ok = RS485::getInstance().readRegisters(
+			RS485_TEST_VALID_SLAVE_ID,
+			RS485_TEST_VALID_START_REG,
+			RS485_TEST_VALID_REG_COUNT,
+			data
+		);
+
+		if (ok) successCount++;
+
+		if (hasLast && (ok != lastOk)) {
+			alternatingPatternHits++;
+		}
+
+		lastOk = ok;
+		hasLast = true;
+		vTaskDelay(pdMS_TO_TICKS(50));
+	}
+
+	float successRate = (float)successCount / (float)N;
+
+	TEST_ASSERT_TRUE_MESSAGE(successRate >= 0.95f, "Tasa de éxito RS485 insuficiente en prueba de estabilidad.");
+	TEST_ASSERT_TRUE_MESSAGE(alternatingPatternHits < (N / 2), "Se detectó patrón alternado anómalo (ok/fail repetitivo).");
+#else
+	TEST_IGNORE_MESSAGE("Prueba de sensor real deshabilitada. Define RS485_TEST_ENABLE_REAL_SENSOR=1 para habilitarla.");
+#endif
+}
+
+void setup() {
+	delay(1200);
+	UNITY_BEGIN();
+
+	RUN_TEST(test_begin_is_idempotent_and_pin_state_is_rx_mode);
+	RUN_TEST(test_invalid_slave_returns_false_and_buffer_is_not_overwritten);
+	RUN_TEST(test_invalid_slave_returns_within_reasonable_timeout);
+	RUN_TEST(test_concurrent_reads_do_not_deadlock);
+	RUN_TEST(test_real_sensor_success_read_and_stability);
+
+	UNITY_END();
+}
+
+void loop() {}

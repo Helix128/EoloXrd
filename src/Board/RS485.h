@@ -13,74 +13,68 @@
 
 class RS485 {
 private:
-    static HardwareSerial& _getSerial() {
-        return Serial1;
+    HardwareSerial& _serial;
+    ModbusMaster _node;
+    SemaphoreHandle_t _mutex;
+    bool _initialized;
+
+    RS485() : _serial(Serial1), _initialized(false) {
+        _mutex = xSemaphoreCreateMutex();
     }
 
-    static ModbusMaster& _getNode() {
-        static ModbusMaster node;
-        return node;
-    }
-
-    static SemaphoreHandle_t& _getMutex() {
-        static SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
-        return mutex;
-    }
-
-    static bool& _isInitialized() {
-        static bool initialized = false;
-        return initialized;
-    }
+    RS485(const RS485&) = delete;
+    RS485& operator=(const RS485&) = delete;
 
     static void _preTransmission() {
         digitalWrite(RS485_DE_RE_PIN, HIGH);
-        delayMicroseconds(25);
     }
 
     static void _postTransmission() {
-        delayMicroseconds(25);
+        Serial1.flush();
         digitalWrite(RS485_DE_RE_PIN, LOW);
     }
 
 public:
-    static void begin() {
-        if (_isInitialized()) return;
+    static RS485& getInstance() {
+        static RS485 instance;
+        return instance;
+    }
+
+    void begin() {
+        if (_initialized) return;
 
         pinMode(RS485_DE_RE_PIN, OUTPUT);
         digitalWrite(RS485_DE_RE_PIN, LOW);
 
-        HardwareSerial& serial = _getSerial();
-        serial.begin(RS485_BAUD_RATE, SERIAL_8N2, RS485_RX_PIN, RS485_TX_PIN);
+        _serial.begin(RS485_BAUD_RATE, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
 
-        ModbusMaster& node = _getNode();
-        node.preTransmission(_preTransmission);
-        node.postTransmission(_postTransmission);
+        _node.preTransmission(_preTransmission);
+        _node.postTransmission(_postTransmission);
 
-        _isInitialized() = true;
+        _initialized = true;
     }
 
-    static bool readRegisters(uint8_t slaveId, uint16_t startReg, uint8_t count, uint16_t* dataBuffer) {
+    bool readRegisters(uint8_t slaveId, uint16_t startReg, uint8_t count, uint16_t* dataBuffer) {
+        if (!_initialized) return false;
+
         bool success = false;
-        SemaphoreHandle_t mutex = _getMutex();
 
-        if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            ModbusMaster& node = _getNode();
-            HardwareSerial& serial = _getSerial();
+        if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            
+            _node.begin(slaveId, _serial);
 
-            node.begin(slaveId, serial);
+            while(_serial.available()) _serial.read();
 
-            while(serial.available()) serial.read();
+            uint8_t result = _node.readHoldingRegisters(startReg, count);
 
-            uint8_t result = node.readHoldingRegisters(startReg, count);
-
-            if (result == node.ku8MBSuccess) {
+            if (result == _node.ku8MBSuccess) {
                 for (uint8_t i = 0; i < count; i++) {
-                    dataBuffer[i] = node.getResponseBuffer(i);
+                    dataBuffer[i] = _node.getResponseBuffer(i);
                 }
                 success = true;
             }
             
-            xSemaphoreGive(mutex);
+            xSemaphoreGive(_mutex);
         }
         return success;
     }
