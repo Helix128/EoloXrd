@@ -7,7 +7,6 @@
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
 
-// Escena de calibración del motor
 class CalibrationScene : public IScene
 {
 private:
@@ -28,9 +27,16 @@ private:
     unsigned long lastSampleTime = 0;
     unsigned long stateStartTime = 0;
     
-    static const int SAMPLES_PER_POINT = 12;
-    static const int STABILIZE_TIME_MS = 1000;
-    static const int SAMPLE_INTERVAL_MS = 50;
+    float lastFlowForStab = -1.0f;
+    int stableCount = 0;
+    unsigned long lastStabCheckTime = 0;
+    
+    static const int SAMPLES_PER_POINT = 25;
+    static const int SAMPLE_INTERVAL_MS = 25;
+    static const int STAB_CHECK_INTERVAL_MS = 25;
+    static const int MAX_STABILIZE_TIME_MS = 2500;
+    static const int REQUIRED_STABLE_READINGS = 10;
+    constexpr static const float STAB_TOLERANCE = 0.025f;
 
 public:
     void enter(Context &ctx) override
@@ -42,16 +48,13 @@ public:
         lastSampleTime = 0;
         stateStartTime = millis();
         
-        LOG_LN("=== Iniciando calibración Motor-Flujo ===");
+        LOG_LN("Iniciando calibración Motor-Flujo");
         LOG_LN("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
         
-        // Inicializar arrays de calibración
         ctx.numCalPoints = 0;
         
-        // Apagar motor y estabilizar sensor
         ctx.components.motor.setPowerPct(0);
         for (int i = 0; i < 20; i++) {
-             ;
             delay(50);
         }
     }
@@ -73,7 +76,6 @@ public:
         int titleX = (128 - titleWidth) / 2;
         ctx.u8g2.drawStr(titleX, 28, titleWithDots);
         
-        // Barra de progreso
         int progress = (int)((currentPct / 100.0f) * 100.0f);
         int barWidth = 100;
         int barHeight = 12;
@@ -81,7 +83,7 @@ public:
         int barY = 32;
         progress = constrain(progress, 0, 100);
         ctx.u8g2.drawRFrame(barX, barY, barWidth, barHeight, 3);
-        // Ensure barHeight is at least twice the radius to avoid overflow
+        
         int radius = 3;
         int minBarHeight = radius * 2;
         int safeBarHeight = (barHeight < minBarHeight) ? minBarHeight : barHeight;
@@ -92,25 +94,21 @@ public:
             ctx.u8g2.drawBox(barX + 1, barY + 1, fillWidth, safeBarHeight - 2);
         }
         
-        // Mostrar porcentaje
         ctx.u8g2.setFont(FONT_REGULAR_S);
         char progressText[16];
         sprintf(progressText, "%d%%", progress);
         int progressWidth = ctx.u8g2.getStrWidth(progressText);
 
-        // Calcular puntos restantes (porcentaje y espacio disponible en array)
         int remainingPct = 100 - (int)currentPct;
         if (remainingPct < 0) remainingPct = 0;
         int remainingSlots = ctx.MAX_CAL_POINTS - ctx.numCalPoints;
         if (remainingSlots < 0) remainingSlots = 0;
         int remainingPoints = (remainingPct < remainingSlots) ? remainingPct : remainingSlots;
 
-        // Estimar tiempo restante por punto y total (suma de delays por iteración)
-        unsigned long perPointMs = (unsigned long)STABILIZE_TIME_MS + (unsigned long)SAMPLES_PER_POINT * (unsigned long)SAMPLE_INTERVAL_MS;
+        unsigned long perPointMs = (unsigned long)MAX_STABILIZE_TIME_MS + (unsigned long)SAMPLES_PER_POINT * (unsigned long)SAMPLE_INTERVAL_MS;
         unsigned long remainingMs = (unsigned long)remainingPoints * perPointMs;
 
-        // Formatear ETA a mm:ss (o "0s" si no hay puntos restantes)
-        unsigned long totalSec = (remainingMs + 999) / 1000; // redondeo hacia arriba
+        unsigned long totalSec = (remainingMs + 999) / 1000;
         unsigned int mins = totalSec / 60;
         unsigned int secs = totalSec % 60;
         char etaText[24];
@@ -121,35 +119,19 @@ public:
         }
         int etaWidth = ctx.u8g2.getStrWidth(etaText);
 
-        // Dibujar ambos textos en un layout horizontal alrededor del centro
-        int gap = 8; // espacio entre textos alrededor del centro
+        int gap = 8;
         int centerX = 128 / 2-24;
-        int leftX = centerX - (gap / 2) - progressWidth; // porcentaje a la izquierda
-        int rightX = centerX + (gap / 2);                // ETA a la derecha
-        // Asegurar límites simples
+        int leftX = centerX - (gap / 2) - progressWidth;
+        int rightX = centerX + (gap / 2);
+        
         if (leftX < 0) leftX = 0;
         if (rightX + etaWidth > 128) rightX = 128 - etaWidth;
 
         ctx.u8g2.drawStr(leftX, barY + barHeight + 12, progressText);
         ctx.u8g2.drawStr(rightX, barY + barHeight + 12, etaText);
         
-        // Mostrar estado
-        const char* stateText = "";
-        switch(state)
-        {
-            case INIT: stateText = "Inicializando..."; break;
-            case STABILIZING: stateText = "Estabilizando..."; break;
-            case SAMPLING: stateText = "Muestreando..."; break;
-            case SORTING: stateText = "Ordenando datos..."; break;
-            case SAVING: stateText = "Guardando..."; break;
-            case COMPLETE: stateText = "Completo!"; break;
-        }
-        int stateWidth = ctx.u8g2.getStrWidth(stateText);
-        //ctx.u8g2.drawStr((128 - stateWidth) / 2, 60, stateText);
-        
         ctx.u8g2.sendBuffer();
         
-        // Lógica de calibración
         switch(state)
         {
             case INIT:
@@ -158,6 +140,9 @@ public:
                     ctx.components.motor.setPowerPct(currentPct);
                     state = STABILIZING;
                     stateStartTime = millis();
+                    lastStabCheckTime = millis();
+                    stableCount = 0;
+                    lastFlowForStab = -1.0f;
                     sampleCount = 0;
                     sumFlow = 0.0f;
                 }
@@ -168,10 +153,39 @@ public:
                 break;
                 
             case STABILIZING:
-                if (millis() - stateStartTime >= STABILIZE_TIME_MS)
+                if (millis() - stateStartTime >= MAX_STABILIZE_TIME_MS)
                 {
                     state = SAMPLING;
                     lastSampleTime = millis();
+                }
+                else if (millis() - lastStabCheckTime >= STAB_CHECK_INTERVAL_MS)
+                {
+                    FlowData flowData;
+                    if (ctx.components.flowSensor.getData(flowData) && flowData.valid)
+                    {
+                        if (lastFlowForStab >= 0.0f)
+                        {
+                            float diff = flowData.flow - lastFlowForStab;
+                            if (diff < 0) diff = -diff;
+                            
+                            if (diff <= STAB_TOLERANCE)
+                            {
+                                stableCount++;
+                            }
+                            else
+                            {
+                                stableCount = 0;
+                            }
+                        }
+                        lastFlowForStab = flowData.flow;
+                        
+                        if (stableCount >= REQUIRED_STABLE_READINGS)
+                        {
+                            state = SAMPLING;
+                            lastSampleTime = millis();
+                        }
+                    }
+                    lastStabCheckTime = millis();
                 }
                 break;
                 
@@ -181,7 +195,7 @@ public:
                     FlowData flowData;
                     if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
                     {
-                        LOG_LN("Error al leer sensor de flujo durante muestreo");
+                        LOG_LN("Error al leer sensor de flujo");
                     }
                     else
                     {
@@ -194,7 +208,7 @@ public:
                     {
                         float measuredFlow = sumFlow / SAMPLES_PER_POINT;
                         
-                        LOG_F("Punto %.1f%%: Flujo medido (prom): %.3f L/min\n", currentPct, measuredFlow);
+                        LOG_F("Punto %.1f%%: %.3f L/min \n", currentPct, measuredFlow);
                         
                         ctx.calMotorPcts[ctx.numCalPoints] = currentPct;
                         ctx.calFlows[ctx.numCalPoints] = measuredFlow;
@@ -211,14 +225,12 @@ public:
                 
                 if (ctx.numCalPoints < 2)
                 {
-                    LOG_LN("ERROR: Pocos puntos de calibración capturados.");
+                    LOG_LN("ERROR: Pocos puntos.");
                     ctx.isCalibrationLoaded = false;
                     state = COMPLETE;
                     break;
                 }
                 
-                // Ordenar puntos por flujo ascendente
-                LOG_LN("Ordenando puntos de calibración por flujo...");
                 for (int i = 0; i < ctx.numCalPoints - 1; i++)
                 {
                     for (int j = 0; j < ctx.numCalPoints - i - 1; j++)
@@ -235,10 +247,6 @@ public:
                         }
                     }
                 }
-                
-                LOG_LN("Calibración completa y ordenada.");
-                Serial.print("Puntos capturados: ");
-                LOG_LN(ctx.numCalPoints);
                 
                 state = SAVING;
                 break;

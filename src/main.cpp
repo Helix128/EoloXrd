@@ -30,6 +30,8 @@ void setup()
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   
+  ctx.components.motor.begin(); // apagar motores
+
   Serial.begin(115200);
 
   /*
