@@ -12,12 +12,11 @@ typedef struct CaptureMenuOption{
     std::function<void(Context&)> action;
 } CaptureMenuOption;
 
-// Escena de logo/splash al iniciar la app
 class MenuCapturaScene : public IScene
 {
 private:
     int selectIndex = 0;
-    CaptureMenuOption menuOptions[8] = {
+    CaptureMenuOption menuOptions[5] = {
         {"Continuar", [](Context &ctx) {
             SceneManager::setScene("captura", ctx);
         }},
@@ -50,10 +49,12 @@ public:
         int delta = ctx.components.input.getEncoderDelta();
         bool button = ctx.components.input.isButtonPressed();
 
+        int numOptions = sizeof(menuOptions) / sizeof(menuOptions[0]);
+
         if (delta != 0)
         {
             selectIndex += delta;
-            selectIndex = constrain(selectIndex, 0, 5);
+            selectIndex = constrain(selectIndex, 0, numOptions - 1);
         }
 
         if(button){
@@ -63,18 +64,25 @@ public:
 
         ctx.u8g2.setFont(FONT_BOLD);
 
+        int offset = (selectIndex / 3) * 3;
+        int limit = offset + 3;
+        
+        if (limit > numOptions) {
+            limit = numOptions;
+        }
 
-        int offset = selectIndex > 2 ? 3:0;
-        for (int i = offset; i < 3+offset; i++)
+        for (int i = offset; i < limit; i++)
         {   
-            int e = i-offset;
-            if(selectIndex==i){
+            int e = i - offset;
+            
+            if(selectIndex == i){
                 ctx.u8g2.drawBox(2, 32 + e * 14 - 14, 131, 14);
                 ctx.u8g2.setDrawColor(0);
             } else {
                 ctx.u8g2.setDrawColor(1);
             }
-            ctx.u8g2.setFont(selectIndex==i?FONT_BOLD:FONT_REGULAR);
+            
+            ctx.u8g2.setFont(selectIndex == i ? FONT_BOLD : FONT_REGULAR);
             int labelWidth = ctx.u8g2.getStrWidth(menuOptions[i].label);
             int labelX = (128 - labelWidth) / 2;
             ctx.u8g2.drawStr(labelX, 30 + e * 14, menuOptions[i].label);
@@ -83,7 +91,6 @@ public:
         }
         
         ctx.u8g2.setDrawColor(1);
-        static unsigned long lastTime = 0;
         unsigned long currentTime = millis();
         int animOffset = ((currentTime / 200) % 2) * 2; 
         
@@ -93,8 +100,8 @@ public:
             ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
         }
 
-        int scrollHeight = 48 / 12;
-        int scrollY = selectIndex * scrollHeight * 2 + 18;
+        int scrollHeight = 48 / numOptions;
+        int scrollY = selectIndex * scrollHeight + 18;
         ctx.u8g2.drawVLine(0, scrollY, scrollHeight);
 
         ctx.u8g2.sendBuffer();

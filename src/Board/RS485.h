@@ -6,10 +6,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "./Config.h"
+
 #define RS485_RX_PIN 35
 #define RS485_TX_PIN 33
 #define RS485_DE_RE_PIN 26
 #define RS485_BAUD_RATE 4800
+
+#define DEBUG false
 
 class RS485 {
 private:
@@ -58,13 +62,18 @@ public:
         if (!_initialized) return false;
 
         bool success = false;
+        
+        vTaskDelay(pdMS_TO_TICKS(10)); 
 
         if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
             
+            vTaskDelay(pdMS_TO_TICKS(10)); 
+
+            while(_serial.available()) {
+                _serial.read();
+            }
+
             _node.begin(slaveId, _serial);
-
-            while(_serial.available()) _serial.read();
-
             uint8_t result = _node.readHoldingRegisters(startReg, count);
 
             if (result == _node.ku8MBSuccess) {
@@ -72,6 +81,15 @@ public:
                     dataBuffer[i] = _node.getResponseBuffer(i);
                 }
                 success = true;
+                #if DEBUG
+                    LOG_F("Modbus read success: Slave ID %d, Start Reg %d, Count %d\n", slaveId, startReg, count);
+                    for (uint8_t i = 0; i < count; i++) {
+                        Serial.printf("  Reg %d: 0x%04X (%d)\n", startReg + i, dataBuffer[i], dataBuffer[i]);
+                    }
+                #endif
+            }
+            else{
+                LOG_F("Modbus read failed: Slave ID %d, Start Reg %d, Count %d, Error Code: %02X \n", slaveId, startReg, count, result);
             }
             
             xSemaphoreGive(_mutex);

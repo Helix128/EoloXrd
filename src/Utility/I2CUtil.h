@@ -22,26 +22,17 @@ public:
       uint8_t error = Wire.endTransmission();
       
       if (error == 0) {
-        Serial.print("Dispositivo I2C en 0x");
-        if (addr < 16) Serial.print("0");
-        Serial.print(addr, HEX);
-        Serial.print(" (");
-        Serial.print(addr);
-        LOG_LN(")");
+        LOG_F("Dispositivo I2C encontrado en 0x%02X (%d)\n", addr, addr);
         count++;
       } else if (error == 4) {
-        Serial.print("Error desconocido en 0x");
-        if (addr < 16) Serial.print("0");
-        Serial.println(addr, HEX);
+        LOG_F("Error desconocido en dirección 0x%02X\n", addr);
       }
     }
 
     if (count == 0) {
       LOG_LN("No se encontraron dispositivos I2C.");
     } else {
-      Serial.print("Total: ");
-      Serial.print(count);
-      LOG_LN(" dispositivo(s) encontrados.");
+      LOG_F("Total: %d dispositivo(s) encontrados.\n", count);
     }
     LOG_LN();
   }

@@ -194,11 +194,7 @@ public:
                     {
                         float measuredFlow = sumFlow / SAMPLES_PER_POINT;
                         
-                        Serial.print("Motor ");
-                        Serial.print(currentPct, 1);
-                        Serial.print("% -> Flujo medido (prom): ");
-                        Serial.print(measuredFlow, 3);
-                        LOG_LN(" L/min");
+                        LOG_F("Punto %.1f%%: Flujo medido (prom): %.3f L/min\n", currentPct, measuredFlow);
                         
                         ctx.calMotorPcts[ctx.numCalPoints] = currentPct;
                         ctx.calFlows[ctx.numCalPoints] = measuredFlow;

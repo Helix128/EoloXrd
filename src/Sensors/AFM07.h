@@ -35,9 +35,9 @@ private:
             bool success = RS485::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
             if (!success) {
-                Serial.println("DEBUG AFM: RS485 falló internamente (Timeout o CRC)");
+                // Serial.println("DEBUG AFM: RS485 falló internamente (Timeout o CRC)");
             } else {
-                Serial.println("DEBUG AFM: Lectura Exitosa, actualizando datos...");
+               // Serial.println("DEBUG AFM: Lectura Exitosa, actualizando datos...");
             }
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -45,7 +45,7 @@ private:
                     self->_data.flow = val;
                     self->_data.velocity = val; 
                     self->_data.valid = true;
-                    LOG_F("AFM07: Flujo %.2f L/min, Velocidad %.2f m/s\n", self->_data.flow, self->_data.velocity);
+                  //  LOG_F("AFM07: Flujo %.2f L/min, Velocidad %.2f m/s\n", self->_data.flow, self->_data.velocity);
                 } else {
                     self->_data.valid = false;
                 }
@@ -70,7 +70,7 @@ public:
 
     void begin() {
         RS485::getInstance().begin();
-        //xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
+        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
     }
 
     bool getData(FlowData& output) {
