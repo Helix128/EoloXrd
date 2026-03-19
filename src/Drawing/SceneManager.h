@@ -47,8 +47,6 @@ public:
             currentScene = it->second;
             currentSceneName = name;
             currentScene->enter(ctx); // Llamar método enter de la nueva escena
-            Serial.print("Cambiando a escena: ");
-
             currentSceneIndex = 0;
             for(const auto& pair : sceneIndices){
                 if(pair.second == currentScene){
@@ -56,13 +54,11 @@ public:
                     break;
                 }
             }
-
-            LOG_F("%s (index %d)\n", name.c_str(), currentSceneIndex);
+            LOG_F("Escena cambiada a: %s (índice %d)\n", name.c_str(), currentSceneIndex);
         }
         else
         {
-            Serial.print("Escena no encontrada: ");
-            LOG_LN(name.c_str());
+            LOG_F("Escena no encontrada: %s\n", name.c_str());
         }
     }
 

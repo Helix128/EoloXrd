@@ -1,11 +1,32 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <string.h>
+
 // CONFIGURACIONES GENERALES DEL PROGRAMA
-#define LOG_F(fmt, ...) Serial.printf("[%s] " fmt, __func__, ##__VA_ARGS__)
+
+// Helpers de logueo
+#ifndef FILENAME
+  #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#endif
+ 
+#define LOG_F(fmt, ...) do { \
+    Serial.print("["); \
+    Serial.print(FILENAME); \
+    Serial.print(":"); \
+    Serial.print(__LINE__); \
+    Serial.print("]["); \
+    Serial.print(__func__); \
+    Serial.print("] "); \
+    Serial.printf(fmt, ##__VA_ARGS__); \
+} while(0)
 
 #define LOG_LN(msg) do { \
     Serial.print("["); \
+    Serial.print(FILENAME); \
+    Serial.print(":"); \
+    Serial.print(__LINE__); \
+    Serial.print("]["); \
     Serial.print(__func__); \
     Serial.print("] "); \
     Serial.println(msg); \
@@ -13,6 +34,10 @@
 
 #define LOG_P(msg) do { \
     Serial.print("["); \
+    Serial.print(FILENAME); \
+    Serial.print(":"); \
+    Serial.print(__LINE__); \
+    Serial.print("]["); \
     Serial.print(__func__); \
     Serial.print("] "); \
     Serial.print(msg); \
@@ -34,8 +59,8 @@
 #define SD_SCK_PIN 18
 
 // Modelo de pantalla a usar en U8G2 (default U8G2_SSD1309_128x64_NONAME2_F_HW_I2C)
-#define DisplayModel U8G2_SSD1309_128X64_NONAME2_F_HW_I2C
-//#define DisplayModel U8G2_SSD1306_128X64_NONAME_F_HW_I2C
+//#define DisplayModel U8G2_SSD1309_128X64_NONAME2_F_HW_I2C
+#define DisplayModel U8G2_SSD1306_128X64_NONAME_F_HW_I2C
 
 // Pines I2C
 #define SDA_PIN 21

@@ -11,15 +11,8 @@
 class MotorManager
 {
 public:
-  #ifdef EOLO_GRANDE
-  // motores del EOLO grande 
-  // se guardan aparte por si es necesario reordenarlos
-  static constexpr int motors[4] = {14, 15, 26, 27}; 
-  static constexpr int ledcChannels[4] = {0, 1, 2, 3};
-  #else
   static constexpr int motors[2] = {14, 15};
   static constexpr int ledcChannels[2] = {0, 1};
-  #endif
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static const int freq = 400;
   static const int resolution = 11;
@@ -134,12 +127,7 @@ public:
   }
 };
 
-#ifdef EOLO_GRANDE
-constexpr int MotorManager::motors[4];
-constexpr int MotorManager::ledcChannels[4];
-#else
 constexpr int MotorManager::motors[2];
 constexpr int MotorManager::ledcChannels[2];
-#endif
 
 #endif
