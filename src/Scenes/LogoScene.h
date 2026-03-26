@@ -24,7 +24,7 @@ private:
     static const unsigned long ANIM_DURATION = 1200;
     static const unsigned long FADE_DURATION = 1200;
     static const unsigned long FADE_OUT_DURATION = 600;
-    static const int MAX_PIXEL_SIZE = 2; 
+    static const int MAX_PIXEL_SIZE = 3; 
 
 public:
     void enter(Context &ctx) override
@@ -185,8 +185,8 @@ public:
             I2CUtility::scan();
             delay(100);
             // ctx.components.begin();
-            //ctx.begin();
-            ctx.initDisplay();
+            // ctx.begin();
+            // ctx.initDisplay();
             delay(100);
             currentState = FADING_OUT;
             phaseStartTime = millis();

@@ -11,7 +11,7 @@
 class MotorManager
 {
 public:
-  static constexpr int motors[2] = {25, 14};
+  static constexpr int motors[2] = {25, 27};
   static constexpr int ledcChannels[2] = {0, 1};
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static const int freq = 20000;
