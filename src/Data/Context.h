@@ -91,7 +91,7 @@ public:
             LOG_LN("Fallo al iniciar pantalla");
             return;
         }
-        u8g2.setBusClock(I2C_CLOCK); // 125kHz (fix pantalla para que la señal sea más cuadrada)
+        u8g2.setBusClock(I2C_CLOCK); // (fix pantalla para que la señal sea más cuadrada)
         u8g2.clearBuffer();
         u8g2.setFont(FONT_BOLD_L);
         int textWidth = u8g2.getStrWidth("EOLO");
