@@ -38,8 +38,8 @@ void setup()
   I2CUtility::begin();
   I2CUtility::scan();
   */
-  // Registrar todas las escenas (SceneRegistry)
-  
+
+  // Registrar todas las escenas (SceneRegistry) 
   registerAllScenes();
   // Inicialización del contexto de la app
   ctx.begin();
