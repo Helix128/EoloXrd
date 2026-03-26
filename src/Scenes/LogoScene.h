@@ -186,6 +186,7 @@ public:
             delay(100);
             // ctx.components.begin();
             //ctx.begin();
+            ctx.initDisplay();
             delay(100);
             currentState = FADING_OUT;
             phaseStartTime = millis();
