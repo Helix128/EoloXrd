@@ -95,7 +95,7 @@ private:
         lastFlowForStab = -1.0f;
         stableCount = 0;
         lastStabCheckTime = 0;
-        ctx.numCalPoints = 0;
+        ctx.calibration.numPoints = 0;
 
         if (newPhase == PHASE_DONE)
         {
@@ -113,18 +113,18 @@ private:
         if (phase >= PHASE_SMALL && phase <= PHASE_BOTH)
         {
             phaseUnstablePoints[phase] = unstablePoints;
-            phasePointCounts[phase] = ctx.numCalPoints;
+            phasePointCounts[phase] = ctx.calibration.numPoints;
         }
 
-        if (ctx.numCalPoints > 1)
+        if (ctx.calibration.numPoints > 1)
         {
-            ctx.sortCalibrationArrays(ctx.calMotorPcts, ctx.calFlows, ctx.numCalPoints);
-            ctx.commitPhaseCalibration(phaseMode(), ctx.calMotorPcts, ctx.calFlows, ctx.numCalPoints);
-            LOG_F("%s completada con %d puntos\n", phaseLabel(), ctx.numCalPoints);
+            CalibrationManager::sortArrays(ctx.calibration.motorPcts, ctx.calibration.flows, ctx.calibration.numPoints);
+            ctx.calibration.commitPhase(phaseMode(), ctx.calibration.motorPcts, ctx.calibration.flows, ctx.calibration.numPoints);
+            LOG_F("%s completada con %d puntos\n", phaseLabel(), ctx.calibration.numPoints);
         }
         else
         {
-            LOG_F("%s con pocos puntos válidos (%d)\n", phaseLabel(), ctx.numCalPoints);
+            LOG_F("%s con pocos puntos válidos (%d)\n", phaseLabel(), ctx.calibration.numPoints);
         }
 
         if (phase == PHASE_SMALL)
@@ -153,7 +153,7 @@ private:
 
     int estimateRemainingPoints(const Context &ctx) const
     {
-        int slots = ctx.MAX_CAL_POINTS - ctx.numCalPoints;
+        int slots = CalibrationManager::MAX_POINTS - ctx.calibration.numPoints;
         if (slots <= 0 || currentPct > 100.0f)
             return 0;
 
@@ -177,7 +177,7 @@ public:
         LOG_LN("Iniciando calibración completa 3 fases");
         LOG_LN("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
 
-        ctx.isCalibrationLoaded = false;
+        ctx.calibration.isLoaded = false;
         ctx.components.motor.setPowerPct(0);
         for (int i = 0; i < 20; i++)
         {
@@ -268,7 +268,7 @@ public:
                 {
                     state = SAVING;
                 }
-                else if (currentPct <= 100.0f && ctx.numCalPoints < ctx.MAX_CAL_POINTS)
+                else if (currentPct <= 100.0f && ctx.calibration.numPoints < CalibrationManager::MAX_POINTS)
                 {
                     ctx.components.motor.setPowerPct(currentPct);
                     state = STABILIZING;
@@ -360,9 +360,9 @@ public:
                         
                         LOG_F("Punto %.1f%%: %.3f L/min \n", currentPct, measuredFlow);
                         
-                        ctx.calMotorPcts[ctx.numCalPoints] = currentPct;
-                        ctx.calFlows[ctx.numCalPoints] = measuredFlow;
-                        ctx.numCalPoints++;
+                        ctx.calibration.motorPcts[ctx.calibration.numPoints] = currentPct;
+                        ctx.calibration.flows[ctx.calibration.numPoints] = measuredFlow;
+                        ctx.calibration.numPoints++;
                         
                         currentPct += getPctStep(currentPct);
                         state = INIT;
@@ -378,13 +378,13 @@ public:
                 ctx.components.motor.setPowerPct(0);
                 ctx.components.motor.clearCalibrationOverrideMode();
                 ctx.components.motor.setDistributionMode(MotorManager::AUTO_BY_FLOW);
-                ctx.saveCalibration();
-                ctx.isCalibrationLoaded = ctx.hasCompletePhaseCalibration();
+                ctx.calibration.save();
+                ctx.calibration.isLoaded = ctx.calibration.hasCompletePhaseCalibration();
                 LOG_F("Resumen fases -> small: %d pts (%d inestables), big: %d pts (%d inestables), both: %d pts (%d inestables)\n",
                       phasePointCounts[0], phaseUnstablePoints[0],
                       phasePointCounts[1], phaseUnstablePoints[1],
                       phasePointCounts[2], phaseUnstablePoints[2]);
-                if (!ctx.isCalibrationLoaded)
+                if (!ctx.calibration.isLoaded)
                 {
                     LOG_LN("Calibración completa NO válida: faltan fases o curvas sin calidad mínima.");
                 }

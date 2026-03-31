@@ -4,17 +4,17 @@
 #include "../Data/Context.h"
 #include <SD.h>
 
-float GetTargetMotorPct(float targetFlow, float* calMotorPcts, float* calFlows, int numPoints)
+float GetTargetMotorPct(float targetFlow, float* motorPcts, float* flows, int numPoints)
 {
-    if (targetFlow <= calFlows[0])
-        return calMoteorPcts[0];
+    if (targetFlow <= flows[0])
+        return motorPcts[0];
     
     for (int i = 0; i < numPoints; i++) {
-        if (calFlows[i] >= targetFlow) {
-            return calMotorPcts[i];
+        if (flows[i] >= targetFlow) {
+            return motorPcts[i];
         }
     }
-    return calMotorPcts[numPoints - 1];
+    return motorPcts[numPoints - 1];
 }
 
 void testFlowMotor(Context &ctx)
@@ -24,10 +24,10 @@ void testFlowMotor(Context &ctx)
     LOG_LN("Calibrando...");
     
     int maxCalPoints = 100;
-    int numCalPoints = 0;
+    int numPoints = 0;
     float currentPct = 0;
-    float* calFlows = new float[maxCalPoints];
-    float* calMotorPcts = new float[maxCalPoints];
+    float* flows = new float[maxCalPoints];
+    float* motorPcts = new float[maxCalPoints];
     float lastFlow = -1;
     while(currentPct <= 100 && numCalPoints < maxCalPoints)
     {   
@@ -53,9 +53,9 @@ void testFlowMotor(Context &ctx)
         Serial.print(measuredFlow, 2);
         LOG_LN(" L/min");
 
-        calMotorPcts[numCalPoints] = currentPct;
-        calFlows[numCalPoints] = measuredFlow;
-        numCalPoints++;
+        motorPcts[numPoints] = currentPct;
+        flows[numPoints] = measuredFlow;
+        numPoints++;
         
         currentPct += 1.0f; // Incrementar en 1%
     }
@@ -66,10 +66,10 @@ void testFlowMotor(Context &ctx)
     File file = SD.open("/calibracion.csv", FILE_WRITE);
     if (file) {
         file.println("motor,flujo");
-        for (int i = 0; i < numCalPoints; i++) {
-            file.print(calMotorPcts[i]);
+        for (int i = 0; i < numPoints; i++) {
+            file.print(motorPcts[i]);
             file.print(",");
-            file.println(calFlows[i]);
+            file.println(flows[i]);
         }
         file.close();
         LOG_LN("Calibración guardada en calibracion.csv");
@@ -79,9 +79,9 @@ void testFlowMotor(Context &ctx)
     return;
     LOG_LN("Calibración completa.");
     Serial.print("Rango de flujo medido: ");
-    Serial.print(calFlows[0]);
+    Serial.print(flows[0]);
     Serial.print(" - ");
-    Serial.print(calFlows[10]);
+    Serial.print(flows[10]);
     LOG_LN(" L/min");
 
     LOG_LN("Ingresa valor de flujo (0-8 L/min) via Serial");
@@ -159,7 +159,7 @@ void testFlowMotor(Context &ctx)
         }
         float averageFlow = sum / validSamples;
 
-        ctx.components.motor.setPowerPct(GetTargetMotorPct(ctx.session.targetFlow, calMotorPcts, calFlows, numCalPoints));
+        ctx.components.motor.setPowerPct(GetTargetMotorPct(ctx.session.targetFlow, motorPcts, flows, numPoints));
 
         // Mostrar estado cada segundo aproximadamente
         static unsigned long lastPrint = 0;
