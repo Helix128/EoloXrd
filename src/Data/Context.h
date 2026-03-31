@@ -43,15 +43,59 @@ typedef struct Context
 
     // Datos de calibración
     static const int MAX_CAL_POINTS = 200;
+    static constexpr float AUTO_FLOW_LOW_THRESHOLD = 2.0f;
+    static constexpr float AUTO_FLOW_HIGH_THRESHOLD = 5.5f;
+    static constexpr float AUTO_FLOW_EXTREME_THRESHOLD = 7.5f;
+    static constexpr float AUTO_FLOW_HYSTERESIS = 0.3f;
+    static const int MIN_CAL_POINTS_PHASE = 6;
+    static constexpr float MIN_FLOW_RANGE_PHASE = 0.25f;
     int numCalPoints = 0;
     float calMotorPcts[MAX_CAL_POINTS];
     float calFlows[MAX_CAL_POINTS];
+    int numCalPointsSmall = 0;
+    float calMotorPctsSmall[MAX_CAL_POINTS];
+    float calFlowsSmall[MAX_CAL_POINTS];
+    int numCalPointsBig = 0;
+    float calMotorPctsBig[MAX_CAL_POINTS];
+    float calFlowsBig[MAX_CAL_POINTS];
+    int numCalPointsBoth = 0;
+    float calMotorPctsBoth[MAX_CAL_POINTS];
+    float calFlowsBoth[MAX_CAL_POINTS];
     bool isCalibrationLoaded = false;
 
     Preferences preferences;
 
 public:
     Context(DisplayModel &display) : u8g2(display) {}
+
+    bool validateCalibrationCurve(const float *flows, int points, float minRange = MIN_FLOW_RANGE_PHASE) const
+    {
+        if (points < MIN_CAL_POINTS_PHASE)
+            return false;
+
+        if (flows == nullptr)
+            return false;
+
+        float first = flows[0];
+        float last = flows[points - 1];
+        if ((last - first) < minRange)
+            return false;
+
+        for (int i = 1; i < points; i++)
+        {
+            if (flows[i] < flows[i - 1])
+                return false;
+        }
+
+        return true;
+    }
+
+    bool hasCompletePhaseCalibration() const
+    {
+        return validateCalibrationCurve(calFlowsSmall, numCalPointsSmall) &&
+               validateCalibrationCurve(calFlowsBig, numCalPointsBig) &&
+               validateCalibrationCurve(calFlowsBoth, numCalPointsBoth);
+    }
 
     void begin()
     {
@@ -66,6 +110,11 @@ public:
         LOG_F("Iniciando EOLO %s\n", versionType);
 
         components.motor.begin();
+        components.motor.setAutoThresholds(AUTO_FLOW_LOW_THRESHOLD,
+                           AUTO_FLOW_HIGH_THRESHOLD,
+                           AUTO_FLOW_EXTREME_THRESHOLD,
+                           AUTO_FLOW_HYSTERESIS);
+        components.motor.setDistributionMode(MotorManager::AUTO_BY_FLOW);
         components.motor.setPWM(0); // Asegurar que los motores estén apagados
 
         LOG_LN("Iniciando pantalla...");
@@ -325,9 +374,26 @@ public:
     {
         preferences.begin("eolo_calib", false);
 
+        uint8_t calVersion = (numCalPointsSmall > 1 && numCalPointsBig > 1 && numCalPointsBoth > 1) ? 2 : 1;
+        preferences.putUChar("calVersion", calVersion);
         preferences.putInt("numPoints", numCalPoints);
         preferences.putBytes("motorPcts", calMotorPcts, numCalPoints * sizeof(float));
         preferences.putBytes("flows", calFlows, numCalPoints * sizeof(float));
+
+        if (calVersion >= 2)
+        {
+            preferences.putInt("numPtsSm", numCalPointsSmall);
+            preferences.putBytes("mtrPctSm", calMotorPctsSmall, numCalPointsSmall * sizeof(float));
+            preferences.putBytes("flowsSm", calFlowsSmall, numCalPointsSmall * sizeof(float));
+
+            preferences.putInt("numPtsBg", numCalPointsBig);
+            preferences.putBytes("mtrPctBg", calMotorPctsBig, numCalPointsBig * sizeof(float));
+            preferences.putBytes("flowsBg", calFlowsBig, numCalPointsBig * sizeof(float));
+
+            preferences.putInt("numPtsBt", numCalPointsBoth);
+            preferences.putBytes("mtrPctBt", calMotorPctsBoth, numCalPointsBoth * sizeof(float));
+            preferences.putBytes("flowsBt", calFlowsBoth, numCalPointsBoth * sizeof(float));
+        }
 
         preferences.end();
 
@@ -342,11 +408,22 @@ public:
             Serial.print(calFlows[numCalPoints - 1], 2);
             Serial.println(" L/min");
         }
+
+        if (hasCompletePhaseCalibration())
+        {
+            LOG_LN("Set completo de calibración por fases disponible (small/big/both)");
+        }
+        else
+        {
+            LOG_LN("Advertencia: calibración por fases incompleta; se mantiene fallback legacy/global");
+        }
     }
 
     bool loadCalibration()
     {
         preferences.begin("eolo_calib", false);
+
+        uint8_t calVersion = preferences.getUChar("calVersion", 0);
 
         if (!preferences.isKey("numPoints"))
         {
@@ -370,6 +447,42 @@ public:
         size_t motorBytes = preferences.getBytes("motorPcts", calMotorPcts, numCalPoints * sizeof(float));
         size_t flowBytes = preferences.getBytes("flows", calFlows, numCalPoints * sizeof(float));
 
+        // Reset por defecto de calibración por fase.
+        numCalPointsSmall = 0;
+        numCalPointsBig = 0;
+        numCalPointsBoth = 0;
+
+        if (calVersion >= 2)
+        {
+            int ptsSm = preferences.getInt("numPtsSm", 0);
+            int ptsBg = preferences.getInt("numPtsBg", 0);
+            int ptsBt = preferences.getInt("numPtsBt", 0);
+
+            if (ptsSm > 0 && ptsSm <= MAX_CAL_POINTS)
+            {
+                size_t smM = preferences.getBytes("mtrPctSm", calMotorPctsSmall, ptsSm * sizeof(float));
+                size_t smF = preferences.getBytes("flowsSm", calFlowsSmall, ptsSm * sizeof(float));
+                if (smM == (size_t)(ptsSm * sizeof(float)) && smF == (size_t)(ptsSm * sizeof(float)))
+                    numCalPointsSmall = ptsSm;
+            }
+
+            if (ptsBg > 0 && ptsBg <= MAX_CAL_POINTS)
+            {
+                size_t bgM = preferences.getBytes("mtrPctBg", calMotorPctsBig, ptsBg * sizeof(float));
+                size_t bgF = preferences.getBytes("flowsBg", calFlowsBig, ptsBg * sizeof(float));
+                if (bgM == (size_t)(ptsBg * sizeof(float)) && bgF == (size_t)(ptsBg * sizeof(float)))
+                    numCalPointsBig = ptsBg;
+            }
+
+            if (ptsBt > 0 && ptsBt <= MAX_CAL_POINTS)
+            {
+                size_t btM = preferences.getBytes("mtrPctBt", calMotorPctsBoth, ptsBt * sizeof(float));
+                size_t btF = preferences.getBytes("flowsBt", calFlowsBoth, ptsBt * sizeof(float));
+                if (btM == (size_t)(ptsBt * sizeof(float)) && btF == (size_t)(ptsBt * sizeof(float)))
+                    numCalPointsBoth = ptsBt;
+            }
+        }
+
         preferences.end();
 
         if (motorBytes != numCalPoints * sizeof(float) || flowBytes != numCalPoints * sizeof(float))
@@ -380,8 +493,12 @@ public:
             return false;
         }
 
-        isCalibrationLoaded = true;
+        bool legacyValid = validateCalibrationCurve(calFlows, numCalPoints, 0.10f);
+        bool phasedValid = hasCompletePhaseCalibration();
+        isCalibrationLoaded = phasedValid || legacyValid;
         LOG_LN("Calibración cargada desde Flash:");
+        Serial.print(" Versión de calibración: ");
+        Serial.println(calVersion);
         Serial.print(" Número de puntos: ");
         Serial.println(numCalPoints);
         if (numCalPoints > 0)
@@ -400,7 +517,120 @@ public:
             }
         }
 
+        if (phasedValid)
+        {
+            LOG_LN("Curvas por fase cargadas (small/big/both)");
+        }
+        else if (!legacyValid)
+        {
+            LOG_LN("Calibración inválida: ni curva global ni set por fases cumplen mínimos.");
+            return false;
+        }
+
         return true;
+    }
+
+    static int sortCalibrationArrays(float *motorPcts, float *flows, int numPoints)
+    {
+        if (numPoints < 2)
+            return numPoints;
+
+        for (int i = 0; i < numPoints - 1; i++)
+        {
+            for (int j = 0; j < numPoints - i - 1; j++)
+            {
+                if (flows[j] > flows[j + 1])
+                {
+                    float tf = flows[j];
+                    flows[j] = flows[j + 1];
+                    flows[j + 1] = tf;
+
+                    float tm = motorPcts[j];
+                    motorPcts[j] = motorPcts[j + 1];
+                    motorPcts[j + 1] = tm;
+                }
+            }
+        }
+        return numPoints;
+    }
+
+    void commitPhaseCalibration(MotorManager::DistributionMode mode, float *motorPcts, float *flows, int numPoints)
+    {
+        if (numPoints <= 0)
+            return;
+
+        numPoints = sortCalibrationArrays(motorPcts, flows, numPoints);
+
+        if (mode == MotorManager::SMALL_ONLY)
+        {
+            numCalPointsSmall = numPoints;
+            memcpy(calMotorPctsSmall, motorPcts, numPoints * sizeof(float));
+            memcpy(calFlowsSmall, flows, numPoints * sizeof(float));
+        }
+        else if (mode == MotorManager::BIG_ONLY)
+        {
+            numCalPointsBig = numPoints;
+            memcpy(calMotorPctsBig, motorPcts, numPoints * sizeof(float));
+            memcpy(calFlowsBig, flows, numPoints * sizeof(float));
+        }
+        else if (mode == MotorManager::BOTH_EXTREME)
+        {
+            numCalPointsBoth = numPoints;
+            memcpy(calMotorPctsBoth, motorPcts, numPoints * sizeof(float));
+            memcpy(calFlowsBoth, flows, numPoints * sizeof(float));
+        }
+
+        // Curva global legado: priorizar BOTH, luego BIG, luego SMALL.
+        if (numCalPointsBoth > 1)
+        {
+            numCalPoints = numCalPointsBoth;
+            memcpy(calMotorPcts, calMotorPctsBoth, numCalPoints * sizeof(float));
+            memcpy(calFlows, calFlowsBoth, numCalPoints * sizeof(float));
+        }
+        else if (numCalPointsBig > 1)
+        {
+            numCalPoints = numCalPointsBig;
+            memcpy(calMotorPcts, calMotorPctsBig, numCalPoints * sizeof(float));
+            memcpy(calFlows, calFlowsBig, numCalPoints * sizeof(float));
+        }
+        else if (numCalPointsSmall > 1)
+        {
+            numCalPoints = numCalPointsSmall;
+            memcpy(calMotorPcts, calMotorPctsSmall, numCalPoints * sizeof(float));
+            memcpy(calFlows, calFlowsSmall, numCalPoints * sizeof(float));
+        }
+    }
+
+    float interpolateCurve(float targetFlow, const float *flows, const float *motorPcts, int points) const
+    {
+        if (points <= 0)
+            return 0.0f;
+
+        if (targetFlow <= flows[0])
+            return motorPcts[0];
+
+        if (targetFlow >= flows[points - 1])
+            return motorPcts[points - 1];
+
+        for (int i = 0; i < points - 1; i++)
+        {
+            float f0 = flows[i];
+            float f1 = flows[i + 1];
+            float m0 = motorPcts[i];
+            float m1 = motorPcts[i + 1];
+
+            if (targetFlow >= f0 && targetFlow <= f1)
+            {
+                float denom = (f1 - f0);
+                if (fabs(denom) < 1e-6f)
+                    return (m0 + m1) / 2.0f;
+
+                float t = (targetFlow - f0) / denom;
+                return m0 + t * (m1 - m0);
+            }
+        }
+
+        return motorPcts[points - 1];
     }
 
     void testCalibration()
@@ -561,38 +791,17 @@ public:
             return 0;
         }
 
-        // Si el objetivo está por debajo del flujo calibrado mínimo
-        if (targetFlow <= calFlows[0])
-            return calMotorPcts[0];
+        MotorManager::DistributionMode mode = components.motor.getResolvedMode();
+        if (mode == MotorManager::SMALL_ONLY && numCalPointsSmall > 1)
+            return interpolateCurve(targetFlow, calFlowsSmall, calMotorPctsSmall, numCalPointsSmall);
 
-        // Si el objetivo está por encima del flujo calibrado máximo
-        if (targetFlow >= calFlows[numCalPoints - 1])
-            return calMotorPcts[numCalPoints - 1];
+        if (mode == MotorManager::BIG_ONLY && numCalPointsBig > 1)
+            return interpolateCurve(targetFlow, calFlowsBig, calMotorPctsBig, numCalPointsBig);
 
-        // Buscar el rango calibrado e interpolar
-        for (int i = 0; i < numCalPoints - 1; i++)
-        {
-            float f0 = calFlows[i];
-            float f1 = calFlows[i + 1];
-            float m0 = calMotorPcts[i];
-            float m1 = calMotorPcts[i + 1];
+        if (mode == MotorManager::BOTH_EXTREME && numCalPointsBoth > 1)
+            return interpolateCurve(targetFlow, calFlowsBoth, calMotorPctsBoth, numCalPointsBoth);
 
-            if (targetFlow >= f0 && targetFlow <= f1)
-            {
-                // Interpolación lineal entre puntos (proteger división por cero)
-                float denom = (f1 - f0);
-                if (fabs(denom) < 1e-6f)
-                {
-                    // puntos de flujo idénticos, devolver promedio de potencias
-                    return (m0 + m1) / 2.0f;
-                }
-                float t = (targetFlow - f0) / denom;
-                return m0 + t * (m1 - m0);
-            }
-        }
-
-        // Si no se encuentra, devolver el último valor
-        return calMotorPcts[numCalPoints - 1];
+        return interpolateCurve(targetFlow, calFlows, calMotorPcts, numCalPoints);
     }
 
     void logData()
@@ -864,6 +1073,8 @@ public:
     void updateMotors()
     {
         static float lastTargetFlow = -1.0f;
+
+        components.motor.setTargetFlow(session.targetFlow);
 
         if (isCalibrationLoaded && numCalPoints > 0)
         {

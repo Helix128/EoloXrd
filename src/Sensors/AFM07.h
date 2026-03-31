@@ -26,7 +26,7 @@ private:
         AFM07* self = (AFM07*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(1000); 
+        const TickType_t xFrequency = pdMS_TO_TICKS(300); 
 
         uint16_t rawData[1];
 

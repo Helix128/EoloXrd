@@ -10,6 +10,14 @@
 class CalibrationScene : public IScene
 {
 private:
+    enum CalibrationPhase
+    {
+        PHASE_SMALL = 0,
+        PHASE_BIG,
+        PHASE_BOTH,
+        PHASE_DONE
+    };
+
     enum CalibrationState
     {
         INIT,
@@ -20,43 +28,163 @@ private:
         COMPLETE
     };
 
+    CalibrationPhase phase = PHASE_SMALL;
     CalibrationState state = INIT;
     float currentPct = 0.0f;
     int sampleCount = 0;
+    int sampleAttempts = 0;
     float sumFlow = 0.0f;
     unsigned long lastSampleTime = 0;
     unsigned long stateStartTime = 0;
     
     float lastFlowForStab = -1.0f;
     int stableCount = 0;
+    int unstablePoints = 0;
+    int phaseUnstablePoints[3] = {0, 0, 0};
+    int phasePointCounts[3] = {0, 0, 0};
     unsigned long lastStabCheckTime = 0;
     
-    static const int SAMPLES_PER_POINT = 25;
-    static const int SAMPLE_INTERVAL_MS = 25;
+    static const int SAMPLES_PER_POINT = 5;
+    static const int MAX_SAMPLE_ATTEMPTS = 35;
+    static const int SAMPLE_INTERVAL_MS = 350;
     static const int STAB_CHECK_INTERVAL_MS = 25;
     static const int MAX_STABILIZE_TIME_MS = 2500;
     static const int REQUIRED_STABLE_READINGS = 10;
     constexpr static const float STAB_TOLERANCE = 0.025f;
 
-public:
-    void enter(Context &ctx) override
+    const char *phaseLabel() const
     {
+        switch (phase)
+        {
+        case PHASE_SMALL:
+            return "Fase 1/3: chico";
+        case PHASE_BIG:
+            return "Fase 2/3: grande";
+        case PHASE_BOTH:
+            return "Fase 3/3: ambos";
+        default:
+            return "Finalizando";
+        }
+    }
+
+    MotorManager::DistributionMode phaseMode() const
+    {
+        switch (phase)
+        {
+        case PHASE_SMALL:
+            return MotorManager::SMALL_ONLY;
+        case PHASE_BIG:
+            return MotorManager::BIG_ONLY;
+        case PHASE_BOTH:
+            return MotorManager::BOTH_EXTREME;
+        default:
+            return MotorManager::LEGACY_GLOBAL;
+        }
+    }
+
+    void startPhase(Context &ctx, CalibrationPhase newPhase)
+    {
+        phase = newPhase;
         state = INIT;
         currentPct = 0.0f;
         sampleCount = 0;
+        sampleAttempts = 0;
         sumFlow = 0.0f;
         lastSampleTime = 0;
         stateStartTime = millis();
-        
-        LOG_LN("Iniciando calibración Motor-Flujo");
-        LOG_LN("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
-        
+        lastFlowForStab = -1.0f;
+        stableCount = 0;
+        lastStabCheckTime = 0;
         ctx.numCalPoints = 0;
-        
+
+        if (newPhase == PHASE_DONE)
+        {
+            ctx.components.motor.clearCalibrationOverrideMode();
+            ctx.components.motor.setDistributionMode(MotorManager::AUTO_BY_FLOW);
+            return;
+        }
+
+        ctx.components.motor.setCalibrationOverrideMode(phaseMode());
+        LOG_F("Iniciando %s\n", phaseLabel());
+    }
+
+    void finishCurrentPhase(Context &ctx)
+    {
+        if (phase >= PHASE_SMALL && phase <= PHASE_BOTH)
+        {
+            phaseUnstablePoints[phase] = unstablePoints;
+            phasePointCounts[phase] = ctx.numCalPoints;
+        }
+
+        if (ctx.numCalPoints > 1)
+        {
+            ctx.sortCalibrationArrays(ctx.calMotorPcts, ctx.calFlows, ctx.numCalPoints);
+            ctx.commitPhaseCalibration(phaseMode(), ctx.calMotorPcts, ctx.calFlows, ctx.numCalPoints);
+            LOG_F("%s completada con %d puntos\n", phaseLabel(), ctx.numCalPoints);
+        }
+        else
+        {
+            LOG_F("%s con pocos puntos válidos (%d)\n", phaseLabel(), ctx.numCalPoints);
+        }
+
+        if (phase == PHASE_SMALL)
+        {
+            startPhase(ctx, PHASE_BIG);
+        }
+        else if (phase == PHASE_BIG)
+        {
+            startPhase(ctx, PHASE_BOTH);
+        }
+        else
+        {
+            startPhase(ctx, PHASE_DONE);
+            state = SAVING;
+        }
+    }
+
+    float getPctStep(float pct) const
+    {
+        if (pct < 25.0f)
+            return 0.5f;
+        if (pct < 60.0f)
+            return 1.5f;
+        return 3.0f;
+    }
+
+    int estimateRemainingPoints(const Context &ctx) const
+    {
+        int slots = ctx.MAX_CAL_POINTS - ctx.numCalPoints;
+        if (slots <= 0 || currentPct > 100.0f)
+            return 0;
+
+        float pct = currentPct;
+        int points = 0;
+        while (pct <= 100.0f && points < slots)
+        {
+            points++;
+            pct += getPctStep(pct);
+        }
+        return points;
+    }
+
+public:
+    void enter(Context &ctx) override
+    {
+        unstablePoints = 0;
+        phaseUnstablePoints[0] = phaseUnstablePoints[1] = phaseUnstablePoints[2] = 0;
+        phasePointCounts[0] = phasePointCounts[1] = phasePointCounts[2] = 0;
+
+        LOG_LN("Iniciando calibración completa 3 fases");
+        LOG_LN("ADVERTENCIA: Este proceso tardará varios minutos. No interrumpir.");
+
+        ctx.isCalibrationLoaded = false;
         ctx.components.motor.setPowerPct(0);
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 20; i++)
+        {
             delay(50);
         }
+
+        startPhase(ctx, PHASE_SMALL);
     }
 
     void update(Context &ctx) override
@@ -74,13 +202,18 @@ public:
         }
         int titleWidth = ctx.u8g2.getStrWidth(titleWithDots);
         int titleX = (128 - titleWidth) / 2;
-        ctx.u8g2.drawStr(titleX, 28, titleWithDots);
+        ctx.u8g2.drawStr(titleX, 20, titleWithDots);
+
+        ctx.u8g2.setFont(FONT_REGULAR_S);
+        int phaseWidth = ctx.u8g2.getStrWidth(phaseLabel());
+        int phaseX = (128 - phaseWidth) / 2;
+        ctx.u8g2.drawStr(phaseX, 30, phaseLabel());
         
         int progress = (int)((currentPct / 100.0f) * 100.0f);
         int barWidth = 100;
         int barHeight = 12;
         int barX = (128 - barWidth) / 2;
-        int barY = 32;
+        int barY = 34;
         progress = constrain(progress, 0, 100);
         ctx.u8g2.drawRFrame(barX, barY, barWidth, barHeight, 3);
         
@@ -99,11 +232,7 @@ public:
         sprintf(progressText, "%d%%", progress);
         int progressWidth = ctx.u8g2.getStrWidth(progressText);
 
-        int remainingPct = 100 - (int)currentPct;
-        if (remainingPct < 0) remainingPct = 0;
-        int remainingSlots = ctx.MAX_CAL_POINTS - ctx.numCalPoints;
-        if (remainingSlots < 0) remainingSlots = 0;
-        int remainingPoints = (remainingPct < remainingSlots) ? remainingPct : remainingSlots;
+        int remainingPoints = estimateRemainingPoints(ctx);
 
         unsigned long perPointMs = (unsigned long)MAX_STABILIZE_TIME_MS + (unsigned long)SAMPLES_PER_POINT * (unsigned long)SAMPLE_INTERVAL_MS;
         unsigned long remainingMs = (unsigned long)remainingPoints * perPointMs;
@@ -135,7 +264,11 @@ public:
         switch(state)
         {
             case INIT:
-                if (currentPct <= 100.0f && ctx.numCalPoints < ctx.MAX_CAL_POINTS)
+                if (phase == PHASE_DONE)
+                {
+                    state = SAVING;
+                }
+                else if (currentPct <= 100.0f && ctx.numCalPoints < ctx.MAX_CAL_POINTS)
                 {
                     ctx.components.motor.setPowerPct(currentPct);
                     state = STABILIZING;
@@ -144,17 +277,20 @@ public:
                     stableCount = 0;
                     lastFlowForStab = -1.0f;
                     sampleCount = 0;
+                    sampleAttempts = 0;
                     sumFlow = 0.0f;
                 }
                 else
                 {
-                    state = SORTING;
+                    finishCurrentPhase(ctx);
                 }
                 break;
                 
             case STABILIZING:
                 if (millis() - stateStartTime >= MAX_STABILIZE_TIME_MS)
                 {
+                    unstablePoints++;
+                    LOG_F("Advertencia: punto %.1f%% no logró estabilidad (timeout).\n", currentPct);
                     state = SAMPLING;
                     lastSampleTime = millis();
                 }
@@ -200,13 +336,27 @@ public:
                     else
                     {
                         sumFlow += flowData.flow;
+                        sampleCount++;
                     }
-                    sampleCount++;
+                    sampleAttempts++;
                     lastSampleTime = millis();
                     
-                    if (sampleCount >= SAMPLES_PER_POINT)
+                    if (sampleCount >= SAMPLES_PER_POINT || sampleAttempts >= MAX_SAMPLE_ATTEMPTS)
                     {
-                        float measuredFlow = sumFlow / SAMPLES_PER_POINT;
+                        if (sampleCount <= 0)
+                        {
+                            LOG_F("Punto %.1f%% descartado: sin muestras válidas.\n", currentPct);
+                            state = INIT;
+                            break;
+                        }
+
+                        float measuredFlow = sumFlow / sampleCount;
+
+                        if (sampleAttempts >= MAX_SAMPLE_ATTEMPTS && sampleCount < SAMPLES_PER_POINT)
+                        {
+                            LOG_F("Punto %.1f%% con muestreo parcial (%d/%d válidas).\n", currentPct, sampleCount, SAMPLES_PER_POINT);
+                            unstablePoints++;
+                        }
                         
                         LOG_F("Punto %.1f%%: %.3f L/min \n", currentPct, measuredFlow);
                         
@@ -214,46 +364,34 @@ public:
                         ctx.calFlows[ctx.numCalPoints] = measuredFlow;
                         ctx.numCalPoints++;
                         
-                        currentPct += 1.0f;
+                        currentPct += getPctStep(currentPct);
                         state = INIT;
                     }
                 }
                 break;
                 
             case SORTING:
-                ctx.components.motor.setPowerPct(0);
-                
-                if (ctx.numCalPoints < 2)
-                {
-                    LOG_LN("ERROR: Pocos puntos.");
-                    ctx.isCalibrationLoaded = false;
-                    state = COMPLETE;
-                    break;
-                }
-                
-                for (int i = 0; i < ctx.numCalPoints - 1; i++)
-                {
-                    for (int j = 0; j < ctx.numCalPoints - i - 1; j++)
-                    {
-                        if (ctx.calFlows[j] > ctx.calFlows[j + 1])
-                        {
-                            float tf = ctx.calFlows[j];
-                            ctx.calFlows[j] = ctx.calFlows[j + 1];
-                            ctx.calFlows[j + 1] = tf;
-
-                            float tm = ctx.calMotorPcts[j];
-                            ctx.calMotorPcts[j] = ctx.calMotorPcts[j + 1];
-                            ctx.calMotorPcts[j + 1] = tm;
-                        }
-                    }
-                }
-                
-                state = SAVING;
+                finishCurrentPhase(ctx);
                 break;
                 
             case SAVING:
+                ctx.components.motor.setPowerPct(0);
+                ctx.components.motor.clearCalibrationOverrideMode();
+                ctx.components.motor.setDistributionMode(MotorManager::AUTO_BY_FLOW);
                 ctx.saveCalibration();
-                ctx.isCalibrationLoaded = true;
+                ctx.isCalibrationLoaded = ctx.hasCompletePhaseCalibration();
+                LOG_F("Resumen fases -> small: %d pts (%d inestables), big: %d pts (%d inestables), both: %d pts (%d inestables)\n",
+                      phasePointCounts[0], phaseUnstablePoints[0],
+                      phasePointCounts[1], phaseUnstablePoints[1],
+                      phasePointCounts[2], phaseUnstablePoints[2]);
+                if (!ctx.isCalibrationLoaded)
+                {
+                    LOG_LN("Calibración completa NO válida: faltan fases o curvas sin calidad mínima.");
+                }
+                if (unstablePoints > 0)
+                {
+                    LOG_F("Calibración completada con %d puntos de calidad degradada.\n", unstablePoints);
+                }
                 state = COMPLETE;
                 stateStartTime = millis();
                 break;

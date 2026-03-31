@@ -11,6 +11,15 @@
 class MotorManager
 {
 public:
+  enum DistributionMode
+  {
+    LEGACY_GLOBAL = 0,
+    AUTO_BY_FLOW,
+    SMALL_ONLY,
+    BIG_ONLY,
+    BOTH_EXTREME
+  };
+
   static constexpr int motors[2] = {25, 27};
   static constexpr int ledcChannels[2] = {0, 1};
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
@@ -18,6 +27,146 @@ public:
   static const int resolution = 11;
   int pwmValues[sizeof(motors) / sizeof(motors[0])];
   bool isReady = false;
+
+private:
+  DistributionMode mode = LEGACY_GLOBAL;
+  bool manualOverride = false;
+  DistributionMode overrideMode = LEGACY_GLOBAL;
+  DistributionMode autoResolvedMode = SMALL_ONLY;
+
+  // Umbrales para AUTO_BY_FLOW (L/min)
+  float lowFlowThreshold = 2.0f;      // <= bajo -> SMALL_ONLY
+  float highFlowThreshold = 5.5f;     // >= alto -> BIG_ONLY
+  float extremeFlowThreshold = 7.5f;  // >= extremo -> BOTH_EXTREME
+  float hysteresis = 0.3f;
+  float lastTargetFlow = 0.0f;
+
+  static int constrainPwm(int pwm)
+  {
+    if (pwm < 0)
+      return 0;
+    if (pwm > MAX_PWM)
+      return MAX_PWM;
+    return pwm;
+  }
+
+  void writeMotorPwm(int motorIdx, int pwm)
+  {
+    if (motorIdx < 0 || motorIdx >= motorCount)
+      return;
+
+    pwm = constrainPwm(pwm);
+    if (pwmValues[motorIdx] != pwm)
+    {
+      LOG_LN("Motor " + String(motorIdx) + " a " + String(pwm));
+    }
+    pwmValues[motorIdx] = pwm;
+    ledcWrite(ledcChannels[motorIdx], pwmValues[motorIdx]);
+  }
+
+  void applyByMode(int globalPwm, DistributionMode effectiveMode)
+  {
+    const int totalMax = motorCount * MAX_PWM;
+    if (globalPwm < 0)
+      globalPwm = 0;
+    if (globalPwm > totalMax)
+      globalPwm = totalMax;
+
+    switch (effectiveMode)
+    {
+    case SMALL_ONLY:
+      writeMotorPwm(0, globalPwm);
+      writeMotorPwm(1, 0);
+      break;
+    case BIG_ONLY:
+      writeMotorPwm(0, 0);
+      writeMotorPwm(1, globalPwm);
+      break;
+    case BOTH_EXTREME:
+    {
+      // Reparto uniforme con saturación por canal.
+      int half = globalPwm / 2;
+      int rem = globalPwm - half;
+      writeMotorPwm(0, half);
+      writeMotorPwm(1, rem);
+      break;
+    }
+    case LEGACY_GLOBAL:
+    default:
+    {
+      int pwm = globalPwm;
+      for (int i = 0; i < motorCount; i++)
+      {
+        if (pwm >= MAX_PWM)
+        {
+          writeMotorPwm(i, MAX_PWM);
+          pwm -= MAX_PWM;
+        }
+        else
+        {
+          writeMotorPwm(i, pwm);
+          pwm = 0;
+        }
+      }
+      break;
+    }
+    }
+  }
+
+  void resolveAutoMode()
+  {
+    // Histéresis simple para evitar flapping.
+    if (autoResolvedMode == BOTH_EXTREME)
+    {
+      if (lastTargetFlow < (extremeFlowThreshold - hysteresis))
+      {
+        autoResolvedMode = BIG_ONLY;
+      }
+      return;
+    }
+
+    if (lastTargetFlow >= extremeFlowThreshold)
+    {
+      autoResolvedMode = BOTH_EXTREME;
+      return;
+    }
+
+    if (autoResolvedMode == SMALL_ONLY)
+    {
+      if (lastTargetFlow > (highFlowThreshold + hysteresis))
+      {
+        autoResolvedMode = BIG_ONLY;
+      }
+      return;
+    }
+
+    if (autoResolvedMode == BIG_ONLY)
+    {
+      if (lastTargetFlow < (lowFlowThreshold - hysteresis))
+      {
+        autoResolvedMode = SMALL_ONLY;
+      }
+      return;
+    }
+
+    autoResolvedMode = (lastTargetFlow <= lowFlowThreshold) ? SMALL_ONLY : BIG_ONLY;
+  }
+
+  DistributionMode getEffectiveMode()
+  {
+    if (manualOverride)
+      return overrideMode;
+
+    if (mode == AUTO_BY_FLOW)
+    {
+      resolveAutoMode();
+      return autoResolvedMode;
+    }
+
+    return mode;
+  }
+
+public:
 
   MotorManager()
   {
@@ -28,6 +177,57 @@ public:
   }
 
   ~MotorManager() {}
+
+  void setDistributionMode(DistributionMode newMode)
+  {
+    mode = newMode;
+  }
+
+  DistributionMode getDistributionMode() const
+  {
+    return mode;
+  }
+
+  DistributionMode getResolvedMode() const
+  {
+    if (manualOverride)
+      return overrideMode;
+    if (mode == AUTO_BY_FLOW)
+      return autoResolvedMode;
+    return mode;
+  }
+
+  void setCalibrationOverrideMode(DistributionMode forcedMode)
+  {
+    manualOverride = true;
+    overrideMode = forcedMode;
+  }
+
+  void clearCalibrationOverrideMode()
+  {
+    manualOverride = false;
+  }
+
+  void setAutoThresholds(float low, float high, float extreme, float hysteresisBand)
+  {
+    lowFlowThreshold = low;
+    highFlowThreshold = high;
+    extremeFlowThreshold = extreme;
+    if (hysteresisBand < 0.0f)
+      hysteresisBand = 0.0f;
+    hysteresis = hysteresisBand;
+  }
+
+  void setTargetFlow(float flowLpm)
+  {
+    if (flowLpm < 0.0f)
+      flowLpm = 0.0f;
+    lastTargetFlow = flowLpm;
+    if (mode == AUTO_BY_FLOW && !manualOverride)
+    {
+      resolveAutoMode();
+    }
+  }
 
   void begin()
   {
@@ -67,29 +267,7 @@ public:
 
   void setPWM(int pwm)
   {
-    if (pwm > motorCount * MAX_PWM)
-      pwm = motorCount * MAX_PWM;
-    else if (pwm < 0)
-      pwm = 0;
-
-    for (int i = 0; i < motorCount; i++)
-    {
-      if (pwm >= MAX_PWM)
-      {
-        if (pwmValues[i] != MAX_PWM)
-          LOG_LN("Motor " + String(i) + " a " + String(MAX_PWM));
-        pwmValues[i] = MAX_PWM;
-        pwm -= MAX_PWM;
-      }
-      else
-      {
-        if (pwmValues[i] != pwm)
-          LOG_LN("Motor " + String(i) + " a " + String(pwm));
-        pwmValues[i] = pwm;
-        pwm = 0;
-      }
-      ledcWrite(ledcChannels[i], pwmValues[i]);
-    }
+    applyByMode(pwm, getEffectiveMode());
   }
 
   void setPowerPct(int powerPct)
