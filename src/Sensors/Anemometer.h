@@ -28,7 +28,7 @@ private:
         Anemometer* self = (Anemometer*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(1000);
+        const TickType_t xFrequency = pdMS_TO_TICKS(600);
 
         uint16_t buffer[2];
 

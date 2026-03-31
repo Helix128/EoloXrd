@@ -50,7 +50,6 @@ public:
     float getVoltage() { return voltageFromLevel((float)getLevel()); }
 #else
     bool pollFromI2C(uint8_t addr = DEFAULT_I2C_ADDR) {
-        return false;
         Profiler p ("Battery pollFromI2C");
         
         int toRead = sizeof(uint8_t) + 3 * sizeof(float);
