@@ -41,7 +41,6 @@ typedef struct Components{
   public: 
   void begin(){
     LOG_LN("Iniciando componentes de hardware...");
-    digitalWrite(PPH_PWR_PIN, HIGH);
 
     input.begin();
     //motor.begin();

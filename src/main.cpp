@@ -33,12 +33,13 @@
 RS485Monitor* g_rs485Monitor = nullptr;
 
 // Instancias globales
-DisplayModel u8g2(U8G2_R0, SCL_PIN, SDA_PIN);
+DisplayModel u8g2(U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN);
 Context ctx(u8g2); // Aquí se procesa toda la lógica
 
 void setup()
 {   
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
+  digitalWrite(PPH_PWR_PIN, HIGH); // Encender perifericos (I2C, display) lo antes posible
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   
   ctx.components.motor.begin(); // apagar motores
