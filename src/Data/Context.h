@@ -42,11 +42,6 @@ typedef struct Context
     const char *eoloDir = "/EOLO";
     const char *logsDir = "/EOLO/logs";
 
-    static constexpr float AUTO_FLOW_LOW_THRESHOLD = 2.0f;
-    static constexpr float AUTO_FLOW_HIGH_THRESHOLD = 5.5f;
-    static constexpr float AUTO_FLOW_EXTREME_THRESHOLD = 7.5f;
-    static constexpr float AUTO_FLOW_HYSTERESIS = 0.3f;
-
     CalibrationManager calibration;
 
     Preferences preferences;
@@ -60,19 +55,14 @@ public:
         instance = this;
 
         bool grande = false;
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_MODEM
         grande = true;
 #endif
         const char *versionType = grande ? "Standard" : "Express";
         LOG_F("Iniciando EOLO %s\n", versionType);
 
         components.motor.begin();
-        components.motor.setAutoThresholds(AUTO_FLOW_LOW_THRESHOLD,
-                           AUTO_FLOW_HIGH_THRESHOLD,
-                           AUTO_FLOW_EXTREME_THRESHOLD,
-                           AUTO_FLOW_HYSTERESIS);
-        components.motor.setDistributionMode(MotorManager::AUTO_BY_FLOW);
-        components.motor.setPWM(0); // Asegurar que los motores estén apagados
+        components.motor.setPwm(0);
 
         LOG_LN("Iniciando pantalla...");
         delay(50);
@@ -355,7 +345,7 @@ public:
                 return;
             }
 
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_ANEMOMETER
             file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct");
 #else
             file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct");
@@ -420,7 +410,7 @@ public:
             file.print(ptowerData.pm10_0);
             file.print(",");
 
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_ANEMOMETER
 
             AnemometerData anemoData;
             if (!components.anemometer.getData(anemoData) || !anemoData.valid)
@@ -469,13 +459,14 @@ public:
         sdStatus = SD_OK;
         LOG_LN("Log completado con éxito.");
         saveSession();
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_MODEM
         uploadData();
 #endif
     }
 
     void uploadData()
     {
+#ifdef FEATURE_MODEM
         Profiler p("Context uploadData");
         components.api.begin();
         AnemometerData anemoData;
@@ -509,6 +500,7 @@ public:
         components.api.addData(754, 45, -1); // velocidad
         components.api.addData(754, 46, -1); // satélites
         components.api.send();
+#endif
     }
 
     void update()
@@ -597,28 +589,27 @@ public:
     {
         static float lastTargetFlow = -1.0f;
 
-        components.motor.setTargetFlow(session.targetFlow);
-
-        if (calibration.isLoaded && calibration.numPoints > 0)
+        int p0 = 0, p1 = 0;
+        if (calibration.getMotorPwms(session.targetFlow, p0, p1))
         {
-            float targetMotorPct = calibration.getTargetMotorPct(session.targetFlow, components.motor);
-
             if (lastTargetFlow != session.targetFlow)
             {
                 Serial.print("Flujo objetivo: ");
                 Serial.print(session.targetFlow, 2);
-                Serial.print(" L/min -> Motor calculado: ");
-                Serial.print(targetMotorPct, 2);
-                Serial.println("%");
+                Serial.print(" L/min -> PWM[");
+                Serial.print(p0);
+                Serial.print(", ");
+                Serial.print(p1);
+                Serial.println("]");
                 lastTargetFlow = session.targetFlow;
             }
 
-            targetMotorPct = constrain(targetMotorPct, 0.0f, 100.0f);
-            components.motor.setPowerPct(targetMotorPct);
+            components.motor.setMotorPwm(0, p0);
+            components.motor.setMotorPwm(1, p1);
         }
         else
         {
-            components.motor.setPowerPct(0);
+            components.motor.setPwm(0);
         }
     }
 

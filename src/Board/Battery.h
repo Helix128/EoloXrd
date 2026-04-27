@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_DUAL_BATTERY
 #include "Wire.h"
 #endif
 
@@ -17,12 +17,12 @@ public:
     static constexpr float DIVIDER_RATIO = 7.8f;
     static constexpr float BATT_MAX_VOLTAGE = 16.8f;
 
-#ifdef EOLO_GRANDE
+#ifdef FEATURE_DUAL_BATTERY
     static constexpr uint8_t DEFAULT_I2C_ADDR = 10;
 #endif
 
     void begin(uint8_t batteryPin = 34, float ema_alpha = 0.005f) {
-#ifndef EOLO_GRANDE
+#ifndef FEATURE_DUAL_BATTERY
         pinMode(batteryPin, INPUT);
         battery_pin = batteryPin;
         alpha = ema_alpha;
@@ -38,7 +38,7 @@ public:
 #endif
     }
 
-#ifndef EOLO_GRANDE
+#ifndef FEATURE_DUAL_BATTERY
     float getPct() {
         float sample = (float)getLevel();
         emaLevel = (alpha * sample) + ((1.0f - alpha) * emaLevel);
@@ -101,7 +101,7 @@ public:
 #endif
 
 private:
-#ifndef EOLO_GRANDE
+#ifndef FEATURE_DUAL_BATTERY
     float emaLevel = 0.0f;
     float alpha = 0.005f;
     bool emaInitialized = false;

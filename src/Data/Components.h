@@ -17,12 +17,22 @@
 typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
   MotorManager motor; // Control de motor
-  #ifdef EOLO_GRANDE
+
+  #ifdef FEATURE_ANEMOMETER
     Anemometer anemometer; // Anemómetro ultrasónico
+  #endif
+
+  #ifdef FEATURE_MODEM
     Modem modem;           // Módem celular    
     SensorAPI api = SensorAPI(&modem, 20); // API de sensores
   #endif
-  AFM07 flowSensor;    // Sensor de flujo de aire
+
+  #ifdef FEATURE_FLOW_AFM07
+    AFM07 flowSensor;    // Sensor de flujo de aire AFM07
+  #elif defined(FEATURE_FLOW_FS3000)
+    FS3000 flowSensor;   // Sensor de flujo de aire FS3000 (Legacy)
+  #endif
+
   Plantower plantower; // Sensor Plantower
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
@@ -42,7 +52,7 @@ typedef struct Components{
     rtc.begin();
     plantower.begin();
     
-    #ifdef EOLO_GRANDE
+    #ifdef FEATURE_ANEMOMETER
       anemometer.begin();
     #endif
 
@@ -59,16 +69,15 @@ typedef struct Components{
   }
 
   void poll() {
-#ifdef EOLO_GRANDE
-
-    Profiler p("Components poll");
-    //api.update();
-    static unsigned long lastBatPoll = 0;
-    if (millis() - lastBatPoll > 1000) {
-      battery.pollFromI2C();
-      lastBatPoll = millis();
-    }
-#endif
+    #ifdef FEATURE_DUAL_BATTERY
+      Profiler p("Components poll");
+      //api.update();
+      static unsigned long lastBatPoll = 0;
+      if (millis() - lastBatPoll > 1000) {
+        battery.pollFromI2C();
+        lastBatPoll = millis();
+      }
+    #endif
   }
 };
 

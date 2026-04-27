@@ -26,26 +26,21 @@ private:
         AFM07* self = (AFM07*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(300); 
+        const TickType_t xFrequency = pdMS_TO_TICKS(800); 
 
         uint16_t rawData[1];
 
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(500)); // Delay inicial para evitar colisión con Anemómetro al arrancar
         while (true) {
+            // Solicitar lectura del bus centralizado
             bool success = RS485::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
-            if (!success) {
-                // Serial.println("DEBUG AFM: RS485 falló internamente (Timeout o CRC)");
-            } else {
-               // Serial.println("DEBUG AFM: Lectura Exitosa, actualizando datos...");
-            }
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
                     float val = (float)rawData[0] / FACTOR_LECTURA;
                     self->_data.flow = val;
                     self->_data.velocity = val; 
                     self->_data.valid = true;
-                  //  LOG_F("AFM07: Flujo %.2f L/min, Velocidad %.2f m/s\n", self->_data.flow, self->_data.velocity);
                 } else {
                     self->_data.valid = false;
                 }
