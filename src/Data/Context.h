@@ -54,6 +54,13 @@ public:
         Profiler p("Context begin");
         instance = this;
 
+        // 1. Esperar a que los periféricos (ya encendidos en main.cpp) se estabilicen
+        delay(100); 
+
+        // 2. Inicializar bus I2C una sola vez para todo el sistema
+        Wire.begin(SDA_PIN, SCL_PIN);
+        Wire.setClock(I2C_CLOCK);
+
         bool grande = false;
 #ifdef FEATURE_MODEM
         grande = true;
@@ -61,19 +68,17 @@ public:
         const char *versionType = grande ? "Standard" : "Express";
         LOG_F("Iniciando EOLO %s\n", versionType);
 
+        // 3. Inicializar pantalla
+        LOG_LN("Iniciando pantalla...");
+        initDisplay();
+        LOG_LN("Pantalla iniciada");
+
+        // 4. Inicializar motores y componentes
         components.motor.begin();
         components.motor.setPwm(0);
 
-        LOG_LN("Iniciando pantalla...");
-        delay(50);
-        digitalWrite(PPH_PWR_PIN, HIGH);
-        initDisplay();
-        LOG_LN("Pantalla iniciada");
         LOG_LN("Inicializando contexto...");
         components.begin();
-
-        initDisplay();
-        delay(50);
 
         calibration.load();
         initSD();
