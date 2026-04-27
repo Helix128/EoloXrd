@@ -60,8 +60,8 @@ public:
         ctx.u8g2.drawStr(51, 11, "EOLO");
         ctx.u8g2.setFont(FONT_REGULAR_S);
 
-        // Batería (soporte para EOLO_GRANDE con 2 baterías y DC)
-#ifdef EOLO_GRANDE
+        // Batería (soporte para FEATURE_DUAL_BATTERY con 2 baterías y DC)
+#ifdef FEATURE_DUAL_BATTERY
         ctx.u8g2.setFont(u8g2_font_tiny5_tf);
         
         int cursorX = 126; // Empezamos desde la derecha

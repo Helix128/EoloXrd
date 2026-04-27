@@ -28,13 +28,16 @@ private:
         Anemometer* self = (Anemometer*)arg;
         
         TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(600);
+        const TickType_t xFrequency = pdMS_TO_TICKS(1100);
 
         uint16_t buffer[2];
 
+        vTaskDelay(pdMS_TO_TICKS(100)); // Diferencia con el AFM07 al arrancar
+
         while (true) {
+            // Solicitar lectura del bus centralizado
             bool success = RS485::getInstance().readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
-            //LOG_F("Anemómetro: Lectura RS485 %s\n", success ? "exitosa" : "fallida");
+
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
                     int rawSpeed = (int)buffer[0];
@@ -42,7 +45,6 @@ private:
                     self->_data.windKph = self->_data.speed * 3.6f;
                     self->_data.direction = (int)buffer[1];
                     self->_data.valid = true;
-                    //LOG_F("Anemómetro: Velocidad %.2f m/s, Dirección %d°\n", self->_data.speed, self->_data.direction);
                 } else {
                     self->_data.valid = false;
                 }

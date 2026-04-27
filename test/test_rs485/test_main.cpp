@@ -169,8 +169,46 @@ void test_real_sensor_success_read_and_stability() {
 
 	TEST_ASSERT_TRUE_MESSAGE(successRate >= 0.95f, "Tasa de éxito RS485 insuficiente en prueba de estabilidad.");
 	TEST_ASSERT_TRUE_MESSAGE(alternatingPatternHits < (N / 2), "Se detectó patrón alternado anómalo (ok/fail repetitivo).");
+	TEST_ASSERT_EQUAL_MESSAGE(
+		0,
+		RS485::getInstance().getPendingRequests(),
+		"La cola de solicitudes debe estar vacía al finalizar las lecturas."
+	);
 #else
 	TEST_IGNORE_MESSAGE("Prueba de sensor real deshabilitada. Define RS485_TEST_ENABLE_REAL_SENSOR=1 para habilitarla.");
+#endif
+}
+
+void test_sequential_reads_from_multiple_sensors() {
+#if RS485_TEST_ENABLE_REAL_SENSOR
+	powerOnRs485Module();
+	RS485::getInstance().begin();
+
+	uint16_t sensorA_data[2];
+	uint16_t sensorB_data[2];
+
+	// Simular lecturas secuenciales de dos sensores RS485
+	for (int cycle = 0; cycle < 5; ++cycle) {
+		// Leer sensor A (ID 1)
+		bool okA = RS485::getInstance().readRegisters(1, 0x0000, 2, sensorA_data);
+		TEST_ASSERT_TRUE_MESSAGE(okA, "Lectura sensor A (ID 1) falló");
+
+		vTaskDelay(pdMS_TO_TICKS(10));
+
+		// Leer sensor B (ID 2)
+		bool okB = RS485::getInstance().readRegisters(2, 0x0000, 2, sensorB_data);
+		TEST_ASSERT_TRUE_MESSAGE(okB, "Lectura sensor B (ID 2) falló");
+
+		vTaskDelay(pdMS_TO_TICKS(50));
+	}
+
+	TEST_ASSERT_EQUAL_MESSAGE(
+		0,
+		RS485::getInstance().getPendingRequests(),
+		"La cola debe estar vacía tras lecturas secuenciales completadas."
+	);
+#else
+	TEST_IGNORE_MESSAGE("Prueba requiere sensor real. Define RS485_TEST_ENABLE_REAL_SENSOR=1 para habilitarla.");
 #endif
 }
 
@@ -183,6 +221,7 @@ void setup() {
 	RUN_TEST(test_invalid_slave_returns_within_reasonable_timeout);
 	RUN_TEST(test_concurrent_reads_do_not_deadlock);
 	RUN_TEST(test_real_sensor_success_read_and_stability);
+	RUN_TEST(test_sequential_reads_from_multiple_sensors);
 
 	UNITY_END();
 }

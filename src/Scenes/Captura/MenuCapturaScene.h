@@ -1,110 +1,27 @@
 #ifndef CAPTURE_MENU_SCENE_H
 #define CAPTURE_MENU_SCENE_H
 
-#include "../IScene.h"
-#include "../../Data/Context.h"
-#include "../../Drawing/SceneManager.h"
-#include "../../Drawing/GUI.h"
-#include "../../Config.h"
+#include "../BaseMenuScene.h"
 
-typedef struct CaptureMenuOption{
-    const char* label;
-    std::function<void(Context&)> action;
-} CaptureMenuOption;
-
-class MenuCapturaScene : public IScene
+class MenuCapturaScene : public BaseMenuScene
 {
-private:
-    int selectIndex = 0;
-    CaptureMenuOption menuOptions[5] = {
-        {"Continuar", [](Context &ctx) {
-            SceneManager::setScene("captura", ctx);
-        }},
-        {"Finalizar", [](Context &ctx) {
-            ctx.endCapture();
-        }},
-        {"Probar bombas", [](Context &ctx) {
-            SceneManager::setScene("captura_bombas", ctx);
-        }},
-        {"Ajustar hora fin", [](Context &ctx) {
-            SceneManager::setScene("time_end", ctx);
-        }},
-        {"Ajustar flujo", [](Context &ctx) {
-            SceneManager::setScene("captura_flujo", ctx);
-        }}
-    };
+protected:
+    void preDraw(Context& ctx) override {
+        ctx.updateCapture();
+    }
+
 public:
     void enter(Context &ctx) override
     {
         ctx.pauseCapture();
         ctx.saveSession();
-    }
 
-    void update(Context &ctx) override
-    {
-        ctx.u8g2.clearBuffer();
-        GUI::displayHeader(ctx);
-        ctx.updateCapture();
-
-        int delta = ctx.components.input.getEncoderDelta();
-        bool button = ctx.components.input.isButtonPressed();
-
-        int numOptions = sizeof(menuOptions) / sizeof(menuOptions[0]);
-
-        if (delta != 0)
-        {
-            selectIndex += delta;
-            selectIndex = constrain(selectIndex, 0, numOptions - 1);
-        }
-
-        if(button){
-            ctx.components.input.resetCounter();
-            menuOptions[selectIndex].action(ctx);
-        }
-
-        ctx.u8g2.setFont(FONT_BOLD);
-
-        int offset = (selectIndex / 3) * 3;
-        int limit = offset + 3;
-        
-        if (limit > numOptions) {
-            limit = numOptions;
-        }
-
-        for (int i = offset; i < limit; i++)
-        {   
-            int e = i - offset;
-            
-            if(selectIndex == i){
-                ctx.u8g2.drawBox(2, 32 + e * 14 - 14, 131, 14);
-                ctx.u8g2.setDrawColor(0);
-            } else {
-                ctx.u8g2.setDrawColor(1);
-            }
-            
-            ctx.u8g2.setFont(selectIndex == i ? FONT_BOLD : FONT_REGULAR);
-            int labelWidth = ctx.u8g2.getStrWidth(menuOptions[i].label);
-            int labelX = (128 - labelWidth) / 2;
-            ctx.u8g2.drawStr(labelX, 30 + e * 14, menuOptions[i].label);
-
-            ctx.u8g2.setDrawColor(1);
-        }
-        
-        ctx.u8g2.setDrawColor(1);
-        unsigned long currentTime = millis();
-        int animOffset = ((currentTime / 200) % 2) * 2; 
-        
-        if (selectIndex < 3) {
-            ctx.u8g2.drawTriangle(120, 60 - animOffset, 128, 60 - animOffset, 124, 64 - animOffset);
-        } else {
-            ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
-        }
-
-        int scrollHeight = 48 / numOptions;
-        int scrollY = selectIndex * scrollHeight + 18;
-        ctx.u8g2.drawVLine(0, scrollY, scrollHeight);
-
-        ctx.u8g2.sendBuffer();
+        clearOptions();
+        addOption("Continuar", [](Context &ctx) { SceneManager::setScene("captura", ctx); });
+        addOption("Finalizar", [](Context &ctx) { ctx.endCapture(); });
+        addOption("Probar bombas", [](Context &ctx) { SceneManager::setScene("captura_bombas", ctx); });
+        addOption("Ajustar hora fin", [](Context &ctx) { SceneManager::setScene("time_end", ctx); });
+        addOption("Ajustar flujo", [](Context &ctx) { SceneManager::setScene("captura_flujo", ctx); });
     }
 };
 #endif

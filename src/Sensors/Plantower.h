@@ -15,6 +15,85 @@ struct PlantowerData {
     bool valid;
 };
 
+class PlantowerParser {
+public:
+    enum State { HEAD1, HEAD2, LENGTH_H, LENGTH_L, DATA, CHECKSUM };
+
+    PlantowerParser() : _state(HEAD1) {}
+
+    bool processByte(uint8_t ch) {
+        switch (_state) {
+            case HEAD1:
+                if (ch == 0x42) {
+                    _state = HEAD2;
+                    _calcChecksum = 0x42;
+                }
+                break;
+            case HEAD2:
+                if (ch == 0x4d) {
+                    _state = LENGTH_H;
+                    _calcChecksum += 0x4d;
+                } else {
+                    _state = HEAD1;
+                }
+                break;
+            case LENGTH_H:
+                _packetLen = (ch << 8);
+                _calcChecksum += ch;
+                _state = LENGTH_L;
+                break;
+            case LENGTH_L:
+                _packetLen |= ch;
+                _calcChecksum += ch;
+                if (_packetLen > 30) { 
+                    _state = HEAD1; 
+                } else { 
+                    _state = DATA; 
+                    _bufIdx = 0; 
+                }
+                break;
+            case DATA:
+                _buffer[_bufIdx++] = ch;
+                if (_bufIdx < _packetLen - 2) {
+                    _calcChecksum += ch;
+                } else {
+                    _state = CHECKSUM;
+                    _bufIdx = 0;
+                }
+                break;
+            case CHECKSUM:
+                if (_bufIdx == 0) {
+                    _recvChecksum = (ch << 8);
+                    _bufIdx++;
+                } else {
+                    _recvChecksum |= ch;
+                    bool isValid = (_calcChecksum == _recvChecksum);
+                    if (isValid) {
+                        _data.pm1_0  = (_buffer[6] << 8) | _buffer[7];
+                        _data.pm2_5  = (_buffer[8] << 8) | _buffer[9];
+                        _data.pm10_0 = (_buffer[10] << 8) | _buffer[11];
+                        _data.valid = true;
+                    }
+                    _state = HEAD1;
+                    return isValid;
+                }
+                break;
+        }
+        return false;
+    }
+
+    PlantowerData getData() const { return _data; }
+
+private:
+    State _state;
+    uint8_t _buffer[32];
+    uint8_t _bufIdx = 0;
+    uint16_t _calcChecksum = 0;
+    uint16_t _packetLen = 0;
+    uint16_t _recvChecksum = 0;
+    PlantowerData _data = {0, 0, 0, false};
+};
+
 class Plantower {
 private:
     HardwareSerial* _serial;
@@ -22,84 +101,20 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _mutex;
     PlantowerData _data;
+    PlantowerParser _parser;
     
-    enum State { HEAD1, HEAD2, LENGTH_H, LENGTH_L, DATA, CHECKSUM };
-
     static void taskWorker(void* arg) {
         Plantower* self = (Plantower*)arg;
-        uint8_t ch;
-        State state = HEAD1;
-        
-        uint8_t buffer[32];
-        uint8_t bufIdx = 0;
-        uint16_t calcChecksum = 0;
-        uint16_t packetLen = 0;
-        uint16_t recvChecksum = 0;
-
         self->_serial->begin(9600, SERIAL_8N1, self->_rxPin, self->_txPin);
 
         while (true) {
             if (self->_serial->available()) {
-                ch = self->_serial->read();
-
-                switch (state) {
-                    case HEAD1:
-                        if (ch == 0x42) {
-                            state = HEAD2;
-                            calcChecksum = 0x42;
-                        }
-                        break;
-                    case HEAD2:
-                        if (ch == 0x4d) {
-                            state = LENGTH_H;
-                            calcChecksum += 0x4d;
-                        } else {
-                            state = HEAD1;
-                        }
-                        break;
-                    case LENGTH_H:
-                        packetLen = (ch << 8);
-                        calcChecksum += ch;
-                        state = LENGTH_L;
-                        break;
-                    case LENGTH_L:
-                        packetLen |= ch;
-                        calcChecksum += ch;
-                        if (packetLen > 30) { 
-                            state = HEAD1; 
-                        } else { 
-                            state = DATA; 
-                            bufIdx = 0; 
-                        }
-                        break;
-                    case DATA:
-                        buffer[bufIdx++] = ch;
-                        if (bufIdx < packetLen - 2) {
-                            calcChecksum += ch;
-                        } else {
-                            state = CHECKSUM;
-                            bufIdx = 0;
-                        }
-                        break;
-                    case CHECKSUM:
-                        if (bufIdx == 0) {
-                            recvChecksum = (ch << 8);
-                            bufIdx++;
-                        } else {
-                            recvChecksum |= ch;
-                            
-                            if (calcChecksum == recvChecksum) {
-                                if (xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                                    self->_data.pm1_0  = (buffer[6] << 8) | buffer[7];
-                                    self->_data.pm2_5  = (buffer[8] << 8) | buffer[9];
-                                    self->_data.pm10_0 = (buffer[10] << 8) | buffer[11];
-                                    self->_data.valid = true;
-                                    xSemaphoreGive(self->_mutex);
-                                }
-                            }
-                            state = HEAD1;
-                        }
-                        break;
+                uint8_t ch = self->_serial->read();
+                if (self->_parser.processByte(ch)) {
+                    if (xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                        self->_data = self->_parser.getData();
+                        xSemaphoreGive(self->_mutex);
+                    }
                 }
             } else {
                 vTaskDelay(pdMS_TO_TICKS(10));
@@ -123,7 +138,7 @@ public:
         _rxPin = PT_RX;
         _txPin = PT_TX;
         xTaskCreatePinnedToCore(taskWorker, "PlantowerTask", 2048, this, 1, &_taskHandle, 1);
-    }
+    }   
 
     bool getData(PlantowerData& output) {
         bool success = false;
@@ -131,15 +146,21 @@ public:
             output = _data;
             success = _data.valid;
             if(success){
-                LOG_F("PLANTOWER Exito\n");
+                #ifdef DEBUG
+                LOG_F("PLANTOWER Exito: PM1.0=%d, PM2.5=%d, PM10.0=%d\n", output.pm1_0, output.pm2_5, output.pm10_0);
+                #endif
             }
             else{
+                #ifdef DEBUG
                 LOG_F("PLANTOWER Error\n");
+                #endif
             }
             xSemaphoreGive(_mutex);
         }
         else{
+            #ifdef DEBUG
             LOG_F("Error: no se pudo obtener el mutex para leer datos del Plantower\n");
+            #endif
         }
         return success;
     }
