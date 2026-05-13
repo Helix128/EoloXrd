@@ -29,9 +29,6 @@
 #include "Utility/RS485Monitor.h"
 #include "Utility/RS485PatternValidator.h"
 
-// Instancia global del monitor (para que RS485 pueda acceder)
-RS485Monitor* g_rs485Monitor = nullptr;
-
 // Instancias globales
 DisplayModel u8g2(U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN);
 Context ctx(u8g2); // Aquí se procesa toda la lógica
@@ -46,8 +43,7 @@ void setup()
 
   Serial.begin(115200);
 
-  // Inicializar monitor RS485
-  g_rs485Monitor = &RS485Monitor::getInstance();
+  RS485Monitor::getInstance(); // Inicializar monitor RS485
   LOG_LN("RS485 Monitor inicializado");
 
   /*
@@ -78,22 +74,16 @@ void loop()
     return;
   }
 
-  // Registrar inicio de frame para medir tiempo
   frameStartMs = millis();
-  unsigned long frameMs = frameStartMs - lastFrameMs;
-  
-  lastFrameMs = frameStartMs;
+  lastFrameMs += targetMs;
 
   // Actualizar el contexto de la app y la escena actual
   ctx.update();
   SceneManager::update(ctx);
 
-  // Registrar estadisticas de frame
   unsigned long frameExecutionMs = millis() - frameStartMs;
-  if (g_rs485Monitor != nullptr) {
-    g_rs485Monitor->recordLoopFrameTime(frameExecutionMs);
-    g_rs485Monitor->checkAndReportViolations();
-  }
+  RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);
+  RS485Monitor::getInstance().checkAndReportViolations();
 
   // Validar patrones de uso
   RS485PatternValidator::getInstance().reportViolations();

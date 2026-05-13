@@ -23,23 +23,40 @@
 
 // Función para registrar todas las escenas con el SceneManager
 void registerAllScenes()
-{ 
-    SceneManager::addScene("splash", new LogoScene());     
-    SceneManager::addScene("inicio", new InicioScene());
-    SceneManager::addScene("calibration", new CalibrationScene());
-    SceneManager::addScene("flujo", new FlujoScene());
-    SceneManager::addScene("flujo_now", new InstantFlujoScene());
-    SceneManager::addScene("tiempo", new TimeScene());
-    SceneManager::addScene("plantower", new PlantowerScene());
-    SceneManager::addScene("wait", new WaitScene());
-    SceneManager::addScene("plantower_fin", new PlantowerFinScene());
-    SceneManager::addScene("captura", new CapturaScene());
-    SceneManager::addScene("captura_menu", new MenuCapturaScene());
-    SceneManager::addScene("captura_flujo", new CapturaFlujoScene());
-    SceneManager::addScene("time_end", new TimeEndScene());
-    SceneManager::addScene("end", new FinScene());
-    SceneManager::addScene("end_menu", new EndMenuScene());
-    SceneManager::addScene("captura_bombas", new CapturaBombasScene());
+{
+    static LogoScene         s_splash;
+    static InicioScene       s_inicio;
+    static CalibrationScene  s_calibration;
+    static FlujoScene        s_flujo;
+    static InstantFlujoScene s_flujo_now;
+    static TimeScene         s_tiempo;
+    static PlantowerScene    s_plantower;
+    static WaitScene         s_wait;
+    static PlantowerFinScene s_plantower_fin;
+    static CapturaScene      s_captura;
+    static MenuCapturaScene  s_captura_menu;
+    static CapturaFlujoScene s_captura_flujo;
+    static TimeEndScene      s_time_end;
+    static FinScene          s_end;
+    static EndMenuScene      s_end_menu;
+    static CapturaBombasScene s_captura_bombas;
+
+    SceneManager::addScene("splash",        &s_splash);
+    SceneManager::addScene("inicio",        &s_inicio);
+    SceneManager::addScene("calibration",   &s_calibration);
+    SceneManager::addScene("flujo",         &s_flujo);
+    SceneManager::addScene("flujo_now",     &s_flujo_now);
+    SceneManager::addScene("tiempo",        &s_tiempo);
+    SceneManager::addScene("plantower",     &s_plantower);
+    SceneManager::addScene("wait",          &s_wait);
+    SceneManager::addScene("plantower_fin", &s_plantower_fin);
+    SceneManager::addScene("captura",       &s_captura);
+    SceneManager::addScene("captura_menu",  &s_captura_menu);
+    SceneManager::addScene("captura_flujo", &s_captura_flujo);
+    SceneManager::addScene("time_end",      &s_time_end);
+    SceneManager::addScene("end",           &s_end);
+    SceneManager::addScene("end_menu",      &s_end_menu);
+    SceneManager::addScene("captura_bombas",&s_captura_bombas);
     LOG_LN("Todas las escenas registradas");
 }
 

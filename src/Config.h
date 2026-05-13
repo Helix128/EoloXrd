@@ -92,5 +92,10 @@
 #define PPH_PWR_PIN 4 // perifericos
 #define MODEM_PWR_PIN 13 // modem
 
+// Validación de combinaciones inválidas de feature flags
+#if defined(FEATURE_FLOW_AFM07) && defined(FEATURE_FLOW_FS3000)
+  #error "Conflicto: define solo un sensor de flujo (FEATURE_FLOW_AFM07 o FEATURE_FLOW_FS3000)"
+#endif
+
 #endif // CONFIG_H
 

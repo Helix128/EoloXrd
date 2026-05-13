@@ -39,12 +39,15 @@ private:
                 if (success) {
                     float val = (float)rawData[0] / FACTOR_LECTURA;
                     self->_data.flow = val;
-                    self->_data.velocity = val; 
+                    self->_data.velocity = val;
                     self->_data.valid = true;
+                    LOG_F("AFM07: raw=%d, flow=%.2f L/min \n", rawData[0], self->_data.flow);
                 } else {
                     self->_data.valid = false;
                 }
                 xSemaphoreGive(self->_dataMutex);
+            } else {
+                LOG_LN("[AFM07] Semaphore timeout — dato anterior puede estar desactualizado");
             }
             vTaskDelayUntil(&xLastWakeTime, xFrequency);
         }

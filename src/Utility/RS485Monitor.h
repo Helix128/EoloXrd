@@ -30,7 +30,6 @@ struct RS485Stats {
 // Monitor centralizado (singleton)
 class RS485Monitor {
 private:
-    static RS485Monitor* _instance;
     RS485Stats _stats;
     SemaphoreHandle_t _statsMutex;
     const uint32_t REPORT_INTERVAL_MS = 10000; // Reportar cada 10 segundos
@@ -44,10 +43,8 @@ private:
 
 public:
     static RS485Monitor& getInstance() {
-        if (_instance == nullptr) {
-            _instance = new RS485Monitor();
-        }
-        return *_instance;
+        static RS485Monitor instance;
+        return instance;
     }
 
     // Registrar una solicitud completada
@@ -123,33 +120,33 @@ public:
 
     // Reportar si hay alertas pendientes
     void checkAndReportViolations() {
+        if (xSemaphoreTake(_statsMutex, pdMS_TO_TICKS(5)) != pdTRUE) return;
         if (millis() - _stats.lastReportTime < REPORT_INTERVAL_MS) {
-            return; // No reportar todavia
-        }
-
-        if (xSemaphoreTake(_statsMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            LOG_LN("\n=== RS485 Monitor Report ===");
-            LOG_F("Total Requests: %d\n", _stats.totalRequests);
-            LOG_F("Successful: %d (%.1f%%)\n", _stats.successfulReads, 
-                  _stats.totalRequests > 0 ? (100.0f * _stats.successfulReads / _stats.totalRequests) : 0);
-            LOG_F("Failed: %d (Timeouts: %d, CRC: %d)\n", 
-                  _stats.failedReads, _stats.timeoutErrors, _stats.crcErrors);
-            
-            LOG_F("Queue Max Depth: %d (Overflows: %d)\n", 
-                  _stats.maxQueueDepth, _stats.totalQueueOverflows);
-            
-            LOG_F("Loop Frame Times: Avg %ums, Min %ums, Max %ums\n",
-                  _stats.loopAvgTime, _stats.loopMinTime, _stats.loopMaxTime);
-            
-            uint32_t jitter = _stats.loopMaxTime - _stats.loopMinTime;
-            if (jitter > LOOP_JITTER_THRESHOLD_MS) {
-                LOG_F("WARNING: Loop jitter %ums exceeds threshold %ums\n", 
-                      jitter, LOOP_JITTER_THRESHOLD_MS);
-            }
-
-            _stats.lastReportTime = millis();
             xSemaphoreGive(_statsMutex);
+            return;
         }
+
+        LOG_LN("\n=== RS485 Monitor Report ===");
+        LOG_F("Total Requests: %d\n", _stats.totalRequests);
+        LOG_F("Successful: %d (%.1f%%)\n", _stats.successfulReads,
+              _stats.totalRequests > 0 ? (100.0f * _stats.successfulReads / _stats.totalRequests) : 0);
+        LOG_F("Failed: %d (Timeouts: %d, CRC: %d)\n",
+              _stats.failedReads, _stats.timeoutErrors, _stats.crcErrors);
+
+        LOG_F("Queue Max Depth: %d (Overflows: %d)\n",
+              _stats.maxQueueDepth, _stats.totalQueueOverflows);
+
+        LOG_F("Loop Frame Times: Avg %ums, Min %ums, Max %ums\n",
+              _stats.loopAvgTime, _stats.loopMinTime, _stats.loopMaxTime);
+
+        uint32_t jitter = _stats.loopMaxTime - _stats.loopMinTime;
+        if (jitter > LOOP_JITTER_THRESHOLD_MS) {
+            LOG_F("WARNING: Loop jitter %ums exceeds threshold %ums\n",
+                  jitter, LOOP_JITTER_THRESHOLD_MS);
+        }
+
+        _stats.lastReportTime = millis();
+        xSemaphoreGive(_statsMutex);
     }
 
     // Reset de estadisticas
@@ -161,7 +158,5 @@ public:
         }
     }
 };
-
-RS485Monitor* RS485Monitor::_instance = nullptr;
 
 #endif

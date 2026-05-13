@@ -3,16 +3,13 @@
 
 #include <Arduino.h>
 #include <ModbusMaster.h>
+#include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
 #include "./Config.h"
 #include "../Utility/RS485Monitor.h"
-
-// Forward declaration para monitor (evitar dependencia circular)
-class RS485Monitor;
-extern RS485Monitor* g_rs485Monitor;
 
 #define RS485_RX_PIN 35
 #define RS485_TX_PIN 33
@@ -37,7 +34,7 @@ private:
     HardwareSerial& _serial;
     ModbusMaster _node;
     SemaphoreHandle_t _initMutex;
-    bool _initialized;
+    std::atomic<bool> _initialized;
 
     TaskHandle_t _managerTaskHandle = nullptr;
     QueueHandle_t _requestQueue = nullptr;
@@ -93,11 +90,8 @@ private:
 
                 self->_processRequest(&request, success, errorCode);
 
-                // Registrar estadisticas si el monitor esta disponible
-                if (g_rs485Monitor != nullptr) {
-                    g_rs485Monitor->recordRequestCompleted(success, errorCode);
-                    g_rs485Monitor->recordQueueDepth(uxQueueMessagesWaiting(self->_requestQueue));
-                }
+                RS485Monitor::getInstance().recordRequestCompleted(success, errorCode);
+                RS485Monitor::getInstance().recordQueueDepth(uxQueueMessagesWaiting(self->_requestQueue));
             }
         }
     }
@@ -212,8 +206,9 @@ private:
     }
 
     // API de lectura solicitando notificación al terminar
-    bool readRegistersAsync(uint8_t slaveId, uint16_t startReg, uint8_t count, 
-                           uint16_t* dataBuffer, uint32_t timeoutMs = 5000) {        if (!_initialized || !_requestQueue) {
+    bool readRegistersAsync(uint8_t slaveId, uint16_t startReg, uint8_t count,
+                           uint16_t* dataBuffer, uint32_t timeoutMs = 5000) {
+        if (!_initialized || !_requestQueue) {
             return false;
         }
 

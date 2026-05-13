@@ -45,10 +45,14 @@ private:
                     self->_data.windKph = self->_data.speed * 3.6f;
                     self->_data.direction = (int)buffer[1];
                     self->_data.valid = true;
+                    LOG_F("Anemómetro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
+                          rawSpeed, self->_data.speed, self->_data.windKph, self->_data.direction);
                 } else {
                     self->_data.valid = false;
                 }
                 xSemaphoreGive(self->_dataMutex);
+            } else {
+                LOG_LN("[Anemómetro] Semaphore timeout — dato anterior puede estar desactualizado");
             }
             
             vTaskDelayUntil(&xLastWakeTime, xFrequency);
