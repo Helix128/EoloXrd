@@ -20,6 +20,7 @@ enum SDStatus
 {
     SD_OK,
     SD_WRITING,
+    SD_MISSING,
     SD_ERROR
 };
 
@@ -42,7 +43,9 @@ typedef struct Context
     bool isEnd = false;
 
     SDStatus sdStatus = SD_OK;
+    bool sdInitAttempted = false;
     bool isSdReady = false;
+    bool sdMissingLogReported = false;
     bool uploadPending = false;
     bool uploadActive = false;
     bool uiDirty = true;
@@ -151,6 +154,10 @@ public:
 
     bool initSD()
     {
+        if (sdInitAttempted)
+            return isSdReady;
+        sdInitAttempted = true;
+
         if (isSdReady)
             return true;
         // SdFile::dateTimeCallback(dateTime);
@@ -162,33 +169,35 @@ public:
             isSdReady = false;
             return false;
         }
-        isSdReady = true;
+
         sdcard_type_t sdType = SD.cardType();
         if (sdType == CARD_NONE)
         {
             LOG_LN("No se detectó tarjeta SD");
-            sdStatus = SD_ERROR;
+            sdStatus = SD_MISSING;
+            isSdReady = false;
             return false;
         }
-        else
+        isSdReady = true;
+        sdStatus = SD_OK;
+        sdMissingLogReported = false;
+
+        Serial.print("Tipo de tarjeta SD: ");
+        switch (sdType)
         {
-            Serial.print("Tipo de tarjeta SD: ");
-            switch (sdType)
-            {
-            case CARD_MMC:
-                Serial.println("MMC");
-                break;
-            case CARD_SD:
-                Serial.println("SDSC");
-                break;
-            case CARD_SDHC:
-                Serial.println("SDHC");
-                break;
-            case CARD_UNKNOWN:
-            default:
-                Serial.println("Desconocido");
-                break;
-            }
+        case CARD_MMC:
+            Serial.println("MMC");
+            break;
+        case CARD_SD:
+            Serial.println("SDSC");
+            break;
+        case CARD_SDHC:
+            Serial.println("SDHC");
+            break;
+        case CARD_UNKNOWN:
+        default:
+            Serial.println("Desconocido");
+            break;
         }
 
         uint64_t sdCardSize = SD.cardSize();
@@ -204,13 +213,18 @@ public:
         Serial.print("Espacio usado: ");
         Serial.print(usedBytes / (1024 * 1024));
         Serial.print(" MB (");
-        Serial.print((usedBytes * 100) / totalBytes);
+        Serial.print(totalBytes > 0 ? (usedBytes * 100) / totalBytes : 0);
         Serial.println("%)");
 
         if (!SD.exists(eoloDir))
         {
             sdStatus = SD_WRITING;
-            SD.mkdir(eoloDir);
+            if (!SD.mkdir(eoloDir))
+            {
+                LOG_LN("No se pudo crear directorio /EOLO en SD");
+                markSdFailed();
+                return false;
+            }
             LOG_LN("Directorio /EOLO creado en SD");
             sdStatus = SD_OK;
         }
@@ -222,7 +236,12 @@ public:
         if (!SD.exists(logsDir))
         {
             sdStatus = SD_WRITING;
-            SD.mkdir(logsDir);
+            if (!SD.mkdir(logsDir))
+            {
+                LOG_LN("No se pudo crear directorio /EOLO/logs en SD");
+                markSdFailed();
+                return false;
+            }
             LOG_LN("Directorio /EOLO/logs creado en SD");
             sdStatus = SD_OK;
         }
@@ -234,6 +253,12 @@ public:
         LOG_LN("SD inicializada");
         sdStatus = SD_OK;
         return true;
+    }
+
+    void markSdFailed()
+    {
+        sdStatus = SD_ERROR;
+        isSdReady = false;
     }
 
     void saveSession()
@@ -470,7 +495,7 @@ public:
             {
                 (void)job;
                 self->uploadPending = false;
-                self->logData();
+                self->processCaptureSample();
                 self->markUiDirty();
             }
         }
@@ -500,15 +525,30 @@ public:
         LOG_LN("Cola de log llena o no disponible; se omite log para no bloquear UI");
     }
 
-    void logData()
+    void processCaptureSample()
     {
-        LOG_LN("Iniciando log de datos en SD...");
+        saveSession();
+        logData();
+#ifdef FEATURE_MODEM
+        uploadData();
+#endif
+    }
+
+    bool logData()
+    {
         Profiler p("Context logData");
 
-        if (sdStatus == SD_ERROR)
+        if (!isSdReady)
         {
-            LOG_LN("Aviso: SD anteriormente falló!");
+            if (!sdMissingLogReported)
+            {
+                LOG_LN("SD no disponible; se omite log local para esta sesión");
+                sdMissingLogReported = true;
+            }
+            return false;
         }
+
+        LOG_LN("Iniciando log de datos en SD...");
         sdStatus = SD_WRITING;
 
         String dateStr = session.startDate.timestamp();
@@ -523,9 +563,9 @@ public:
             File file = SD.open(filename.c_str(), "w+");
             if (!file)
             {
-                sdStatus = SD_ERROR;
+                markSdFailed();
                 LOG_LN("No se pudo abrir el archivo para escribir/crear");
-                return;
+                return false;
             }
 
 #ifdef FEATURE_ANEMOMETER
@@ -544,9 +584,9 @@ public:
             File file = SD.open(filename.c_str(), "a+");
             if (!file)
             {
-                sdStatus = SD_ERROR;
+                markSdFailed();
                 LOG_LN("No se pudo abrir el archivo para escribir");
-                return;
+                return false;
             }
 
             // time
@@ -641,10 +681,7 @@ public:
         }
         sdStatus = SD_OK;
         LOG_LN("Log completado con éxito.");
-        saveSession();
-#ifdef FEATURE_MODEM
-        uploadData();
-#endif
+        return true;
     }
 
     void uploadData()
