@@ -6,7 +6,7 @@
 #if SERIAL_INPUT == false
 
 #include <Arduino.h>
-#include "Wire.h"
+#include "I2CBus.h"
 #include "Profiler.h" 
 
 // Clase para manejar el input del encoder con botón
@@ -60,8 +60,7 @@ public:
       return;
     }
 
-    Wire.begin(SDA_PIN, SCL_PIN); // Inicializa Wire para comunicación I2C
-    Wire.setClock(I2C_CLOCK);        
+    I2CBus::getInstance().begin();
     LOG_LN("Encoder inicializado");
     delay(100);
     resetButton();
@@ -87,9 +86,7 @@ public:
   // Reiniciar valor del encoder via driver
   bool resetCounter()
   {
-    Wire.beginTransmission(ATTINY_ADDRESS);
-    Wire.write(CMD_RESET_COUNTER);
-    bool ok = (Wire.endTransmission() == 0);
+    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_COUNTER);
     if (ok)
     {
       rawCounter = 0;
@@ -101,9 +98,7 @@ public:
   // Reiniciar botón del encoder via driver
   bool resetButton()
   {
-    Wire.beginTransmission(ATTINY_ADDRESS);
-    Wire.write(CMD_RESET_BUTTON);
-    bool ok = (Wire.endTransmission() == 0);
+    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_BUTTON);
     if (ok)
     {
       rawButton = false;
@@ -169,16 +164,17 @@ private:
   // Función interna para leer datos del encoder desde el ATTiny
   void readEncoderData()
   {     
-    int readResult = Wire.requestFrom(ATTINY_ADDRESS, 3);
-    if (readResult == 3)
+    uint8_t buffer[3];
+    bool readOk = I2CBus::getInstance().readBytes(ATTINY_ADDRESS, buffer, sizeof(buffer), false);
+    if (readOk)
     {
       short int prevCounter = rawCounter;
       bool prevButton = rawButton;
       short int prevDirection = rawDirection;
       
-      rawDirection = Wire.read();
-      rawCounter = Wire.read();
-      rawButton = (Wire.read() == 1);
+      rawDirection = buffer[0];
+      rawCounter = buffer[1];
+      rawButton = (buffer[2] == 1);
       
       if (rawCounter != prevCounter)
       {

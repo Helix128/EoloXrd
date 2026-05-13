@@ -1,5 +1,5 @@
-#ifndef RS485_MANAGER_HPP
-#define RS485_MANAGER_HPP
+#ifndef RS485_BUS_HPP
+#define RS485_BUS_HPP
 
 #include <Arduino.h>
 #include <ModbusMaster.h>
@@ -8,7 +8,7 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
-#include "./Config.h"
+#include "../Config.h"
 #include "../Utility/RS485Monitor.h"
 
 #define RS485_RX_PIN 35
@@ -29,26 +29,26 @@ struct RS485Request {
     TaskHandle_t callerTask;  // Tarea a notificar al terminar
 };
 
-class RS485 {
+class RS485Bus {
 private:
     HardwareSerial& _serial;
     ModbusMaster _node;
     SemaphoreHandle_t _initMutex;
     std::atomic<bool> _initialized;
 
-    TaskHandle_t _managerTaskHandle = nullptr;
+    TaskHandle_t _busTaskHandle = nullptr;
     QueueHandle_t _requestQueue = nullptr;
 
     static const int QUEUE_LENGTH = 8;
-    static const int MANAGER_STACK_SIZE = 4096;
-    static const int MANAGER_PRIORITY = 2;
+    static const int BUS_TASK_STACK_SIZE = 4096;
+    static const int BUS_TASK_PRIORITY = 2;
 
-    RS485() : _serial(Serial1), _initialized(false) {
+    RS485Bus() : _serial(Serial1), _initialized(false) {
         _initMutex = xSemaphoreCreateMutex();
     }
 
-    RS485(const RS485&) = delete;
-    RS485& operator=(const RS485&) = delete;
+    RS485Bus(const RS485Bus&) = delete;
+    RS485Bus& operator=(const RS485Bus&) = delete;
 
     static const char* getErrorString(uint8_t errorCode) {
         switch (errorCode) {
@@ -78,8 +78,8 @@ private:
     }
 
     // Task estática que procesa la cola de solicitudes
-    static void _busManagerTask(void* arg) {
-        RS485* self = (RS485*)arg;
+    static void _busTask(void* arg) {
+        RS485Bus* self = (RS485Bus*)arg;
         RS485Request request;
 
         while (true) {
@@ -160,8 +160,8 @@ private:
     }
 
     public:
-    static RS485& getInstance() {
-        static RS485 instance;
+    static RS485Bus& getInstance() {
+        static RS485Bus instance;
         return instance;
     }
 
@@ -188,15 +188,15 @@ private:
         _node.preTransmission(_preTransmission);
         _node.postTransmission(_postTransmission);
 
-        // Crear task gestor del bus
-        if (_managerTaskHandle == nullptr) {
+        // Crear task del bus
+        if (_busTaskHandle == nullptr) {
             xTaskCreatePinnedToCore(
-                _busManagerTask,
-                "RS485Manager",
-                MANAGER_STACK_SIZE,
+                _busTask,
+                "RS485BusTask",
+                BUS_TASK_STACK_SIZE,
                 this,
-                MANAGER_PRIORITY,
-                &_managerTaskHandle,
+                BUS_TASK_PRIORITY,
+                &_busTaskHandle,
                 1  // Core 1 (deja Core 0 para otras tareas críticas)
             );
         }

@@ -29,7 +29,7 @@ public:
         return instance;
     }
 
-    // Validar que RS485::readRegisters() no se llama desde Core 0
+    // Validar que RS485Bus::readRegisters() no se llama desde Core 0
     void validateSyncReadContext() {
         if (xSemaphoreTake(_validateMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
             return;

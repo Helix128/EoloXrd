@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "../../src/Board/RS485.h"
+#include "../../src/Board/RS485Bus.h"
 #include "../../src/Config.h"
 
 // Por defecto, las pruebas no requieren tener el sensor real conectado.
@@ -60,7 +60,7 @@ void concurrentReadTask(void* arg) {
 	uint16_t buffer[2] = {0, 0};
 
 	for (int i = 0; i < 6; ++i) {
-		bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+		bool ok = RS485Bus::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
 		if (ok) {
 			ctx->anySuccess = true;
 		}
@@ -73,8 +73,8 @@ void concurrentReadTask(void* arg) {
 
 void test_begin_is_idempotent_and_pin_state_is_rx_mode() {
 	powerOnRs485Module();
-	RS485::getInstance().begin();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	int deReState = digitalRead(RS485_DE_RE_PIN);
 	TEST_ASSERT_EQUAL_MESSAGE(LOW, deReState, "DE/RE debe quedar en LOW (modo recepción) tras begin().");
@@ -82,10 +82,10 @@ void test_begin_is_idempotent_and_pin_state_is_rx_mode() {
 
 void test_invalid_slave_returns_false_and_buffer_is_not_overwritten() {
 	powerOnRs485Module();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	uint16_t buffer[2] = {0xAAAA, 0x5555};
-	bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+	bool ok = RS485Bus::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
 
 	TEST_ASSERT_FALSE_MESSAGE(ok, "Con slave inexistente, readRegisters debe retornar false.");
 	TEST_ASSERT_EQUAL_HEX16_MESSAGE(0xAAAA, buffer[0], "No debe sobreescribir buffer en fallo.");
@@ -94,11 +94,11 @@ void test_invalid_slave_returns_false_and_buffer_is_not_overwritten() {
 
 void test_invalid_slave_returns_within_reasonable_timeout() {
 	powerOnRs485Module();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	uint16_t buffer[2] = {0, 0};
 	unsigned long t0 = millis();
-	bool ok = RS485::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
+	bool ok = RS485Bus::getInstance().readRegisters(RS485_TEST_INVALID_SLAVE_ID, 0x0000, 2, buffer);
 	unsigned long dt = millis() - t0;
 
 	TEST_ASSERT_FALSE_MESSAGE(ok, "Con slave inexistente no debe retornar éxito.");
@@ -111,7 +111,7 @@ void test_invalid_slave_returns_within_reasonable_timeout() {
 
 void test_concurrent_reads_do_not_deadlock() {
 	powerOnRs485Module();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	ConcurrentReadCtx a = {false, false};
 	ConcurrentReadCtx b = {false, false};
@@ -136,7 +136,7 @@ void test_concurrent_reads_do_not_deadlock() {
 void test_real_sensor_success_read_and_stability() {
 #if RS485_TEST_ENABLE_REAL_SENSOR
 	powerOnRs485Module();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	const int N = 60;
 	int successCount = 0;
@@ -147,7 +147,7 @@ void test_real_sensor_success_read_and_stability() {
 	uint16_t data[RS485_TEST_VALID_REG_COUNT];
 
 	for (int i = 0; i < N; ++i) {
-		bool ok = RS485::getInstance().readRegisters(
+		bool ok = RS485Bus::getInstance().readRegisters(
 			RS485_TEST_VALID_SLAVE_ID,
 			RS485_TEST_VALID_START_REG,
 			RS485_TEST_VALID_REG_COUNT,
@@ -171,7 +171,7 @@ void test_real_sensor_success_read_and_stability() {
 	TEST_ASSERT_TRUE_MESSAGE(alternatingPatternHits < (N / 2), "Se detectó patrón alternado anómalo (ok/fail repetitivo).");
 	TEST_ASSERT_EQUAL_MESSAGE(
 		0,
-		RS485::getInstance().getPendingRequests(),
+		RS485Bus::getInstance().getPendingRequests(),
 		"La cola de solicitudes debe estar vacía al finalizar las lecturas."
 	);
 #else
@@ -182,7 +182,7 @@ void test_real_sensor_success_read_and_stability() {
 void test_sequential_reads_from_multiple_sensors() {
 #if RS485_TEST_ENABLE_REAL_SENSOR
 	powerOnRs485Module();
-	RS485::getInstance().begin();
+	RS485Bus::getInstance().begin();
 
 	uint16_t sensorA_data[2];
 	uint16_t sensorB_data[2];
@@ -190,13 +190,13 @@ void test_sequential_reads_from_multiple_sensors() {
 	// Simular lecturas secuenciales de dos sensores RS485
 	for (int cycle = 0; cycle < 5; ++cycle) {
 		// Leer sensor A (ID 1)
-		bool okA = RS485::getInstance().readRegisters(1, 0x0000, 2, sensorA_data);
+		bool okA = RS485Bus::getInstance().readRegisters(1, 0x0000, 2, sensorA_data);
 		TEST_ASSERT_TRUE_MESSAGE(okA, "Lectura sensor A (ID 1) falló");
 
 		vTaskDelay(pdMS_TO_TICKS(10));
 
 		// Leer sensor B (ID 2)
-		bool okB = RS485::getInstance().readRegisters(2, 0x0000, 2, sensorB_data);
+		bool okB = RS485Bus::getInstance().readRegisters(2, 0x0000, 2, sensorB_data);
 		TEST_ASSERT_TRUE_MESSAGE(okB, "Lectura sensor B (ID 2) falló");
 
 		vTaskDelay(pdMS_TO_TICKS(50));
@@ -204,7 +204,7 @@ void test_sequential_reads_from_multiple_sensors() {
 
 	TEST_ASSERT_EQUAL_MESSAGE(
 		0,
-		RS485::getInstance().getPendingRequests(),
+		RS485Bus::getInstance().getPendingRequests(),
 		"La cola debe estar vacía tras lecturas secuenciales completadas."
 	);
 #else

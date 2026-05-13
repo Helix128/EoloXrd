@@ -16,16 +16,14 @@
   #pragma message("Sensor de flujo legacy: FS3000")
 #endif
 
-// Librerías para display y comunicación I2C
+// Librerías para display
 #include <U8g2lib.h>
-#include "Wire.h"
 
 // Módulos principales
 #include "Data/Context.h"
 #include "Drawing/SceneManager.h"
 #include "Drawing/SceneRegistry.h"
 #include "Config.h" 
-#include "Utility/I2CUtil.h"
 #include "Utility/RS485Monitor.h"
 #include "Utility/RS485PatternValidator.h"
 
@@ -47,8 +45,8 @@ void setup()
   LOG_LN("RS485 Monitor inicializado");
 
   /*
-  I2CUtility::begin();
-  I2CUtility::scan();
+  I2CBus::getInstance().begin();
+  I2CBus::getInstance().scan();
   */
 
   // Registrar todas las escenas (SceneRegistry) 

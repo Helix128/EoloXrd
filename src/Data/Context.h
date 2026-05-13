@@ -5,6 +5,7 @@
 #include "Components.h"
 #include "CalibrationManager.h"
 #include "../Config.h"
+#include "../Board/I2CBus.h"
 #include "../Drawing/SceneManager.h"
 #include "ESPJob.h"
 #include <SD.h>
@@ -58,8 +59,7 @@ public:
         delay(100); 
 
         // 2. Inicializar bus I2C una sola vez para todo el sistema
-        Wire.begin(SDA_PIN, SCL_PIN);
-        Wire.setClock(I2C_CLOCK);
+        I2CBus::getInstance().begin();
 
         bool grande = false;
 #ifdef FEATURE_MODEM
