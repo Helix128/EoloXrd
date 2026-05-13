@@ -32,7 +32,7 @@ public:
         int bevelSize = 1;
         
         ctx.u8g2.setFont(u8g2_font_tiny5_tf);        
-        if (snapshot.status.sdStatus == SD_ERROR) {
+        if (snapshot.status.sdStatus == SD_ERROR || snapshot.status.sdStatus == SD_MISSING) {
             // Outline with X and bevel
             ctx.u8g2.drawLine(iconX, iconY + bevelSize, iconX, iconY + iconH - 1);
             ctx.u8g2.drawLine(iconX, iconY + iconH - 1, iconX + iconW - 1, iconY + iconH - 1);
