@@ -16,6 +16,7 @@ private:
     size_t _handlerCount = 0;
     Print& _out;
 
+public:
     void route(String line) {
         line.trim();
         if (line.length() == 0) return;
@@ -25,7 +26,6 @@ private:
         }
     }
 
-public:
     DebugCommandRouter(Print& out) : _out(out) {}
 
     void addHandler(ConsoleCommandHandler& handler) {

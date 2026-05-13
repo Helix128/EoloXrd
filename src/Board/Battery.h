@@ -69,7 +69,7 @@ public:
         memcpy(&battVoltage[1], buffer + offset, sizeof(battVoltage[1]));
         lastI2CReadMs = millis();
 
-        //Serial.printf("Battery I2C Read: ActiveMosfet=%d, DC=%.2fV, Batt0=%.2fV, Batt1=%.2fV\n",activeMosfet, dcVoltage, battVoltage[0], battVoltage[1]);
+        //LOG_OUT_F("Battery I2C Read: ActiveMosfet=%d, DC=%.2fV, Batt0=%.2fV, Batt1=%.2fV\n",activeMosfet, dcVoltage, battVoltage[0], battVoltage[1]);
         return true;
     }
 

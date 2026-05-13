@@ -130,17 +130,17 @@ public:
         preferences.end();
 
         LOG_LN("Calibración v3 guardada en Flash:");
-        Serial.print(" Puntos: ");
-        Serial.println(numPoints);
-        Serial.print(" Motor débil: ");
-        Serial.println(weakMotor);
+        LOG_OUT(" Puntos: ");
+        LOG_OUT_LN(numPoints);
+        LOG_OUT(" Motor débil: ");
+        LOG_OUT_LN(weakMotor);
         if (numPoints > 0)
         {
-            Serial.print(" Rango de flujo: ");
-            Serial.print(flows[0], 2);
-            Serial.print(" - ");
-            Serial.print(flows[numPoints - 1], 2);
-            Serial.println(" L/min");
+            LOG_OUT(" Rango de flujo: ");
+            LOG_OUT(flows[0], 2);
+            LOG_OUT(" - ");
+            LOG_OUT(flows[numPoints - 1], 2);
+            LOG_OUT_LN(" L/min");
         }
     }
 
@@ -199,17 +199,17 @@ public:
         isLoaded = validate();
 
         LOG_LN("Calibración v3 cargada desde Flash:");
-        Serial.print(" Puntos: ");
-        Serial.println(numPoints);
-        Serial.print(" Motor débil: ");
-        Serial.println(weakMotor);
+        LOG_OUT(" Puntos: ");
+        LOG_OUT_LN(numPoints);
+        LOG_OUT(" Motor débil: ");
+        LOG_OUT_LN(weakMotor);
         if (numPoints > 0)
         {
-            Serial.print(" Rango de flujo: ");
-            Serial.print(flows[0], 2);
-            Serial.print(" - ");
-            Serial.print(flows[numPoints - 1], 2);
-            Serial.println(" L/min");
+            LOG_OUT(" Rango de flujo: ");
+            LOG_OUT(flows[0], 2);
+            LOG_OUT(" - ");
+            LOG_OUT(flows[numPoints - 1], 2);
+            LOG_OUT_LN(" L/min");
         }
 
         if (!isLoaded)
@@ -222,9 +222,9 @@ public:
 
     void test(Components &components)
     {
-        Serial.println("\n========================================");
-        Serial.println("DIAGNÓSTICO DE CALIBRACIÓN v3");
-        Serial.println("========================================");
+        LOG_OUT_LN("\n========================================");
+        LOG_OUT_LN("DIAGNÓSTICO DE CALIBRACIÓN v3");
+        LOG_OUT_LN("========================================");
 
         if (!isLoaded || numPoints == 0)
         {
@@ -233,50 +233,50 @@ public:
             return;
         }
 
-        Serial.print("Puntos de calibración: ");
-        Serial.println(numPoints);
-        Serial.print("Motor débil: ");
-        Serial.println(weakMotor);
+        LOG_OUT("Puntos de calibración: ");
+        LOG_OUT_LN(numPoints);
+        LOG_OUT("Motor débil: ");
+        LOG_OUT_LN(weakMotor);
 
-        Serial.println("\nTabla PWM0 | PWM1 | Flujo:");
-        Serial.println("------+------+-------------");
+        LOG_OUT_LN("\nTabla PWM0 | PWM1 | Flujo:");
+        LOG_OUT_LN("------+------+-------------");
         for (int i = 0; i < numPoints; i++)
         {
-            Serial.print(pwm0[i]);
-            Serial.print("\t| ");
-            Serial.print(pwm1[i]);
-            Serial.print("\t| ");
-            Serial.print(flows[i], 2);
-            Serial.println(" L/min");
+            LOG_OUT(pwm0[i]);
+            LOG_OUT("\t| ");
+            LOG_OUT(pwm1[i]);
+            LOG_OUT("\t| ");
+            LOG_OUT(flows[i], 2);
+            LOG_OUT_LN(" L/min");
         }
 
-        Serial.println("\n========================================");
-        Serial.println("PRUEBA DE INTERPOLACIÓN");
-        Serial.println("========================================");
+        LOG_OUT_LN("\n========================================");
+        LOG_OUT_LN("PRUEBA DE INTERPOLACIÓN");
+        LOG_OUT_LN("========================================");
 
         float minFlow = flows[0];
         float maxFlow = flows[numPoints - 1];
         int numTests = 10;
         float step = (maxFlow - minFlow) / (numTests - 1);
 
-        Serial.println("Flujo Obj. | PWM0 | PWM1");
-        Serial.println("-----------+------+------");
+        LOG_OUT_LN("Flujo Obj. | PWM0 | PWM1");
+        LOG_OUT_LN("-----------+------+------");
         for (int i = 0; i < numTests; i++)
         {
             float targetFlow = minFlow + i * step;
             int p0, p1;
             getMotorPwms(targetFlow, p0, p1);
 
-            Serial.print(targetFlow, 2);
-            Serial.print(" L/min | ");
-            Serial.print(p0);
-            Serial.print("\t| ");
-            Serial.println(p1);
+            LOG_OUT(targetFlow, 2);
+            LOG_OUT(" L/min | ");
+            LOG_OUT(p0);
+            LOG_OUT("\t| ");
+            LOG_OUT_LN(p1);
         }
 
-        Serial.println("\n========================================");
-        Serial.println("PRUEBA EN TIEMPO REAL");
-        Serial.println("========================================");
+        LOG_OUT_LN("\n========================================");
+        LOG_OUT_LN("PRUEBA EN TIEMPO REAL");
+        LOG_OUT_LN("========================================");
 
         for (int i = 0; i < numTests; i++)
         {
@@ -284,13 +284,13 @@ public:
             int p0, p1;
             getMotorPwms(targetFlow, p0, p1);
 
-            Serial.print("\nObjetivo: ");
-            Serial.print(targetFlow, 2);
-            Serial.print(" L/min -> PWM[");
-            Serial.print(p0);
-            Serial.print(", ");
-            Serial.print(p1);
-            Serial.println("]");
+            LOG_OUT("\nObjetivo: ");
+            LOG_OUT(targetFlow, 2);
+            LOG_OUT(" L/min -> PWM[");
+            LOG_OUT(p0);
+            LOG_OUT(", ");
+            LOG_OUT(p1);
+            LOG_OUT_LN("]");
 
             components.motor.setMotorPwm(0, p0);
             components.motor.setMotorPwm(1, p1);
@@ -301,26 +301,26 @@ public:
                 FlowData flowData;
                 if (!components.flowSensor.getData(flowData) || !flowData.valid)
                 {
-                    Serial.println("Error al leer sensor de flujo");
+                    LOG_OUT_LN("Error al leer sensor de flujo");
                     continue;
                 }
                 float diff = flowData.flow - targetFlow;
-                Serial.print(t);
-                Serial.print("s | ");
-                Serial.print(flowData.flow, 2);
-                Serial.print(" L/min | ");
+                LOG_OUT(t);
+                LOG_OUT("s | ");
+                LOG_OUT(flowData.flow, 2);
+                LOG_OUT(" L/min | ");
                 if (diff >= 0)
-                    Serial.print("+");
-                Serial.print(diff, 2);
-                Serial.println(" L/min");
+                    LOG_OUT("+");
+                LOG_OUT(diff, 2);
+                LOG_OUT_LN(" L/min");
                 delay(1000);
             }
         }
 
         components.motor.setPwm(0);
-        Serial.println("\nDiagnóstico completado.");
-        Serial.println("Presiona el botón para volver.");
-        Serial.println("========================================\n");
+        LOG_OUT_LN("\nDiagnóstico completado.");
+        LOG_OUT_LN("Presiona el botón para volver.");
+        LOG_OUT_LN("========================================\n");
 
         while (!components.input.isButtonPressed())
         {

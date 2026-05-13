@@ -67,19 +67,19 @@ public:
         }
         LOG_LN("Probando RTC...");
         DateTime now = rtc.now();
-        Serial.print("Fecha y hora actual: ");
-        Serial.print(now.year(), DEC);
-        Serial.print('/');
-        Serial.print(now.month(), DEC);
-        Serial.print('/');
-        Serial.print(now.day(), DEC);
-        Serial.print(' ');
-        Serial.print(now.hour(), DEC);
-        Serial.print(':');
-        Serial.print(now.minute(), DEC);
-        Serial.print(':');
-        Serial.print(now.second(), DEC);
-        Serial.println();
+        LOG_OUT("Fecha y hora actual: ");
+        LOG_OUT(now.year(), DEC);
+        LOG_OUT('/');
+        LOG_OUT(now.month(), DEC);
+        LOG_OUT('/');
+        LOG_OUT(now.day(), DEC);
+        LOG_OUT(' ');
+        LOG_OUT(now.hour(), DEC);
+        LOG_OUT(':');
+        LOG_OUT(now.minute(), DEC);
+        LOG_OUT(':');
+        LOG_OUT(now.second(), DEC);
+        LOG_OUT_LN();
     }
     // Devuelve la fecha/hora actual en formato "YYYY-MM-DD HH:MM:SS"
     String getTimeString()
@@ -227,7 +227,7 @@ public:
         struct tm timeinfo;
         time(&now);
         localtime_r(&now, &timeinfo);
-        Serial.print("Fecha y hora actual: ");
+        LOG_OUT("Fecha y hora actual: ");
         LOG_F("%04d/%02d/%02d %02d:%02d:%02d\n",
                       timeinfo.tm_year + 1900,
                       timeinfo.tm_mon + 1,

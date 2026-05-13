@@ -29,6 +29,16 @@ private:
 #endif
     }
 
+#ifdef FEATURE_MODEM
+    void printResult(Print& out, bool ok, const char* successText, const char* failureText) {
+        if (ok) {
+            out.println(successText);
+        } else {
+            out.printf("%s (%s)\n", failureText, _modem != nullptr ? _modem->lastErrorText() : "sin modem");
+        }
+    }
+#endif
+
 public:
 #ifdef FEATURE_MODEM
     void attachModem(Modem* modem) {
@@ -58,7 +68,7 @@ public:
 
         if (args == "begin") {
             out.println("Inicializando modem...");
-            out.println(_modem->begin() ? "Modem listo" : "No hubo respuesta AT");
+            printResult(out, _modem->begin(), "Modem listo", "No hubo respuesta AT");
         } else if (args == "end") {
             _modem->end();
             out.println("Modem apagado");
@@ -70,15 +80,15 @@ public:
             bool ok = _modem->scanOperators(response);
             response.trim();
             out.println(response.length() > 0 ? response.c_str() : "(sin respuesta)");
-            out.println(ok ? "Scan terminado" : "Scan sin resultado válido");
+            printResult(out, ok, "Scan terminado", "Scan sin resultado válido");
         } else if (args == "auto") {
             out.println("Seleccionando operador automático...");
-            out.println(_modem->selectOperatorAuto() ? "Operador automático OK" : "No se pudo seleccionar operador automático");
+            printResult(out, _modem->selectOperatorAuto(), "Operador automático OK", "No se pudo seleccionar operador automático");
         } else if (args.startsWith("operator ")) {
             String code = args.substring(strlen("operator "));
             code.trim();
             out.printf("Seleccionando operador %s...\n", code.c_str());
-            out.println(_modem->selectOperatorNumeric(code.c_str()) ? "Operador seleccionado" : "No se pudo seleccionar operador");
+            printResult(out, _modem->selectOperatorNumeric(code.c_str()), "Operador seleccionado", "No se pudo seleccionar operador");
         } else if (args == "connect" || args.startsWith("connect ")) {
             String apn = "";
             if (args.startsWith("connect ")) {
@@ -86,7 +96,7 @@ public:
                 apn.trim();
             }
             out.printf("Conectando PDP con APN %s...\n", apn.length() > 0 ? apn.c_str() : "default");
-            out.println(_modem->connect(apn.length() > 0 ? apn.c_str() : nullptr) ? "Datos conectados" : "No se pudo conectar datos");
+            printResult(out, _modem->connect(apn.length() > 0 ? apn.c_str() : nullptr), "Datos conectados", "No se pudo conectar datos");
         } else if (args == "open" || args.startsWith("open ")) {
             String apn = "";
             if (args.startsWith("open ")) {
@@ -94,15 +104,18 @@ public:
                 apn.trim();
             }
             out.printf("Abriendo red con APN %s...\n", apn.length() > 0 ? apn.c_str() : "default");
-            out.println(_modem->openNetwork(apn.length() > 0 ? apn.c_str() : nullptr) ? "Red abierta" : "No se pudo abrir red");
+            printResult(out, _modem->openNetwork(apn.length() > 0 ? apn.c_str() : nullptr), "Red abierta", "No se pudo abrir red");
         } else if (args.startsWith("at ")) {
             String command = args.substring(strlen("at "));
             command.trim();
             String response;
             out.printf("> %s\n", command.c_str());
-            _modem->rawAT(command.c_str(), response, 10000);
+            bool ok = _modem->rawAT(command.c_str(), response, 10000);
             response.trim();
             out.println(response.length() > 0 ? response.c_str() : "(sin respuesta)");
+            if (!ok) {
+                out.printf("AT falló (%s)\n", _modem->lastErrorText());
+            }
         } else {
             out.println("Comando modem desconocido. Usa: m help");
         }

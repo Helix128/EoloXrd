@@ -103,9 +103,9 @@ public:
                 0);
             unsigned long int nowUnix = ctx.getUnixTime();
             unsigned long int targetUnix = targetTime.unixtime();
-            Serial.print("Now Unix: ");
+            LOG_OUT("Now Unix: ");
             LOG_LN(nowUnix);
-            Serial.print("Target Unix: ");
+            LOG_OUT("Target Unix: ");
             LOG_LN(targetUnix);
             LOG_LN("Delta");
             LOG_LN(targetUnix - nowUnix);
@@ -113,7 +113,7 @@ public:
             {   
                 ctx.components.input.resetCounter();
                 ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
-                Serial.print("Hora de fin establecida:");
+                LOG_OUT("Hora de fin establecida:");
                 LOG_LN(targetTime.timestamp());
                 ctx.saveSession();
                 SceneManager::setScene("captura", ctx);

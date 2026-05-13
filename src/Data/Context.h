@@ -247,39 +247,39 @@ public:
         sdStatus = SD_OK;
         sdMissingLogReported = false;
 
-        Serial.print("Tipo de tarjeta SD: ");
+        LOG_OUT("Tipo de tarjeta SD: ");
         switch (sdType)
         {
         case CARD_MMC:
-            Serial.println("MMC");
+            LOG_OUT_LN("MMC");
             break;
         case CARD_SD:
-            Serial.println("SDSC");
+            LOG_OUT_LN("SDSC");
             break;
         case CARD_SDHC:
-            Serial.println("SDHC");
+            LOG_OUT_LN("SDHC");
             break;
         case CARD_UNKNOWN:
         default:
-            Serial.println("Desconocido");
+            LOG_OUT_LN("Desconocido");
             break;
         }
 
         uint64_t sdCardSize = SD.cardSize();
-        Serial.print("Tamaño de la tarjeta SD: ");
-        Serial.print(sdCardSize / (1024 * 1024));
-        Serial.println(" MB");
+        LOG_OUT("Tamaño de la tarjeta SD: ");
+        LOG_OUT(sdCardSize / (1024 * 1024));
+        LOG_OUT_LN(" MB");
 
         uint64_t totalBytes = SD.totalBytes();
         uint64_t usedBytes = SD.usedBytes();
-        Serial.print("Espacio total: ");
-        Serial.print(totalBytes / (1024 * 1024));
-        Serial.println(" MB");
-        Serial.print("Espacio usado: ");
-        Serial.print(usedBytes / (1024 * 1024));
-        Serial.print(" MB (");
-        Serial.print(totalBytes > 0 ? (usedBytes * 100) / totalBytes : 0);
-        Serial.println("%)");
+        LOG_OUT("Espacio total: ");
+        LOG_OUT(totalBytes / (1024 * 1024));
+        LOG_OUT_LN(" MB");
+        LOG_OUT("Espacio usado: ");
+        LOG_OUT(usedBytes / (1024 * 1024));
+        LOG_OUT(" MB (");
+        LOG_OUT(totalBytes > 0 ? (usedBytes * 100) / totalBytes : 0);
+        LOG_OUT_LN("%)");
 
         if (!SD.exists(eoloDir))
         {
@@ -341,17 +341,17 @@ public:
         preferences.end();
 
         LOG_LN("Sesión guardada en Flash:");
-        Serial.print(" startDate: ");
-        Serial.println(session.startDate.timestamp());
-        Serial.print(" duration: ");
-        Serial.println(session.duration);
-        Serial.print(" elapsedTime: ");
-        Serial.println(session.elapsedTime);
-        Serial.print(" targetFlow: ");
-        Serial.println(session.targetFlow);
-        Serial.print(" capturedVolume: ");
-        Serial.println(session.capturedVolume);
-        Serial.print(" usePlantower: ");
+        LOG_OUT(" startDate: ");
+        LOG_OUT_LN(session.startDate.timestamp());
+        LOG_OUT(" duration: ");
+        LOG_OUT_LN(session.duration);
+        LOG_OUT(" elapsedTime: ");
+        LOG_OUT_LN(session.elapsedTime);
+        LOG_OUT(" targetFlow: ");
+        LOG_OUT_LN(session.targetFlow);
+        LOG_OUT(" capturedVolume: ");
+        LOG_OUT_LN(session.capturedVolume);
+        LOG_OUT(" usePlantower: ");
         LOG_LN(session.usePlantower);
     }
 
@@ -386,9 +386,9 @@ public:
             session.duration = durationVal - elapsedTime;
             session.elapsedTime = 0;
 
-            Serial.print("Tiempo transcurrido restaurado: ");
-            Serial.print(elapsedTime);
-            Serial.println("s");
+            LOG_OUT("Tiempo transcurrido restaurado: ");
+            LOG_OUT(elapsedTime);
+            LOG_OUT_LN("s");
         }
 
         session.targetFlow = targetFlowVal;
@@ -396,18 +396,18 @@ public:
         session.usePlantower = usePlantowerVal;
 
         LOG_LN("Sesión cargada desde Flash:");
-        Serial.print(" startDate: ");
-        Serial.println(session.startDate.timestamp());
-        Serial.print(" duration: ");
-        Serial.println(session.duration);
-        Serial.print(" elapsedTime: ");
-        Serial.println(elapsedTime);
-        Serial.print(" targetFlow: ");
-        Serial.println(session.targetFlow);
-        Serial.print(" capturedVolume: ");
-        Serial.println(capturedVolumeVal);
-        Serial.print(" usePlantower: ");
-        Serial.println(session.usePlantower);
+        LOG_OUT(" startDate: ");
+        LOG_OUT_LN(session.startDate.timestamp());
+        LOG_OUT(" duration: ");
+        LOG_OUT_LN(session.duration);
+        LOG_OUT(" elapsedTime: ");
+        LOG_OUT_LN(elapsedTime);
+        LOG_OUT(" targetFlow: ");
+        LOG_OUT_LN(session.targetFlow);
+        LOG_OUT(" capturedVolume: ");
+        LOG_OUT_LN(capturedVolumeVal);
+        LOG_OUT(" usePlantower: ");
+        LOG_OUT_LN(session.usePlantower);
 
         saveSession();
         return true;
@@ -720,26 +720,26 @@ public:
             file.println();
 
             LOG_LN("Datos registrados en SD: ");
-            Serial.print(" Time: ");
-            Serial.println(components.rtc.now().timestamp());
-            Serial.print(" Flow: ");
-            Serial.println(flowData.flow);
-            Serial.print(" Flow_target: ");
-            Serial.println(session.targetFlow);
-            Serial.print(" Temp: ");
-            Serial.println(components.bme.temperature);
-            Serial.print(" Hum: ");
-            Serial.println(components.bme.humidity);
-            Serial.print(" Pres: ");
-            Serial.println(components.bme.pressure);
-            Serial.print(" PM1: ");
-            Serial.println(ptowerData.pm1_0);
-            Serial.print(" PM2.5: ");
-            Serial.println(ptowerData.pm2_5);
-            Serial.print(" PM10: ");
-            Serial.println(ptowerData.pm10_0);
-            Serial.print(" Battery: ");
-            Serial.println(components.battery.getPct());
+            LOG_OUT(" Time: ");
+            LOG_OUT_LN(components.rtc.now().timestamp());
+            LOG_OUT(" Flow: ");
+            LOG_OUT_LN(flowData.flow);
+            LOG_OUT(" Flow_target: ");
+            LOG_OUT_LN(session.targetFlow);
+            LOG_OUT(" Temp: ");
+            LOG_OUT_LN(components.bme.temperature);
+            LOG_OUT(" Hum: ");
+            LOG_OUT_LN(components.bme.humidity);
+            LOG_OUT(" Pres: ");
+            LOG_OUT_LN(components.bme.pressure);
+            LOG_OUT(" PM1: ");
+            LOG_OUT_LN(ptowerData.pm1_0);
+            LOG_OUT(" PM2.5: ");
+            LOG_OUT_LN(ptowerData.pm2_5);
+            LOG_OUT(" PM10: ");
+            LOG_OUT_LN(ptowerData.pm10_0);
+            LOG_OUT(" Battery: ");
+            LOG_OUT_LN(components.battery.getPct());
             file.close();
 
             LOG_LN("Archivo de log escrito!");
@@ -891,13 +891,13 @@ public:
         {
             if (lastTargetFlow != session.targetFlow)
             {
-                Serial.print("Flujo objetivo: ");
-                Serial.print(session.targetFlow, 2);
-                Serial.print(" L/min -> PWM[");
-                Serial.print(p0);
-                Serial.print(", ");
-                Serial.print(p1);
-                Serial.println("]");
+                LOG_OUT("Flujo objetivo: ");
+                LOG_OUT(session.targetFlow, 2);
+                LOG_OUT(" L/min -> PWM[");
+                LOG_OUT(p0);
+                LOG_OUT(", ");
+                LOG_OUT(p1);
+                LOG_OUT_LN("]");
                 lastTargetFlow = session.targetFlow;
             }
 
@@ -924,11 +924,11 @@ public:
         if (now >= endTime.unixtime())
         {
             LOG_LN("Duración de captura alcanzada.");
-            Serial.print("Tiempo transcurrido: ");
-            Serial.println(ctx.session.elapsedTime);
+            LOG_OUT("Tiempo transcurrido: ");
+            LOG_OUT_LN(ctx.session.elapsedTime);
 
-            Serial.print("Duración establecida: ");
-            Serial.println(ctx.session.duration);
+            LOG_OUT("Duración establecida: ");
+            LOG_OUT_LN(ctx.session.duration);
 
             endCapture();
             return;

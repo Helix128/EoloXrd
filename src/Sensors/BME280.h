@@ -44,14 +44,14 @@ public:
         for (int i = 0; i < 5; i++)
         {
             readData();
-            Serial.print("Temperature: ");
-            Serial.print(temperature);
+            LOG_OUT("Temperature: ");
+            LOG_OUT(temperature);
             LOG_LN(" °C");
-            Serial.print("Humidity: ");
-            Serial.print(humidity);
+            LOG_OUT("Humidity: ");
+            LOG_OUT(humidity);
             LOG_LN(" %");
-            Serial.print("Pressure: ");
-            Serial.print(pressure);
+            LOG_OUT("Pressure: ");
+            LOG_OUT(pressure);
             LOG_LN(" hPa");
             delay(100);
         }

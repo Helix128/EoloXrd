@@ -48,7 +48,17 @@ public:
     }
 };
 
-inline SerialOutput normalOut(true);
-inline SerialOutput commandOut(false);
+static SerialOutput& stdOutRef() {
+    static SerialOutput out(true);
+    return out;
+}
+
+static SerialOutput& cmdOutRef() {
+    static SerialOutput out(false);
+    return out;
+}
+
+#define stdOut stdOutRef()
+#define cmdOut cmdOutRef()
 
 #endif

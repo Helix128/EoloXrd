@@ -68,7 +68,7 @@ void setup() {
     pinMode(PPH_PWR_PIN, OUTPUT);
     digitalWrite(PPH_PWR_PIN, HIGH);
     
-    Serial.println("--- ENERGÍA PERIFÉRICOS ACTIVADA ---");
+    LOG_OUT_LN("--- ENERGÍA PERIFÉRICOS ACTIVADA ---");
     delay(3000); // 3 segundos para que el sensor AFM07 arranque su firmware
 
     sensor.begin();

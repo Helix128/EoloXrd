@@ -58,11 +58,11 @@ typedef struct Components{
     battery.begin();
     int batteryLevel = battery.getRawLevel();
     float batteryPct = battery.getPct();
-    Serial.print("Nivel de batería: ");
-    Serial.print(batteryLevel);
-    Serial.print(" (");
-    Serial.print(batteryPct);
-    Serial.println("%)");
+    LOG_OUT("Nivel de batería: ");
+    LOG_OUT(batteryLevel);
+    LOG_OUT(" (");
+    LOG_OUT(batteryPct);
+    LOG_OUT_LN("%)");
     LOG_LN("Inicialización de componentes completa");
     
   }

@@ -10,38 +10,50 @@
 #ifndef FILENAME
   #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #endif
+
+#define LOG_OUT_F(fmt, ...) do { \
+    stdOut.printf(fmt, ##__VA_ARGS__); \
+} while(0)
+
+#define LOG_OUT(...) do { \
+    stdOut.print(__VA_ARGS__); \
+} while(0)
+
+#define LOG_OUT_LN(...) do { \
+    stdOut.println(__VA_ARGS__); \
+} while(0)
  
 #define LOG_F(fmt, ...) do { \
-    normalOut.print("["); \
-    normalOut.print(FILENAME); \
-    normalOut.print(":"); \
-    normalOut.print(__LINE__); \
-    normalOut.print("]["); \
-    normalOut.print(__func__); \
-    normalOut.print("] "); \
-    normalOut.printf(fmt, ##__VA_ARGS__); \
+    LOG_OUT("["); \
+    LOG_OUT(FILENAME); \
+    LOG_OUT(":"); \
+    LOG_OUT(__LINE__); \
+    LOG_OUT("]["); \
+    LOG_OUT(__func__); \
+    LOG_OUT("] "); \
+    LOG_OUT_F(fmt, ##__VA_ARGS__); \
 } while(0)
 
 #define LOG_LN(msg) do { \
-    normalOut.print("["); \
-    normalOut.print(FILENAME); \
-    normalOut.print(":"); \
-    normalOut.print(__LINE__); \
-    normalOut.print("]["); \
-    normalOut.print(__func__); \
-    normalOut.print("] "); \
-    normalOut.println(msg); \
+    LOG_OUT("["); \
+    LOG_OUT(FILENAME); \
+    LOG_OUT(":"); \
+    LOG_OUT(__LINE__); \
+    LOG_OUT("]["); \
+    LOG_OUT(__func__); \
+    LOG_OUT("] "); \
+    LOG_OUT_LN(msg); \
 } while(0)
 
 #define LOG_P(msg) do { \
-    normalOut.print("["); \
-    normalOut.print(FILENAME); \
-    normalOut.print(":"); \
-    normalOut.print(__LINE__); \
-    normalOut.print("]["); \
-    normalOut.print(__func__); \
-    normalOut.print("] "); \
-    normalOut.print(msg); \
+    LOG_OUT("["); \
+    LOG_OUT(FILENAME); \
+    LOG_OUT(":"); \
+    LOG_OUT(__LINE__); \
+    LOG_OUT("]["); \
+    LOG_OUT(__func__); \
+    LOG_OUT("] "); \
+    LOG_OUT(msg); \
 } while(0)
 
 // Habilitar pruebas de componentes al inicio (desactivar para booteo rápido)

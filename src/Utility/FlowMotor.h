@@ -48,10 +48,10 @@ void testFlowMotor(Context &ctx)
             //continue;
         }
         lastFlow = measuredFlow;
-        Serial.print("Motor ");
-        Serial.print(currentPct);
-        Serial.print("% -> Flujo medido: ");
-        Serial.print(measuredFlow, 2);
+        LOG_OUT("Motor ");
+        LOG_OUT(currentPct);
+        LOG_OUT("% -> Flujo medido: ");
+        LOG_OUT(measuredFlow, 2);
         LOG_LN(" L/min");
 
         motorPcts[numPoints] = currentPct;
