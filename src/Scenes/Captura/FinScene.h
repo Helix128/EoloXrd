@@ -12,6 +12,8 @@ class FinScene : public IScene
 private:
 
 public:
+    static constexpr const char *Name = "end";
+
     void enter(Context &ctx) override
     {
 

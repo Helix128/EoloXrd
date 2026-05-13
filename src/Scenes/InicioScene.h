@@ -6,6 +6,8 @@
 class InicioScene : public BaseMenuScene
 {
 public:
+    static constexpr const char *Name = "inicio";
+
     void enter(Context &ctx) override
     {
         bool canLoad = ctx.canLoadSession();

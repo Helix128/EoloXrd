@@ -10,6 +10,10 @@ class CapturaBombasScene : public IScene
 {
 private:
 public:
+    static constexpr const char *Name = "captura_bombas";
+
+    uint16_t frameIntervalMs() const override { return 100; }
+
     int targetPct = 0;
     void enter(Context &ctx) override
     {

@@ -98,6 +98,15 @@ public:
         flow = sum / MAX_AVG_VALUES;
     }
 
+    bool getData(FlowData &output)
+    {
+        readData();
+        output.flow = flow;
+        output.velocity = velocity;
+        output.valid = isReady && flow >= 0.0f;
+        return output.valid;
+    }
+
 private:
     static const int MAX_AVG_VALUES = 16;
     float flowBuffer[MAX_AVG_VALUES] = {0};

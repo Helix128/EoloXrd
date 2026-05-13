@@ -19,44 +19,65 @@
 #include "../Scenes/Captura/CapturaBombasScene.h"
 #include "../Scenes/Captura/PlantowerFinScene.h"
 
-
-
-// Función para registrar todas las escenas con el SceneManager
-void registerAllScenes()
+namespace SceneName
 {
-    static LogoScene         s_splash;
-    static InicioScene       s_inicio;
-    static CalibrationScene  s_calibration;
-    static FlujoScene        s_flujo;
+    constexpr const char *Splash = LogoScene::Name;
+    constexpr const char *Inicio = InicioScene::Name;
+    constexpr const char *Calibration = CalibrationScene::Name;
+    constexpr const char *Flujo = FlujoScene::Name;
+    constexpr const char *FlujoNow = InstantFlujoScene::Name;
+    constexpr const char *Tiempo = TimeScene::Name;
+    constexpr const char *Plantower = PlantowerScene::Name;
+    constexpr const char *Wait = WaitScene::Name;
+    constexpr const char *PlantowerFin = PlantowerFinScene::Name;
+    constexpr const char *Captura = CapturaScene::Name;
+    constexpr const char *CapturaMenu = MenuCapturaScene::Name;
+    constexpr const char *CapturaFlujo = CapturaFlujoScene::Name;
+    constexpr const char *TimeEnd = TimeEndScene::Name;
+    constexpr const char *End = FinScene::Name;
+    constexpr const char *EndMenu = EndMenuScene::Name;
+    constexpr const char *CapturaBombas = CapturaBombasScene::Name;
+}
+
+inline void registerAllScenes()
+{
+    static LogoScene s_splash;
+    static InicioScene s_inicio;
+    static CalibrationScene s_calibration;
+    static FlujoScene s_flujo;
     static InstantFlujoScene s_flujo_now;
-    static TimeScene         s_tiempo;
-    static PlantowerScene    s_plantower;
-    static WaitScene         s_wait;
+    static TimeScene s_tiempo;
+    static PlantowerScene s_plantower;
+    static WaitScene s_wait;
     static PlantowerFinScene s_plantower_fin;
-    static CapturaScene      s_captura;
-    static MenuCapturaScene  s_captura_menu;
+    static CapturaScene s_captura;
+    static MenuCapturaScene s_captura_menu;
     static CapturaFlujoScene s_captura_flujo;
-    static TimeEndScene      s_time_end;
-    static FinScene          s_end;
-    static EndMenuScene      s_end_menu;
+    static TimeEndScene s_time_end;
+    static FinScene s_end;
+    static EndMenuScene s_end_menu;
     static CapturaBombasScene s_captura_bombas;
 
-    SceneManager::addScene("splash",        &s_splash);
-    SceneManager::addScene("inicio",        &s_inicio);
-    SceneManager::addScene("calibration",   &s_calibration);
-    SceneManager::addScene("flujo",         &s_flujo);
-    SceneManager::addScene("flujo_now",     &s_flujo_now);
-    SceneManager::addScene("tiempo",        &s_tiempo);
-    SceneManager::addScene("plantower",     &s_plantower);
-    SceneManager::addScene("wait",          &s_wait);
-    SceneManager::addScene("plantower_fin", &s_plantower_fin);
-    SceneManager::addScene("captura",       &s_captura);
-    SceneManager::addScene("captura_menu",  &s_captura_menu);
-    SceneManager::addScene("captura_flujo", &s_captura_flujo);
-    SceneManager::addScene("time_end",      &s_time_end);
-    SceneManager::addScene("end",           &s_end);
-    SceneManager::addScene("end_menu",      &s_end_menu);
-    SceneManager::addScene("captura_bombas",&s_captura_bombas);
+    static const SceneEntry scenes[] = {
+        makeScene(s_splash),
+        makeScene(s_inicio),
+        makeScene(s_calibration),
+        makeScene(s_flujo),
+        makeScene(s_flujo_now),
+        makeScene(s_tiempo),
+        makeScene(s_plantower),
+        makeScene(s_wait),
+        makeScene(s_plantower_fin),
+        makeScene(s_captura),
+        makeScene(s_captura_menu),
+        makeScene(s_captura_flujo),
+        makeScene(s_time_end),
+        makeScene(s_end),
+        makeScene(s_end_menu),
+        makeScene(s_captura_bombas),
+    };
+
+    SceneManager::setScenes(scenes, sizeof(scenes) / sizeof(scenes[0]));
     LOG_LN("Todas las escenas registradas");
 }
 

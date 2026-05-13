@@ -11,6 +11,10 @@ class PlantowerFinScene : public IScene
 private:
     bool enablePM = true;
 public:
+    static constexpr const char *Name = "plantower_fin";
+
+    uint16_t frameIntervalMs() const override { return 100; }
+
     void enter(Context &ctx) override
     {
         SceneManager::setScene("wait",ctx);

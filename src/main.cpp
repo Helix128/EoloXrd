@@ -76,8 +76,8 @@ void loop()
   lastFrameMs += targetMs;
 
   // Actualizar el contexto de la app y la escena actual
-  ctx.update();
-  SceneManager::update(ctx);
+  bool externalDirty = ctx.update();
+  SceneManager::update(ctx, externalDirty);
 
   unsigned long frameExecutionMs = millis() - frameStartMs;
   RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);

@@ -10,6 +10,9 @@
 class WaitScene : public IScene
 {
 public:
+    static constexpr const char *Name = "wait";
+
+    uint16_t frameIntervalMs() const override { return 250; }
 
     int lastRead = 0;
     const int READ_INTERVAL = 1000;

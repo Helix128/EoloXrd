@@ -9,6 +9,10 @@
 class TimeEndScene : public IScene
 {
 public:
+    static constexpr const char *Name = "time_end";
+
+    uint16_t frameIntervalMs() const override { return 100; }
+
     bool isEndTime = false;
     int targetMinute = 30;
     int targetHour = 12;
