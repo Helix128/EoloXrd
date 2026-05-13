@@ -27,6 +27,10 @@ private:
     static const int MAX_PIXEL_SIZE = 3; 
 
 public:
+    static constexpr const char *Name = "splash";
+
+    uint16_t frameIntervalMs() const override { return 33; }
+
     void enter(Context &ctx) override
     {
         phaseStartTime = millis();

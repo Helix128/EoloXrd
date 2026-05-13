@@ -6,6 +6,7 @@
 #include "../../Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
+#include "../../Drawing/Renderer.h"
 
 class CalibrationScene : public IScene
 {
@@ -162,6 +163,10 @@ private:
     }
 
 public:
+    static constexpr const char *Name = "calibration";
+
+    uint16_t frameIntervalMs() const override { return 250; }
+
     void enter(Context &ctx) override
     {
         unstablePoints = 0;
@@ -182,7 +187,7 @@ public:
     void update(Context &ctx) override
     {
         // === RENDER ===
-        ctx.u8g2.clearBuffer();
+        Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
         ctx.u8g2.setFont(FONT_BOLD_S);
@@ -192,8 +197,7 @@ public:
         strcpy(titleBuf, title);
         for (int i = 0; i < dotCount; i++)
             strcat(titleBuf, ".");
-        int titleW = ctx.u8g2.getStrWidth(titleBuf);
-        ctx.u8g2.drawStr((128 - titleW) / 2, 20, titleBuf);
+        Renderer::centeredText(ctx.u8g2, titleBuf, 64, 20, FONT_BOLD_S);
 
         ctx.u8g2.setFont(FONT_REGULAR_S);
         const char *phaseLabel;
@@ -204,17 +208,13 @@ public:
         else
             phaseLabel = "Rampa motor fuerte";
 
-        int phaseW = ctx.u8g2.getStrWidth(phaseLabel);
-        ctx.u8g2.drawStr((128 - phaseW) / 2, 30, phaseLabel);
+        Renderer::centeredText(ctx.u8g2, phaseLabel, 64, 30, FONT_REGULAR_S);
 
         // Progress bar
         int progress = constrain((int)getOverallProgress(), 0, 100);
         int barW = 100, barH = 12;
         int barX = (128 - barW) / 2, barY = 34;
-        ctx.u8g2.drawRFrame(barX, barY, barW, barH, 3);
-        int fillW = (progress * (barW - 2)) / 100;
-        if (fillW > 0)
-            ctx.u8g2.drawBox(barX + 1, barY + 1, fillW, barH - 2);
+        Renderer::progressBar(ctx.u8g2, barX, barY, barW, barH, progress);
 
         // Progress text + ETA
         char progressText[8];
@@ -232,7 +232,7 @@ public:
         ctx.u8g2.drawStr((128 / 2) - pW - 4, barY + barH + 12, progressText);
         ctx.u8g2.drawStr((128 / 2) + 4, barY + barH + 12, etaText);
 
-        ctx.u8g2.sendBuffer();
+        Renderer::endFrame(ctx.u8g2);
 
         // === STATE MACHINE ===
         switch (state)

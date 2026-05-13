@@ -30,7 +30,7 @@ typedef struct Components{
   #ifdef FEATURE_FLOW_AFM07
     AFM07 flowSensor;    // Sensor de flujo de aire AFM07
   #elif defined(FEATURE_FLOW_FS3000)
-    FS3000 flowSensor;   // Sensor de flujo de aire FS3000 (Legacy)
+    FS3K flowSensor;     // Sensor de flujo de aire FS3000 (Legacy)
   #endif
 
   Plantower plantower; // Sensor Plantower

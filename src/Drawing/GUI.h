@@ -16,9 +16,9 @@ public:
         ctx.u8g2.setFont(FONT_REGULAR_S);
 
         // Tiempo
-        DateTime now = ctx.components.rtc.now();
-        int nowMin = now.minute();
-        int nowHr = now.hour();
+        const UiSnapshot &snapshot = ctx.getUiSnapshot();
+        int nowMin = snapshot.status.minute;
+        int nowHr = snapshot.status.hour;
         char timeStr[9];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", nowHr, nowMin);
         ctx.u8g2.drawStr(6, 11, timeStr);
@@ -32,7 +32,7 @@ public:
         int bevelSize = 1;
         
         ctx.u8g2.setFont(u8g2_font_tiny5_tf);        
-        if (ctx.sdStatus == SD_ERROR) {
+        if (snapshot.status.sdStatus == SD_ERROR) {
             // Outline with X and bevel
             ctx.u8g2.drawLine(iconX, iconY + bevelSize, iconX, iconY + iconH - 1);
             ctx.u8g2.drawLine(iconX, iconY + iconH - 1, iconX + iconW - 1, iconY + iconH - 1);
@@ -42,7 +42,7 @@ public:
             // Centered X inside the SD icon
             ctx.u8g2.drawLine(iconX + 4, iconY + 1, iconX + 8, iconY + 6);
             ctx.u8g2.drawLine(iconX + 8, iconY + 1, iconX + 4, iconY + 6);
-        } else if (ctx.sdStatus == SD_WRITING) {
+        } else if (snapshot.status.sdStatus == SD_WRITING) {
             // Filled with bevel cutout
             ctx.u8g2.drawBox(iconX, iconY + bevelSize, iconW, iconH - bevelSize);
             ctx.u8g2.drawBox(iconX, iconY, iconW - bevelSize, bevelSize);
@@ -65,8 +65,8 @@ public:
         ctx.u8g2.setFont(u8g2_font_tiny5_tf);
         
         int cursorX = 126; // Empezamos desde la derecha
-        bool isDC = ctx.components.battery.isPoweredByDC();
-        uint8_t activeMosfet = ctx.components.battery.getActiveMosfet();
+        bool isDC = snapshot.power.poweredByDc;
+        uint8_t activeMosfet = snapshot.power.activeBattery;
 
         // Indicador DC (ajustado a la derecha)
         if (isDC) {
@@ -80,7 +80,7 @@ public:
         // Dos iconos de batería
         // Renderizado en bucle inverso (Bat 1 a la derecha, Bat 0 a la izquierda de esta)
         for (int i = 1; i >= 0; i--) {
-            int pct = (int)ctx.components.battery.getPct(i);
+            int pct = (int)(i == 0 ? snapshot.power.batteryPct0 : snapshot.power.batteryPct1);
             if (pct < 0) pct = 0; if (pct > 100) pct = 100;
 
             // marcos
@@ -119,11 +119,7 @@ public:
         ctx.u8g2.drawRFrame(81, 3, 13, 9, 1); // x, y, w, h (h = 9 para cubrir desde y=3 hasta y=11)
         ctx.u8g2.drawVLine(81,3,9);
 
-        #if BAREBONES == true
-        int batteryPct = (millis() / 100) % 101; // Simulación de batería para testing
-        #else
-        int batteryPct = ctx.components.battery.getPct();
-        #endif
+        int batteryPct = (int)snapshot.power.batteryPct;
 
         // Relleno vertical dentro del marco (interior height = 9 - 2 = 7)
         {

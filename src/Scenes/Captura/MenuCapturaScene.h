@@ -11,6 +11,8 @@ protected:
     }
 
 public:
+    static constexpr const char *Name = "captura_menu";
+
     void enter(Context &ctx) override
     {
         ctx.pauseCapture();

@@ -5,11 +5,15 @@
 #include "../../Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
+#include "../../Drawing/Renderer.h"
 
 class FlujoScene : public IScene
 {
 public:
-    
+    static constexpr const char *Name = "flujo";
+
+    uint16_t frameIntervalMs() const override { return 100; }
+
     float targetFlow = 5.0f;
     void enter(Context &ctx) override
     {
@@ -18,7 +22,7 @@ public:
 
     void update(Context &ctx) override
     {
-        ctx.u8g2.clearBuffer();
+        Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
         float delta = ctx.components.input.getEncoderDelta();
@@ -31,33 +35,14 @@ public:
             ctx.session.targetFlow = targetFlow;
             SceneManager::setScene("tiempo",ctx);
         }
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        int titleWidth = ctx.u8g2.getStrWidth("Flujo objetivo");
-        int titleX = (128 - titleWidth) / 2;
-        ctx.u8g2.drawStr(titleX, 30, "Flujo objetivo");
-        ctx.u8g2.setFont(FONT_REGULAR);
         char flowStr[20];
         snprintf(flowStr, sizeof(flowStr), "%.1f L/min", targetFlow);
-        int valueWidth = ctx.u8g2.getStrWidth(flowStr);
-        int valueX = (128 - valueWidth) / 2;
-        ctx.u8g2.drawStr(valueX, 50, flowStr);
         
         static int animCounter = 0;
         animCounter++;
-        int cycle = (animCounter/4)%3;
-
-        const int TRIANGLE_Y_MID = 44;
-        const int TRIANGLE_HEIGHT = 8;
-        const int TRIANGLE_Y_TOP = TRIANGLE_Y_MID - TRIANGLE_HEIGHT / 2;
-        const int TRIANGLE_Y_BOTTOM = TRIANGLE_Y_MID + TRIANGLE_HEIGHT / 2;
-        const int TRIANGLE_WIDTH = 5;
-        const int TRIANGLE_SPACING = 8;
-        const int TRIANGLE_OFFSET = 3;
-
-        ctx.u8g2.drawTriangle(valueX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_TOP, valueX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_BOTTOM, valueX - TRIANGLE_OFFSET - cycle, TRIANGLE_Y_MID);
-        ctx.u8g2.drawTriangle(valueX + valueWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_TOP, valueX + valueWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_BOTTOM, valueX + valueWidth + TRIANGLE_OFFSET + cycle, TRIANGLE_Y_MID);
+        Renderer::valueSelector(ctx.u8g2, "Flujo objetivo", flowStr, animCounter);
         
-        ctx.u8g2.sendBuffer();
+        Renderer::endFrame(ctx.u8g2);
     }
 };
 #endif

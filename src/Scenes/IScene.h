@@ -14,6 +14,11 @@ public:
     // Llamado en cada ciclo de actualización
     virtual void update(Context &ctx) = 0;
 
+    virtual uint16_t frameIntervalMs() const { return 150; }
+    virtual bool isDirty() const { return false; }
+    virtual void markDirty() {}
+    virtual void clearDirty() {}
+
     // Destructor virtual para limpieza adecuada
     virtual ~IScene() {}
 };

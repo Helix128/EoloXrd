@@ -4,12 +4,16 @@
 #include "Session.h"
 #include "Components.h"
 #include "CalibrationManager.h"
+#include "UiSnapshot.h"
 #include "../Config.h"
 #include "../Board/I2CBus.h"
 #include "../Drawing/SceneManager.h"
 #include "ESPJob.h"
 #include <SD.h>
 #include <Preferences.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include "Profiler.h"
 
 enum SDStatus
@@ -39,6 +43,9 @@ typedef struct Context
 
     SDStatus sdStatus = SD_OK;
     bool isSdReady = false;
+    bool uploadPending = false;
+    bool uploadActive = false;
+    bool uiDirty = true;
 
     const char *eoloDir = "/EOLO";
     const char *logsDir = "/EOLO/logs";
@@ -46,6 +53,14 @@ typedef struct Context
     CalibrationManager calibration;
 
     Preferences preferences;
+    UiSnapshot uiSnapshot;
+    QueueHandle_t logQueue = nullptr;
+    TaskHandle_t logTaskHandle = nullptr;
+
+    struct LogJob
+    {
+        uint32_t queuedAt;
+    };
 
 public:
     Context(DisplayModel &display) : u8g2(display) {}
@@ -82,6 +97,8 @@ public:
 
         calibration.load();
         initSD();
+        startLogTask();
+        updateUiSnapshot(true);
     }
 
     void initDisplay()
@@ -322,6 +339,167 @@ public:
         LOG_LN("Sesión eliminada de Flash");
     }
 
+    void markUiDirty()
+    {
+        uiDirty = true;
+    }
+
+    const UiSnapshot &getUiSnapshot() const
+    {
+        return uiSnapshot;
+    }
+
+    bool updateUiSnapshot(bool force = false)
+    {
+        UiSnapshot previous = uiSnapshot;
+
+        uiSnapshot.flow.enabled = true;
+        uiSnapshot.flow.targetFlow = session.targetFlow;
+        uiSnapshot.flow.capturedVolume = session.capturedVolume;
+        FlowData flowData;
+        if (components.flowSensor.getData(flowData) && flowData.valid)
+        {
+            uiSnapshot.flow.valid = true;
+            uiSnapshot.flow.flow = flowData.flow;
+            uiSnapshot.flow.velocity = flowData.velocity;
+        }
+        else
+        {
+            uiSnapshot.flow.valid = false;
+            uiSnapshot.flow.flow = -1.0f;
+            uiSnapshot.flow.velocity = 0.0f;
+        }
+
+        uiSnapshot.environment.temperature = components.bme.temperature;
+        uiSnapshot.environment.humidity = components.bme.humidity;
+        uiSnapshot.environment.pressure = components.bme.pressure;
+
+        uiSnapshot.airQuality.enabled = session.usePlantower;
+        PlantowerData ptowerData;
+        if (session.usePlantower && components.plantower.getData(ptowerData) && ptowerData.valid)
+        {
+            uiSnapshot.airQuality.valid = true;
+            uiSnapshot.airQuality.pm1 = ptowerData.pm1_0;
+            uiSnapshot.airQuality.pm25 = ptowerData.pm2_5;
+            uiSnapshot.airQuality.pm10 = ptowerData.pm10_0;
+        }
+        else
+        {
+            uiSnapshot.airQuality.valid = false;
+            uiSnapshot.airQuality.pm1 = 0.0f;
+            uiSnapshot.airQuality.pm25 = 0.0f;
+            uiSnapshot.airQuality.pm10 = 0.0f;
+        }
+
+#ifdef FEATURE_ANEMOMETER
+        uiSnapshot.wind.enabled = true;
+        AnemometerData anemoData;
+        if (components.anemometer.getData(anemoData) && anemoData.valid)
+        {
+            uiSnapshot.wind.valid = true;
+            uiSnapshot.wind.speed = anemoData.speed;
+            uiSnapshot.wind.windKph = anemoData.windKph;
+            uiSnapshot.wind.direction = anemoData.direction;
+        }
+        else
+        {
+            uiSnapshot.wind.valid = false;
+        }
+#else
+        uiSnapshot.wind.enabled = false;
+        uiSnapshot.wind.valid = false;
+#endif
+
+#ifdef FEATURE_DUAL_BATTERY
+        uiSnapshot.power.dualBattery = true;
+        uiSnapshot.power.poweredByDc = components.battery.isPoweredByDC();
+        uiSnapshot.power.activeBattery = components.battery.getActiveMosfet();
+        uiSnapshot.power.batteryPct0 = components.battery.getPct(0);
+        uiSnapshot.power.batteryPct1 = components.battery.getPct(1);
+        uiSnapshot.power.batteryPct = components.battery.getPct();
+        uiSnapshot.power.batteryVoltage0 = components.battery.getBatteryVoltage(0);
+        uiSnapshot.power.batteryVoltage1 = components.battery.getBatteryVoltage(1);
+        uiSnapshot.power.batteryVoltage = components.battery.getVoltage();
+        uiSnapshot.power.dcVoltage = components.battery.getDCVoltage();
+#else
+        uiSnapshot.power.dualBattery = false;
+        uiSnapshot.power.poweredByDc = false;
+        uiSnapshot.power.activeBattery = 0;
+#if BAREBONES == true
+        uiSnapshot.power.batteryPct = (millis() / 100) % 101;
+#else
+        uiSnapshot.power.batteryPct = components.battery.getPct();
+#endif
+        uiSnapshot.power.batteryVoltage = components.battery.getVoltage();
+#endif
+
+        DateTime now = components.rtc.now();
+        uiSnapshot.status.sdReady = isSdReady;
+        uiSnapshot.status.sdStatus = (int)sdStatus;
+#ifdef FEATURE_MODEM
+        uiSnapshot.status.modemEnabled = true;
+#else
+        uiSnapshot.status.modemEnabled = false;
+#endif
+        uiSnapshot.status.uploadPending = uploadPending;
+        uiSnapshot.status.uploadActive = uploadActive;
+        uiSnapshot.status.displayOn = isDisplayOn;
+        uiSnapshot.status.unixTime = now.unixtime();
+        uiSnapshot.status.hour = now.hour();
+        uiSnapshot.status.minute = now.minute();
+
+        bool changed = force ||
+                       previous.status.sdStatus != uiSnapshot.status.sdStatus ||
+                       previous.status.uploadPending != uiSnapshot.status.uploadPending ||
+                       previous.status.uploadActive != uiSnapshot.status.uploadActive ||
+                       previous.status.displayOn != uiSnapshot.status.displayOn ||
+                       previous.status.minute != uiSnapshot.status.minute ||
+                       previous.power.batteryPct != uiSnapshot.power.batteryPct;
+        if (changed)
+            markUiDirty();
+        return changed;
+    }
+
+    static void logTaskWorker(void *arg)
+    {
+        Context *self = static_cast<Context *>(arg);
+        LogJob job;
+        while (true)
+        {
+            if (xQueueReceive(self->logQueue, &job, portMAX_DELAY) == pdTRUE)
+            {
+                (void)job;
+                self->uploadPending = false;
+                self->logData();
+                self->markUiDirty();
+            }
+        }
+    }
+
+    void startLogTask()
+    {
+        if (logQueue == nullptr)
+            logQueue = xQueueCreate(4, sizeof(LogJob));
+        if (logTaskHandle == nullptr && logQueue != nullptr)
+            xTaskCreatePinnedToCore(logTaskWorker, "EoloLogTask", 8192, this, 1, &logTaskHandle, 0);
+    }
+
+    void enqueueLogData()
+    {
+        if (logQueue == nullptr)
+            startLogTask();
+
+        LogJob job = {millis()};
+        if (logQueue != nullptr && xQueueSend(logQueue, &job, 0) == pdTRUE)
+        {
+            uploadPending = true;
+            markUiDirty();
+            return;
+        }
+
+        LOG_LN("Cola de log llena o no disponible; se omite log para no bloquear UI");
+    }
+
     void logData()
     {
         LOG_LN("Iniciando log de datos en SD...");
@@ -473,6 +651,8 @@ public:
     {
 #ifdef FEATURE_MODEM
         Profiler p("Context uploadData");
+        uploadActive = true;
+        markUiDirty();
         components.api.begin();
         AnemometerData anemoData;
         bool anemoOk = components.anemometer.getData(anemoData);
@@ -505,26 +685,37 @@ public:
         components.api.addData(754, 45, -1); // velocidad
         components.api.addData(754, 46, -1); // satélites
         components.api.send();
+        uploadActive = false;
+        markUiDirty();
 #endif
     }
 
-    void update()
+    bool update()
     {
         Profiler p("Context update");
         components.input.poll();
         components.poll();
 
+        bool inputChanged = components.input.hasChanged;
         if (components.input.hasChanged)
         {
             setDisplayPower(true);
             lastInputTime = millis();
             components.input.hasChanged = false;
+            markUiDirty();
         }
 
         if (isDisplayOn && (millis() - lastInputTime > DISPLAY_TIMEOUT_MS))
         {
             setDisplayPower(false);
+            markUiDirty();
         }
+
+        updateCapture();
+        bool statusChanged = updateUiSnapshot();
+        bool changed = inputChanged || statusChanged || uiDirty;
+        uiDirty = false;
+        return changed;
     }
 
     uint32_t getUnixTime()
@@ -672,7 +863,7 @@ public:
 
 #endif
             LOG_LN("Registrando datos...");
-            logData();
+            enqueueLogData();
         }
     }
 

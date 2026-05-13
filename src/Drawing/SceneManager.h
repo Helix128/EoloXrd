@@ -1,96 +1,129 @@
 #ifndef SCENEMANAGER_H
 #define SCENEMANAGER_H
 
-#include <map>
-#include <string>
+#include <Arduino.h>
+#include <string.h>
 #include "../Scenes/IScene.h"
-#include "Profiler.h" 
+#include "Profiler.h"
 
-// Declaración adelantada de Context
 struct Context;
 
-// Clase para manejar escenas
+struct SceneEntry
+{
+    const char *name;
+    IScene *scene;
+};
+
+template <typename SceneT>
+SceneEntry makeScene(SceneT &scene)
+{
+    return {SceneT::Name, &scene};
+}
+
 class SceneManager
 {
 private:
-    static std::map<std::string, IScene *> scenes;
-    static std::map<int, IScene *> sceneIndices;
+    static const SceneEntry *sceneEntries;
+    static size_t sceneCount;
     static IScene *currentScene;
-    static std::string currentSceneName;
+    static const char *currentSceneName;
     static int currentSceneIndex;
-public:
-    static void addScene(const std::string &name, IScene *scene)
-    {
-        scenes[name] = scene;
-        sceneIndices[sceneIndices.size()] = scene;
-    }
+    static bool sceneChanged;
+    static unsigned long lastRenderMs;
 
-    static bool parseSceneCmd(const std::string &cmd, Context &ctx)
+    static bool parseSceneCmd(const char *cmd, Context &ctx)
     {
-        if(cmd=="RESET"){
+        (void)ctx;
+        if (strcmp(cmd, "RESET") == 0)
+        {
             LOG_LN("Reiniciando EOLO...");
             ESP.restart();
             return false;
-        } 
+        }
         return true;
-
     }
-    static void setScene(const std::string &name, Context &ctx)
-    {   
-        if(!parseSceneCmd(name, ctx)){
+
+public:
+    static void setScenes(const SceneEntry *entries, size_t count)
+    {
+        sceneEntries = entries;
+        sceneCount = count;
+    }
+
+    static void setScene(const char *name, Context &ctx)
+    {
+        if (!parseSceneCmd(name, ctx))
             return;
-        }
-        
-        auto it = scenes.find(name);
-        if (it != scenes.end())
-        {   
-            currentScene = it->second;
-            currentSceneName = name;
-            currentScene->enter(ctx); // Llamar método enter de la nueva escena
-            currentSceneIndex = 0;
-            for(const auto& pair : sceneIndices){
-                if(pair.second == currentScene){
-                    currentSceneIndex = pair.first;
-                    break;
-                }
+
+        for (size_t i = 0; i < sceneCount; i++)
+        {
+            if (strcmp(sceneEntries[i].name, name) == 0)
+            {
+                currentScene = sceneEntries[i].scene;
+                currentSceneName = sceneEntries[i].name;
+                currentSceneIndex = (int)i;
+                sceneChanged = true;
+                currentScene->markDirty();
+                currentScene->enter(ctx);
+                LOG_F("Escena cambiada a: %s (índice %d)\n", name, currentSceneIndex);
+                return;
             }
-            LOG_F("Escena cambiada a: %s (índice %d)\n", name.c_str(), currentSceneIndex);
         }
-        else
-        {
-            LOG_F("Escena no encontrada: %s\n", name.c_str());
-        }
+        LOG_F("Escena no encontrada: %s\n", name);
     }
 
-    static void update(Context &ctx)
-    {   
-        //Profiler p("SceneManager update");
-        if (currentScene != nullptr)
+    static void update(Context &ctx, bool externalDirty = false)
+    {
+        if (currentScene == nullptr)
+            return;
+
+        unsigned long now = millis();
+        bool sceneDirty = currentScene->isDirty();
+        uint16_t interval = currentScene->frameIntervalMs();
+        bool intervalElapsed = (uint32_t)(now - lastRenderMs) >= interval;
+
+        if (externalDirty || sceneChanged || sceneDirty || intervalElapsed)
         {
+            IScene *renderedScene = currentScene;
             currentScene->update(ctx);
+            if (currentScene == renderedScene)
+            {
+                currentScene->clearDirty();
+                sceneChanged = false;
+            }
+            lastRenderMs = millis();
         }
     }
 
-    static const std::string &getCurrentSceneName()
+    static const char *getCurrentSceneName()
     {
         return currentSceneName;
     }
 
-    static IScene* getCurrentScene()
+    static IScene *getCurrentScene()
     {
         return currentScene;
     }
-    static int getSceneIndex(){
+
+    static int getSceneIndex()
+    {
         return currentSceneIndex;
+    }
+
+    static bool consumeSceneChanged()
+    {
+        bool changed = sceneChanged;
+        sceneChanged = false;
+        return changed;
     }
 };
 
-// Definiciones de miembros
-// inline para que funcionen con static
-inline std::map<std::string, IScene *> SceneManager::scenes;
-inline std::map<int, IScene *> SceneManager::sceneIndices;
+inline const SceneEntry *SceneManager::sceneEntries = nullptr;
+inline size_t SceneManager::sceneCount = 0;
 inline IScene *SceneManager::currentScene = nullptr;
-inline std::string SceneManager::currentSceneName = "";
+inline const char *SceneManager::currentSceneName = "";
 inline int SceneManager::currentSceneIndex = -1;
+inline bool SceneManager::sceneChanged = false;
+inline unsigned long SceneManager::lastRenderMs = 0;
 
 #endif

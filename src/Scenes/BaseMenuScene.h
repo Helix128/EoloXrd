@@ -5,12 +5,10 @@
 #include "../Data/Context.h"
 #include "../Drawing/GUI.h"
 #include "../Drawing/SceneManager.h"
-#include <functional>
-#include <vector>
 
 struct MenuOptionAction {
     const char* label;
-    std::function<void(Context&)> action;
+    void (*action)(Context&);
 };
 
 class BaseMenuScene : public IScene {
@@ -20,7 +18,7 @@ protected:
     int _optionCount = 0;
     int _selectIndex = 0;
 
-    void addOption(const char* label, std::function<void(Context&)> action) {
+    void addOption(const char* label, void (*action)(Context&)) {
         if (_optionCount < MAX_OPTIONS) {
             _options[_optionCount++] = {label, action};
         }
@@ -36,6 +34,8 @@ protected:
     virtual void postDraw(Context& ctx) {}
 
 public:
+    uint16_t frameIntervalMs() const override { return 180; }
+
     void update(Context &ctx) override {
         // 1. Manejo de entrada
         int delta = ctx.components.input.getEncoderDelta();
@@ -48,7 +48,8 @@ public:
         if (ctx.components.input.isButtonPressed()) {
             ctx.components.input.resetCounter();
             if (_selectIndex >= 0 && _selectIndex < _optionCount) {
-                _options[_selectIndex].action(ctx);
+                if (_options[_selectIndex].action)
+                    _options[_selectIndex].action(ctx);
                 return; // Salir por si la acción cambia de escena
             }
         }

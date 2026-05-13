@@ -6,6 +6,8 @@
 class EndMenuScene : public BaseMenuScene
 {
 public:
+    static constexpr const char *Name = "end_menu";
+
     void enter(Context &ctx) override
     {
         clearOptions();

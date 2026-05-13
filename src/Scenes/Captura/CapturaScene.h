@@ -5,6 +5,7 @@
 #include "../../Data/Context.h"
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
+#include "../../Drawing/Renderer.h"
 #include "../../Config.h"
 
 // Escena de logo/splash al iniciar la app
@@ -12,6 +13,10 @@ class CapturaScene : public IScene
 {
 private:
 public:
+    static constexpr const char *Name = "captura";
+
+    uint16_t frameIntervalMs() const override { return 250; }
+
     void enter(Context &ctx) override
     {
         if (ctx.isPaused)
@@ -30,8 +35,7 @@ public:
 
     void update(Context &ctx) override
     {
-        ctx.updateCapture();
-        ctx.u8g2.clearBuffer();
+        Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
         int delta = ctx.components.input.getEncoderDelta();
@@ -55,79 +59,36 @@ public:
         footer(ctx);
         mainPanel(ctx);
 
-        ctx.u8g2.sendBuffer();
+        Renderer::endFrame(ctx.u8g2);
     }
 
     void mainPanel(Context &ctx)
     {   
-        FlowData flowData;
-        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
-        {
-            flowData.flow = -1.0;
-        }
-        float lmin = flowData.flow;
-        float volume = ctx.session.capturedVolume; 
+        const UiSnapshot &snapshot = ctx.getUiSnapshot();
+        float lmin = snapshot.flow.valid ? snapshot.flow.flow : -1.0f;
+        float volume = snapshot.flow.capturedVolume; 
 
         char lminStr[10];
         char volStr[10];
         snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
         snprintf(volStr, sizeof(volStr), "%.3f", volume*0.001);
 
-        int sectionWidth = 128 / 2;
-        int startX1 = 0;
-        int startX2 = sectionWidth;
-
-        // Flow
-        {
-            ctx.u8g2.setFont(FONT_BOLD_S);
-            int labelWidth = ctx.u8g2.getStrWidth("Flujo");
-            int labelX = startX1 + (sectionWidth - labelWidth) / 2;
-            ctx.u8g2.drawStr(labelX, 24, "Flujo");
-
-            ctx.u8g2.setFont(FONT_REGULAR);
-            int valueWidth = ctx.u8g2.getStrWidth(lminStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            int unitWidth = ctx.u8g2.getStrWidth("L/min");
-            int totalWidth = valueWidth + unitWidth + 1;
-            int valueX = startX1 + (sectionWidth - totalWidth) / 2;
-            ctx.u8g2.setFont(FONT_REGULAR);
-            ctx.u8g2.drawStr(valueX, 38, lminStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            ctx.u8g2.drawStr(valueX + valueWidth + 1, 38, "L/min");
-        }
-
-        // Captured Volume
-        {
-            ctx.u8g2.setFont(FONT_BOLD_S);
-            int labelWidth = ctx.u8g2.getStrWidth("Vol. captura");
-            int labelX = startX2 + (sectionWidth - labelWidth) / 2;
-            ctx.u8g2.drawStr(labelX, 24, "Vol. captura");
-
-            ctx.u8g2.setFont(FONT_REGULAR);
-            int valueWidth = ctx.u8g2.getStrWidth(volStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            int unitWidth = ctx.u8g2.getStrWidth("m3");
-            int totalWidth = valueWidth + unitWidth + 1;
-            int valueX = startX2 + (sectionWidth - totalWidth) / 2;
-            ctx.u8g2.setFont(FONT_REGULAR);
-            ctx.u8g2.drawStr(valueX, 38, volStr);
-            ctx.u8g2.setFont(u8g2_font_4x6_tf);
-            ctx.u8g2.drawStr(valueX + valueWidth + 1, 38, "m3");
-        }
+        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, "L/min", "Vol. captura", volStr, "m3", nullptr, nullptr, nullptr, 24, 38);
     }
 
     int cycleFooter = 0;
     void footer(Context &ctx)
     {
-        ctx.u8g2.drawHLine(0, 40, 128);
+        Renderer::separatorLine(ctx.u8g2, 40);
+        const UiSnapshot &snapshot = ctx.getUiSnapshot();
 
         switch (cycleFooter)
         {
         case 0: // temp hum presion
         {
-            float temp = ctx.components.bme.temperature;
-            float hum = ctx.components.bme.humidity;
-            float presAtm = ctx.components.bme.pressure;
+            float temp = snapshot.environment.temperature;
+            float hum = snapshot.environment.humidity;
+            float presAtm = snapshot.environment.pressure;
 
 #if BAREBONES == true // valores inventados para testing
             temp = 25.0;
@@ -142,82 +103,20 @@ public:
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
             snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
 
-            int sectionWidth = 128 / 3;
-            int startX1 = 0;
-            int startX2 = sectionWidth;
-            int startX3 = 2 * sectionWidth;
-
-            // Temp
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("Temp");
-                int labelX = startX1 + (sectionWidth - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "Temp");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(tempStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("C");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX1 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, tempStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "C");
-            }
-
-            // Hum
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("Hum");
-                int labelX = startX2 + (sectionWidth - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "Hum");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(humStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("%");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX2 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, humStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "%");
-            }
-
-            // Presion
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("Presion");
-                int labelX = startX3 + (128 - startX3 - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "Presion");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(presStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("hPa");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX3 + (128 - startX3 - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, presStr);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "hPa");
-            }
+            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, "C", "Hum", humStr, "%", "Presion", presStr, "hPa");
             break;
         }
         case 1: // pm1 pm2.5 pm10
         {
-            if (!ctx.session.usePlantower)
+            if (!snapshot.airQuality.enabled)
             {
                 cycleFooter += ctx.components.input.getEncoderDelta();
                 break;
             }
 
-            PlantowerData  ptowerData;
-            bool ptOk = ctx.components.plantower.getData( ptowerData);
-            float pm1 =  ptowerData.pm1_0;
-            float pm25 =  ptowerData.pm2_5;
-            float pm10 =  ptowerData.pm10_0;
+            float pm1 = snapshot.airQuality.valid ? snapshot.airQuality.pm1 : 0.0f;
+            float pm25 = snapshot.airQuality.valid ? snapshot.airQuality.pm25 : 0.0f;
+            float pm10 = snapshot.airQuality.valid ? snapshot.airQuality.pm10 : 0.0f;
 
 #if BAREBONES == true
             pm1 = 512;
@@ -232,73 +131,13 @@ public:
             snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
             snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
             snprintf(pm10Str, sizeof(pm10Str), "%.0f", pm10);
-            int sectionWidth = 128 / 3;
-            int startX1 = 0;
-            int startX2 = sectionWidth;
-            int startX3 = 2 * sectionWidth;
-
-            // PM1.0
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("PM1.0");
-                int labelX = startX1 + (sectionWidth - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "PM1.0");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(pm1Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("ugm2");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX1 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, pm1Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
-            }
-
-            // PM2.5
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("PM2.5");
-                int labelX = startX2 + (sectionWidth - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "PM2.5");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(pm25Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("ugm2");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX2 + (sectionWidth - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, pm25Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
-            }
-
-            // PM10
-            {
-                ctx.u8g2.setFont(FONT_BOLD_S);
-                int labelWidth = ctx.u8g2.getStrWidth("PM10");
-                int labelX = startX3 + (128 - startX3 - labelWidth) / 2;
-                ctx.u8g2.drawStr(labelX, 50, "PM10");
-
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                int valueWidth = ctx.u8g2.getStrWidth(pm10Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                int unitWidth = ctx.u8g2.getStrWidth("ugm2");
-                int totalValueWidth = valueWidth + unitWidth + 1;
-                int valueX = startX3 + (128 - startX3 - totalValueWidth) / 2;
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-                ctx.u8g2.drawStr(valueX, 60, pm10Str);
-                ctx.u8g2.setFont(u8g2_font_4x6_tf);
-                ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "ugm2");
-            }
+            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, "ugm2", "PM2.5", pm25Str, "ugm2", "PM10", pm10Str, "ugm2");
             break;
         }
         case 2:
         { // flujo configurado
 
-            float targetFlow = ctx.session.targetFlow;
+            float targetFlow = snapshot.flow.targetFlow;
             char targetFlowStr[10];
             snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", targetFlow);
             ctx.u8g2.setFont(FONT_BOLD_S);
