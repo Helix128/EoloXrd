@@ -72,7 +72,7 @@ typedef struct Components{
       Profiler p("Components poll");
       //api.update();
       static unsigned long lastBatPoll = 0;
-      if (millis() - lastBatPoll > 1000) {
+      if ((int32_t)(millis() - lastBatPoll) > 1000) {
         battery.pollFromI2C();
         lastBatPoll = millis();
       }

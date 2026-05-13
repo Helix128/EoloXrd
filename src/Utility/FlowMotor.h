@@ -3,6 +3,7 @@
 
 #include "../Data/Context.h"
 #include <SD.h>
+#include <vector>
 
 float GetTargetMotorPct(float targetFlow, float* motorPcts, float* flows, int numPoints)
 {
@@ -23,13 +24,13 @@ void testFlowMotor(Context &ctx)
 
     LOG_LN("Calibrando...");
     
-    int maxCalPoints = 100;
+    const int maxCalPoints = 100;
     int numPoints = 0;
     float currentPct = 0;
-    float* flows = new float[maxCalPoints];
-    float* motorPcts = new float[maxCalPoints];
+    std::vector<float> flows(maxCalPoints);
+    std::vector<float> motorPcts(maxCalPoints);
     float lastFlow = -1;
-    while(currentPct <= 100 && numCalPoints < maxCalPoints)
+    while(currentPct <= 100 && numPoints < maxCalPoints)
     {   
         ctx.components.motor.setPowerPct(currentPct);
         delay(1000); 
@@ -75,106 +76,6 @@ void testFlowMotor(Context &ctx)
         LOG_LN("Calibración guardada en calibracion.csv");
     } else {
         LOG_LN("Error al abrir calibracion.csv");
-    }
-    return;
-    LOG_LN("Calibración completa.");
-    Serial.print("Rango de flujo medido: ");
-    Serial.print(flows[0]);
-    Serial.print(" - ");
-    Serial.print(flows[10]);
-    LOG_LN(" L/min");
-
-    LOG_LN("Ingresa valor de flujo (0-8 L/min) via Serial");
-    LOG_LN("Escribe 'exit' para salir");
-    LOG_LN();
-    
-    ctx.components.motor.setPowerPct(0);
-
-    ctx.session.targetFlow = 0.0;
-    Serial.print("Flujo objetivo actual: ");
-    Serial.print(ctx.session.targetFlow, 1);
-    LOG_LN(" L/min");
-    
-    String inputBuffer = "";
-    
-    const int numSamples = 4;
-    float samples[numSamples] = {0.0};
-    int sampleIndex = 0;
-    int validSamples = 0;
-    
-    while(true)
-    {
-        while (Serial.available() > 0)
-        {
-            char c = Serial.read();
-            if (c == '\n' || c == '\r')
-            {
-                if (inputBuffer.length() > 0)
-                {
-                    if (inputBuffer.equalsIgnoreCase("exit"))
-                    {
-                        ctx.components.motor.setPowerPct(0);
-                        LOG_LN("Saliendo de la prueba...");
-                        return;
-                    }
-                    
-                    float newTarget = inputBuffer.toFloat();
-                    if (newTarget >= 0.0 && newTarget <= 8.0)
-                    {
-                        ctx.session.targetFlow = newTarget;
-                        Serial.print("Nuevo flujo objetivo: ");
-                        Serial.print(ctx.session.targetFlow, 1);
-                        LOG_LN(" L/min");
-                    }
-                    else
-                    {
-                        LOG_LN("Valor inválido. Ingresa 0-8 L/min o 'exit'");
-                    }
-                    
-                    inputBuffer = "";
-                }
-            }
-            else
-            {
-                inputBuffer += c;
-            }
-        }
-        
-        // Leer un sample del sensor de flujo por ciclo
-        FlowData flowData;
-        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
-        {
-            LOG_LN("Error al leer sensor de flujo");
-            delay(100);
-            continue;
-        }   
-        float newFlow = flowData.flow;
-        samples[sampleIndex] = newFlow;
-        sampleIndex = (sampleIndex + 1) % numSamples;
-        if (validSamples < numSamples) validSamples++;
-        
-        float sum = 0.0;
-        for (int i = 0; i < numSamples; i++) {
-            sum += samples[i];
-        }
-        float averageFlow = sum / validSamples;
-
-        ctx.components.motor.setPowerPct(GetTargetMotorPct(ctx.session.targetFlow, motorPcts, flows, numPoints));
-
-        // Mostrar estado cada segundo aproximadamente
-        static unsigned long lastPrint = 0;
-        if (millis() - lastPrint > 1000) {
-            lastPrint = millis();
-            Serial.print("Flujo promedio: ");
-            Serial.print(averageFlow, 2);
-            Serial.print(" Flujo objetivo: ");
-            Serial.print(ctx.session.targetFlow, 1);
-            Serial.print(" L/min | Potencia motor: ");
-            Serial.print(ctx.components.motor.getPowerPct(), 1);
-            LOG_LN("%");
-        }
-        
-        delay(10);
     }
 }
 
