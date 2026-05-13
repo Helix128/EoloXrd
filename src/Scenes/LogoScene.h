@@ -5,7 +5,7 @@
 #include "../Data/Context.h"
 #include "../Drawing/Logos.h"
 #include "../Drawing/SceneManager.h"
-#include "../Utility/I2CUtil.h"
+#include "../Board/I2CBus.h"
 
 class LogoScene : public IScene
 {
@@ -182,7 +182,7 @@ public:
         {
             LOG_LN("Init...");
             ctx.components.input.resetCounter();
-            I2CUtility::scan();
+            I2CBus::getInstance().scan();
             delay(100);
             // ctx.components.begin();
             // ctx.begin();

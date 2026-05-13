@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "./Board/RS485.h"
+#include "./Board/RS485Bus.h"
 
 #define ANEM_ID 1
 
@@ -36,7 +36,7 @@ private:
 
         while (true) {
             // Solicitar lectura del bus centralizado
-            bool success = RS485::getInstance().readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
+            bool success = RS485Bus::getInstance().readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -74,7 +74,7 @@ public:
     }
 
     void begin() {
-        RS485::getInstance().begin();
+        RS485Bus::getInstance().begin();
         xTaskCreatePinnedToCore(taskWorker, "AnemTask", 4096, this, 1, &_taskHandle, 1);
     }
 

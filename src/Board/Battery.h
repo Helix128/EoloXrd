@@ -2,9 +2,10 @@
 #define BATTERY_H
 
 #include <Arduino.h>
+#include <string.h>
 
 #ifdef FEATURE_DUAL_BATTERY
-#include "Wire.h"
+#include "I2CBus.h"
 #endif
 
 #include "Profiler.h" 
@@ -52,13 +53,20 @@ public:
     bool pollFromI2C(uint8_t addr = DEFAULT_I2C_ADDR) {
         Profiler p ("Battery pollFromI2C");
         
-        int toRead = sizeof(uint8_t) + 3 * sizeof(float);
-        int readBytes = Wire.requestFrom(addr, toRead);
-        if (readBytes < toRead) return false;
-        Wire.readBytes((uint8_t*)&activeMosfet, sizeof(activeMosfet));
-        Wire.readBytes((uint8_t*)&dcVoltage, sizeof(dcVoltage));
-        Wire.readBytes((uint8_t*)&battVoltage[0], sizeof(battVoltage[0]));
-        Wire.readBytes((uint8_t*)&battVoltage[1], sizeof(battVoltage[1]));
+        uint8_t buffer[sizeof(uint8_t) + 3 * sizeof(float)];
+        const size_t toRead = sizeof(buffer);
+        if (!I2CBus::getInstance().readBytes(addr, buffer, toRead)) {
+            return false;
+        }
+
+        size_t offset = 0;
+        memcpy(&activeMosfet, buffer + offset, sizeof(activeMosfet));
+        offset += sizeof(activeMosfet);
+        memcpy(&dcVoltage, buffer + offset, sizeof(dcVoltage));
+        offset += sizeof(dcVoltage);
+        memcpy(&battVoltage[0], buffer + offset, sizeof(battVoltage[0]));
+        offset += sizeof(battVoltage[0]);
+        memcpy(&battVoltage[1], buffer + offset, sizeof(battVoltage[1]));
         lastI2CReadMs = millis();
 
         //Serial.printf("Battery I2C Read: ActiveMosfet=%d, DC=%.2fV, Batt0=%.2fV, Batt1=%.2fV\n",activeMosfet, dcVoltage, battVoltage[0], battVoltage[1]);

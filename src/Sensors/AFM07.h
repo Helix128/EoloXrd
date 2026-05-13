@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "./Board/RS485.h" 
+#include "./Board/RS485Bus.h"
 
 #define AFM_ID 2
 
@@ -33,7 +33,7 @@ private:
         vTaskDelay(pdMS_TO_TICKS(500)); // Delay inicial para evitar colisión con Anemómetro al arrancar
         while (true) {
             // Solicitar lectura del bus centralizado
-            bool success = RS485::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
+            bool success = RS485Bus::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -67,7 +67,7 @@ public:
     }
 
     void begin() {
-        RS485::getInstance().begin();
+        RS485Bus::getInstance().begin();
         xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
     }
 
