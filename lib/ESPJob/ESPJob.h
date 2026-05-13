@@ -10,11 +10,12 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include "Config.h"
 
 #define ESPJOB_DEBUG 0 // debug off by default, set to 1 to enable job logging
 
 #if ESPJOB_DEBUG
-    #define JOB_LOG(fmt, ...) Serial.printf("[ESPJob] " fmt "\n", ##__VA_ARGS__)
+    #define JOB_LOG(fmt, ...) LOG_OUT_F("[ESPJob] " fmt "\n", ##__VA_ARGS__)
 #else
     #define JOB_LOG(fmt, ...)
 #endif

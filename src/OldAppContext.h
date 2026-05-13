@@ -76,7 +76,7 @@ typedef struct AppContext
     Serial.begin(115200);
     while (!Serial)
       delay(100);
-    Serial.println("EOLO Boot");
+    LOG_OUT_LN("EOLO Boot");
 
     // Inicializa todos los módulos
     u8g2.setI2CAddress(0x3C * 2);
@@ -91,21 +91,21 @@ typedef struct AppContext
     rtcAvailable = rtc.begin();
 
     int battery = getBatteryPercentage();
-    Serial.print("Nivel de batería: ");
-    Serial.print(battery);
-    Serial.println("%");
+    LOG_OUT("Nivel de batería: ");
+    LOG_OUT(battery);
+    LOG_OUT_LN("%");
 
     // Inicializa el datalogger
     if (logger.begin())
     {
-      Serial.println("Logger iniciado correctamente");
+      LOG_OUT_LN("Logger iniciado correctamente");
     }
     else
     {
-      Serial.println("Advertencia: Fallo en la inicialización del logger");
+      LOG_OUT_LN("Advertencia: Fallo en la inicialización del logger");
     }
 
-    Serial.println("Inicialización de AppContext completa");
+    LOG_OUT_LN("Inicialización de AppContext completa");
   }
 
   // Devuelve el timestamp actual en segundos (RTC si está disponible, sino uptime)
@@ -245,15 +245,15 @@ typedef struct AppContext
       lastError = error;
 
       // Debug
-      Serial.print("Flujo: ");
-      Serial.print(flujoActual, 2);
-      Serial.print(" L/min | Objetivo: ");
-      Serial.print(flujoObjetivo, 2);
-      Serial.print(" | Error: ");
-      Serial.print(error, 2);
-      Serial.print(" | Motor: ");
-      Serial.print(motorPowerPct, 1);
-      Serial.println("%");
+      LOG_OUT("Flujo: ");
+      LOG_OUT(flujoActual, 2);
+      LOG_OUT(" L/min | Objetivo: ");
+      LOG_OUT(flujoObjetivo, 2);
+      LOG_OUT(" | Error: ");
+      LOG_OUT(error, 2);
+      LOG_OUT(" | Motor: ");
+      LOG_OUT(motorPowerPct, 1);
+      LOG_OUT_LN("%");
     }
   }
 
@@ -262,7 +262,7 @@ typedef struct AppContext
   {
     unsigned long now = nowSeconds();
     if (!rtcAvailable)
-      Serial.println("Warning: RTC not available, using uptime seconds as timestamp");
+      LOG_OUT_LN("Warning: RTC not available, using uptime seconds as timestamp");
 
     // Si horaFinCaptura parece ser una duracion relativa (<= 24h), convertir a epoch absoluto
     if (horaFinCaptura > 0 && horaFinCaptura <= 86400UL)
@@ -282,7 +282,7 @@ typedef struct AppContext
     lastMotorAdjust = 0;
     motor.setPowerPct(50);
 
-    Serial.println("Capture started");
+    LOG_OUT_LN("Capture started");
   }
 
   void pauseCapture()
@@ -300,8 +300,8 @@ typedef struct AppContext
     // Apagar el motor al pausar
     motor.setPowerPct(0);
 
-    Serial.print("Capture paused, remaining secs: ");
-    Serial.println(remainingSeconds);
+    LOG_OUT("Capture paused, remaining secs: ");
+    LOG_OUT_LN(remainingSeconds);
   }
 
   void resumeCapture()
@@ -323,7 +323,7 @@ typedef struct AppContext
     lastMotorAdjust = 0;
     motor.setPowerPct(50);
 
-    Serial.println("Capture resumed");
+    LOG_OUT_LN("Capture resumed");
   }
 
   void stopCapture()
@@ -340,7 +340,7 @@ typedef struct AppContext
     errorIntegral = 0.0;
     lastError = 0.0;
 
-    Serial.println("Capture stopped");
+    LOG_OUT_LN("Capture stopped");
   }
 
   // Formatea tiempo transcurrido como HH:MM

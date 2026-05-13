@@ -78,8 +78,8 @@ public:
   {
     for (int i = 0; i <= 100; i += 10)
     {
-      Serial.print("Prueba de motores: ");
-      Serial.print(i);
+      LOG_OUT("Prueba de motores: ");
+      LOG_OUT(i);
       LOG_LN("%");
       setPowerPct(i);
       delay(500);

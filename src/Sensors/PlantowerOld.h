@@ -32,7 +32,7 @@ public:
     void begin()
     {   
         if (isReady) {
-            Serial.println("Plantower ya inicializado, skipping...");
+            LOG_OUT_LN("Plantower ya inicializado, skipping...");
             return;
         }
 
@@ -50,8 +50,8 @@ public:
     {   
         if(isActive == active)
             return;
-        Serial.print("Plantower power ");
-        Serial.println(active ? "ON" : "OFF");
+        LOG_OUT("Plantower power ");
+        LOG_OUT_LN(active ? "ON" : "OFF");
         isActive = active;
         digitalWrite(PT_PWR, active ? HIGH : LOW); // Controla la alimentación
         delay(50);
@@ -60,36 +60,36 @@ public:
             readData(); 
             delay(350);
         }
-        Serial.println("OK!");
+        LOG_OUT_LN("OK!");
     }
 
     void testSensor()
     {
-        Serial.println("Probando Plantower...");
+        LOG_OUT_LN("Probando Plantower...");
         setPower(false);
         delay(500);
         readData();
         delay(500);
-        Serial.println("Lectura apagada (debería ser -1):");
-        Serial.print(pm1);
-        Serial.print(" - ");
-        Serial.print(pm25);
-        Serial.print(" - ");
-        Serial.println(pm10);
+        LOG_OUT_LN("Lectura apagada (debería ser -1):");
+        LOG_OUT(pm1);
+        LOG_OUT(" - ");
+        LOG_OUT(pm25);
+        LOG_OUT(" - ");
+        LOG_OUT_LN(pm10);
         delay(500);
-        Serial.println("Encendiendo Plantower...");
+        LOG_OUT_LN("Encendiendo Plantower...");
         setPower(true);
         delay(500);
         for (int i = 0; i < 10; i++)
         {
             readData();
-            Serial.print("PM1.0: ");
-            Serial.print(pm1);
-            Serial.print(" µg/m3, PM2.5: ");
-            Serial.print(pm25);
-            Serial.print(" µg/m3, PM10: ");
-            Serial.print(pm10);
-            Serial.println(" µg/m3");
+            LOG_OUT("PM1.0: ");
+            LOG_OUT(pm1);
+            LOG_OUT(" µg/m3, PM2.5: ");
+            LOG_OUT(pm25);
+            LOG_OUT(" µg/m3, PM10: ");
+            LOG_OUT(pm10);
+            LOG_OUT_LN(" µg/m3");
             delay(1000);
         }
     }

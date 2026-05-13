@@ -5,6 +5,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "Config.h"
 
 #ifndef PROFILE_ENABLED
 #define PROFILE_ENABLED 1
@@ -114,10 +115,10 @@ public:
         unlock();
 
         if (shouldAlert) {
-            Serial.printf("[prof] %s %.3f ms (threshold %.3f ms)\n",
-                          name,
-                          durationUs / 1000.0,
-                          thresholdUs / 1000.0);
+            LOG_OUT_F("[prof] %s %.3f ms (threshold %.3f ms)\n",
+                             name,
+                             durationUs / 1000.0,
+                             thresholdUs / 1000.0);
         }
     }
 
@@ -163,7 +164,7 @@ public:
         return count;
     }
 
-    void printSummary(bool sortByTotal = false) {
+    void printSummary(Print& out, bool sortByTotal = false) {
         ProfilerStats copy[PROFILE_MAX_SECTIONS];
         uint8_t count = snapshot(copy, PROFILE_MAX_SECTIONS);
 
@@ -179,18 +180,22 @@ public:
             }
         }
 
-        Serial.println("name count avg_ms max_ms last_ms over");
+        out.println("name count avg_ms max_ms last_ms over");
         for (uint8_t i = 0; i < count; ++i) {
             const ProfilerStats& s = copy[i];
             double avgMs = s.count > 0 ? ((double)s.totalUs / (double)s.count) / 1000.0 : 0.0;
-            Serial.printf("%s %lu %.3f %.3f %.3f %lu\n",
-                          s.name,
-                          (unsigned long)s.count,
-                          avgMs,
-                          s.maxUs / 1000.0,
-                          s.lastUs / 1000.0,
-                          (unsigned long)s.overThresholdCount);
+            out.printf("%s %lu %.3f %.3f %.3f %lu\n",
+                       s.name,
+                       (unsigned long)s.count,
+                       avgMs,
+                       s.maxUs / 1000.0,
+                       s.lastUs / 1000.0,
+                       (unsigned long)s.overThresholdCount);
         }
+    }
+
+    void printSummary(bool sortByTotal = false) {
+        printSummary(stdOut, sortByTotal);
     }
 };
 
@@ -240,8 +245,11 @@ public:
     void setVerboseAlerts(bool) {}
     bool verboseAlerts() { return false; }
     uint8_t snapshot(ProfilerStats*, uint8_t) { return 0; }
+    void printSummary(Print& out, bool = false) {
+        out.println("profiling disabled");
+    }
     void printSummary(bool = false) {
-        Serial.println("profiling disabled");
+        printSummary(stdOut);
     }
 };
 

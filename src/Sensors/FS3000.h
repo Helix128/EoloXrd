@@ -63,12 +63,12 @@ public:
         for (int i = 0; i < 20; i++)
         {
             readData();
-            Serial.print("Velocidad: ");
-            Serial.print(velocity);
-            Serial.print(" m/s, Flujo actual: ");
-            Serial.print(currentFlow);
-            Serial.print(" L/min, Flujo promedio: ");
-            Serial.print(flow);
+            LOG_OUT("Velocidad: ");
+            LOG_OUT(velocity);
+            LOG_OUT(" m/s, Flujo actual: ");
+            LOG_OUT(currentFlow);
+            LOG_OUT(" L/min, Flujo promedio: ");
+            LOG_OUT(flow);
             LOG_LN(" L/min");
             delay(500);
         }
