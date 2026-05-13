@@ -69,7 +69,6 @@ typedef struct Components{
 
   void poll() {
     #ifdef FEATURE_DUAL_BATTERY
-      Profiler p("Components poll");
       //api.update();
       static unsigned long lastBatPoll = 0;
       if ((int32_t)(millis() - lastBatPoll) > 1000) {

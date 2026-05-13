@@ -26,10 +26,13 @@
 #include "Config.h" 
 #include "Utility/RS485Monitor.h"
 #include "Utility/RS485PatternValidator.h"
+#include "Utility/DebugConsole.h"
+#include "Profiler.h"
 
 // Instancias globales
 DisplayModel u8g2(U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN);
 Context ctx(u8g2); // Aquí se procesa toda la lógica
+DebugConsole debugConsole;
 
 void setup()
 {   
@@ -40,6 +43,10 @@ void setup()
   ctx.components.motor.begin(); // apagar motores
 
   Serial.begin(115200);
+
+#ifdef FEATURE_MODEM
+  debugConsole.attachModem(&ctx.components.modem);
+#endif
 
   RS485Monitor::getInstance(); // Inicializar monitor RS485
   LOG_LN("RS485 Monitor inicializado");
@@ -64,6 +71,8 @@ unsigned long int frameStartMs = 0;
 
 void loop()
 { 
+  debugConsole.poll();
+
   if(SceneManager::getSceneIndex()<=1){
     ctx.components.motor.setPowerPct(0);
   }
@@ -80,6 +89,7 @@ void loop()
   SceneManager::update(ctx, externalDirty);
 
   unsigned long frameExecutionMs = millis() - frameStartMs;
+  PROFILE_MARK("loop.frame", frameExecutionMs * 1000UL);
   RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);
   RS485Monitor::getInstance().checkAndReportViolations();
 

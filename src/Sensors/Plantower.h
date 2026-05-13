@@ -145,22 +145,12 @@ public:
         if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             output = _data;
             success = _data.valid;
-            if(success){
-                #ifdef DEBUG
-                LOG_F("PLANTOWER Exito: PM1.0=%d, PM2.5=%d, PM10.0=%d\n", output.pm1_0, output.pm2_5, output.pm10_0);
-                #endif
-            }
-            else{
-                #ifdef DEBUG
-                LOG_F("PLANTOWER Error\n");
-                #endif
-            }
             xSemaphoreGive(_mutex);
         }
         else{
-            #ifdef DEBUG
+#ifdef PLANTOWER_VERBOSE
             LOG_F("Error: no se pudo obtener el mutex para leer datos del Plantower\n");
-            #endif
+#endif
         }
         return success;
     }

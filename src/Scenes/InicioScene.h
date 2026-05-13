@@ -24,6 +24,10 @@ public:
         }
 
         addOption("Captura rapida", [](Context& ctx) { SceneManager::setScene("flujo_now", ctx); });
+        addOption("Ajustar reloj", [](Context& ctx) {
+            ctx.rtcAdjustReturnScene = InicioScene::Name;
+            SceneManager::setScene("rtc_adjust", ctx);
+        });
         addOption("Calibrar bombas", [](Context& ctx) { SceneManager::setScene("calibration", ctx); });
     }
 };

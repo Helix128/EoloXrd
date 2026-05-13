@@ -29,7 +29,7 @@ private:
 public:
     static constexpr const char *Name = "splash";
 
-    uint16_t frameIntervalMs() const override { return 33; }
+    uint16_t frameIntervalMs() const override { return 16; }
 
     void enter(Context &ctx) override
     {
@@ -186,12 +186,6 @@ public:
         {
             LOG_LN("Init...");
             ctx.components.input.resetCounter();
-            I2CBus::getInstance().scan();
-            delay(100);
-            // ctx.components.begin();
-            // ctx.begin();
-            // ctx.initDisplay();
-            delay(100);
             currentState = FADING_OUT;
             phaseStartTime = millis();
             return;

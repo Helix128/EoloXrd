@@ -51,7 +51,7 @@ public:
     float getVoltage() { return voltageFromLevel((float)getLevel()); }
 #else
     bool pollFromI2C(uint8_t addr = DEFAULT_I2C_ADDR) {
-        Profiler p ("Battery pollFromI2C");
+        PROFILE_SCOPE("battery.i2c");
         
         uint8_t buffer[sizeof(uint8_t) + 3 * sizeof(float)];
         const size_t toRead = sizeof(buffer);

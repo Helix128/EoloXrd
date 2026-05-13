@@ -5,7 +5,12 @@
 #include "Wire.h"
 #include <RTClib.h>
 #include "../Config.h"
+#include "../Data/ClockSettings.h"
 #include "ESPJob.h"
+
+#ifdef FEATURE_MODEM
+#include "Modem.h"
+#endif
 
 #if BAREBONES == false
 
@@ -16,7 +21,21 @@ private:
     RTC_DS3231 rtc;
 
 public:
+    struct NtpServer
+    {
+        const char *name;
+        const char *host;
+    };
+
+    static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
+
     bool ok = false;
+    bool powerLost = false;
+
+    static NtpServer defaultNtpServer()
+    {
+        return {"SHOA", "ntp.shoa.cl"};
+    }
     
     bool begin()
     {
@@ -31,10 +50,7 @@ public:
             ok = false;
         }
 
-        if (rtc.lostPower())
-        {
-            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-        } 
+        powerLost = ok && rtc.lostPower();
 
     
 #if CHECK_SENSORS
@@ -98,13 +114,96 @@ public:
             return DateTime();
         return rtc.now();
     }
+
+    void adjust(const DateTime &time)
+    {
+        if (!ok)
+            return;
+        rtc.adjust(time);
+        powerLost = false;
+    }
+
+    bool lostPower() const
+    {
+        return powerLost;
+    }
+
+    bool isValid(const DateTime &time) const
+    {
+        return time.year() >= 2024 && time.year() <= 2099 &&
+               time.month() >= 1 && time.month() <= 12 &&
+               time.day() >= 1 && time.day() <= 31;
+    }
+
+#ifdef FEATURE_MODEM
+    bool syncNtp(Modem &modem, const ClockSettings &settings)
+    {
+        NtpServer server = defaultNtpServer();
+        return syncNtp(modem, settings, server);
+    }
+
+    bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)
+    {
+        if (!ok)
+        {
+            LOG_LN("RTC no disponible; se omite sincronizacion NTP");
+            return false;
+        }
+
+        DateTime utcTime;
+        if (!modem.getNetworkTimeUTC(server.host, utcTime))
+        {
+            LOG_F("No se pudo obtener hora UTC desde NTP %s (%s)\n", server.name, server.host);
+            return false;
+        }
+
+        uint32_t utcUnix = utcTime.unixtime();
+        int32_t offsetSeconds = settings.utcOffsetSeconds();
+        uint32_t localUnix = offsetSeconds >= 0
+                                 ? utcUnix + (uint32_t)offsetSeconds
+                                 : utcUnix - (uint32_t)(-offsetSeconds);
+        DateTime localTime = DateTime(localUnix);
+        DateTime current = now();
+        bool invalidRtc = !isValid(current);
+        uint32_t currentUnix = current.unixtime();
+        uint32_t targetUnix = localTime.unixtime();
+        uint32_t diff = currentUnix > targetUnix ? currentUnix - targetUnix : targetUnix - currentUnix;
+
+        if (lostPower() || invalidRtc || diff > MaxNtpAdjustDiffSeconds)
+        {
+            adjust(localTime);
+            LOG_F("RTC ajustado desde NTP %s: %s (%s)\n",
+                  server.name,
+                  localTime.timestamp().c_str(),
+                  settings.label());
+            return true;
+        }
+
+        LOG_F("RTC ya esta sincronizado con NTP; diferencia %lu s\n", (unsigned long)diff);
+        return true;
+    }
+#endif
 };
 #else
 // Manejo del RTC interno del ESP32
 class RTCManager
 {
 public:
+    struct NtpServer
+    {
+        const char *name;
+        const char *host;
+    };
+
+    static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
+
     bool ok = true;
+    bool powerLost = false;
+
+    static NtpServer defaultNtpServer()
+    {
+        return {"SHOA", "ntp.shoa.cl"};
+    }
 
     // Inicializa el RTC interno del ESP32. Siempre devuelve true.
     bool begin()
@@ -171,6 +270,45 @@ public:
                                timeinfo.tm_mday * 86400 + (timeinfo.tm_mon + timeinfo.tm_year * 365) * 86400);
         return dt;
     }
+
+    void adjust(const DateTime &time)
+    {
+        (void)time;
+    }
+
+    bool lostPower() const
+    {
+        return powerLost;
+    }
+
+    bool isValid(const DateTime &time) const
+    {
+        return time.year() >= 2024 && time.year() <= 2099 &&
+               time.month() >= 1 && time.month() <= 12 &&
+               time.day() >= 1 && time.day() <= 31;
+    }
+
+#ifdef FEATURE_MODEM
+    bool syncNtp(Modem &modem, const ClockSettings &settings)
+    {
+        NtpServer server = defaultNtpServer();
+        return syncNtp(modem, settings, server);
+    }
+
+    bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)
+    {
+        DateTime utcTime;
+        if (!modem.getNetworkTimeUTC(server.host, utcTime))
+        {
+            LOG_F("No se pudo obtener hora UTC desde NTP %s (%s)\n", server.name, server.host);
+            return false;
+        }
+
+        (void)settings;
+        (void)utcTime;
+        return true;
+    }
+#endif
 };
 #endif
 #endif

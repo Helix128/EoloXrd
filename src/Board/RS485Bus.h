@@ -3,20 +3,24 @@
 
 #include <Arduino.h>
 #include <ModbusMaster.h>
+#include <SoftwareSerial.h>
 #include <atomic>
+#include <climits>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
 #include "../Config.h"
 #include "../Utility/RS485Monitor.h"
+#include "../Utility/RS485PatternValidator.h"
 
 #define RS485_RX_PIN 35
 #define RS485_TX_PIN 33
 #define RS485_DE_RE_PIN 26
 #define RS485_BAUD_RATE 4800
 #define RS485_BUS_GUARD_TIME_MS 20     // Tiempo de silencio antes de cada transmisión
-#define RS485_INTER_FRAME_TIME_US 250  // Tiempo entre fin de transmisión y bajada DE/RE
+#define RS485_INTER_FRAME_TIME_US 100  // Tiempo entre fin de transmisión y bajada DE/RE
 
 #define DEBUG true
 
@@ -31,10 +35,12 @@ struct RS485Request {
 
 class RS485Bus {
 private:
-    HardwareSerial& _serial;
+    SoftwareSerial _serial;
     ModbusMaster _node;
     SemaphoreHandle_t _initMutex;
     std::atomic<bool> _initialized;
+    static RS485Bus* _activeBus;
+    uint8_t _consecutiveFailures = 0;
 
     TaskHandle_t _busTaskHandle = nullptr;
     QueueHandle_t _requestQueue = nullptr;
@@ -42,8 +48,21 @@ private:
     static const int QUEUE_LENGTH = 8;
     static const int BUS_TASK_STACK_SIZE = 4096;
     static const int BUS_TASK_PRIORITY = 2;
+    static const BaseType_t BUS_TASK_CORE = 0;
+    static const BaseType_t UI_LOOP_CORE = 1;
+    static const int MAX_RETRIES = 2;
+    static const uint8_t MAX_READ_REGISTERS = 64;
+    static const uint32_t MODBUS_RESPONSE_TIMEOUT_MS = 2000;
+    static const uint32_t REQUEST_QUEUE_SEND_TIMEOUT_MS = 100;
+    static const uint32_t RX_DRAIN_QUIET_MS = 12;
+    static const uint32_t RX_DRAIN_MAX_MS = 80;
+    static const uint8_t RECOVER_AFTER_FAILURES = 3;
+    static const uint32_t READ_TIMEOUT_MS =
+        ((MAX_RETRIES + 1) * (MODBUS_RESPONSE_TIMEOUT_MS + RS485_BUS_GUARD_TIME_MS)) +
+        (MAX_RETRIES * 150) +
+        1000;
 
-    RS485Bus() : _serial(Serial1), _initialized(false) {
+    RS485Bus() : _serial(RS485_RX_PIN, RS485_TX_PIN), _initialized(false) {
         _initMutex = xSemaphoreCreateMutex();
     }
 
@@ -70,11 +89,58 @@ private:
     }
 
     static void _postTransmission() {
-        Serial1.flush();
+        if (_activeBus != nullptr) {
+            _activeBus->_serial.flush();
+        }
         // A 4800 baudios, un bit dura ~208us. 
         // Damos tiempo a que el bit de parada salga antes de bajar el pin DE/RE.
         delayMicroseconds(RS485_INTER_FRAME_TIME_US); 
         digitalWrite(RS485_DE_RE_PIN, LOW);
+    }
+
+    static void _modbusIdle() {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    static uint32_t packNotificationValue(bool success, uint8_t errorCode) {
+        return (success ? 0x80000000UL : 0) | (uint32_t)errorCode;
+    }
+
+    static void clearCurrentTaskNotification() {
+        uint32_t discarded = 0;
+        xTaskNotifyWait(0, ULONG_MAX, &discarded, 0);
+    }
+
+    void drainRx(uint32_t quietMs = RX_DRAIN_QUIET_MS, uint32_t maxMs = RX_DRAIN_MAX_MS) {
+        unsigned long startMs = millis();
+        unsigned long lastByteMs = millis();
+
+        while ((millis() - startMs) < maxMs) {
+            bool consumed = false;
+            while (_serial.available() > 0) {
+                (void)_serial.read();
+                consumed = true;
+                lastByteMs = millis();
+            }
+
+            if (!consumed && (millis() - lastByteMs) >= quietMs) {
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
+    void recoverBus() {
+        digitalWrite(RS485_DE_RE_PIN, LOW);
+        drainRx(20, 100);
+        _serial.end();
+        vTaskDelay(pdMS_TO_TICKS(20));
+        _serial.begin(RS485_BAUD_RATE, SWSERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+        _node.begin(1, _serial);
+        _node.preTransmission(_preTransmission);
+        _node.postTransmission(_postTransmission);
+        _node.idle(_modbusIdle);
+        drainRx(20, 100);
     }
 
     // Task estática que procesa la cola de solicitudes
@@ -88,9 +154,11 @@ private:
                 bool success = false;
                 uint8_t errorCode = 0;
 
+                uint32_t transactionStartMs = millis();
                 self->_processRequest(&request, success, errorCode);
+                uint32_t transactionMs = millis() - transactionStartMs;
 
-                RS485Monitor::getInstance().recordRequestCompleted(success, errorCode);
+                RS485Monitor::getInstance().recordRequestCompleted(success, errorCode, request.slaveId, transactionMs);
                 RS485Monitor::getInstance().recordQueueDepth(uxQueueMessagesWaiting(self->_requestQueue));
             }
         }
@@ -101,23 +169,28 @@ private:
         if (!_initialized) {
             outSuccess = false;
             outErrorCode = ModbusMaster::ku8MBInvalidSlaveID;
-            if (request->callerTask) xTaskNotify(request->callerTask, outErrorCode, eSetValueWithOverwrite);
+            if (request->callerTask) {
+                xTaskNotify(
+                    request->callerTask,
+                    packNotificationValue(false, outErrorCode),
+                    eSetValueWithOverwrite
+                );
+            }
             return;
         }
 
         bool success = false;
         uint8_t result = ModbusMaster::ku8MBResponseTimedOut;
-        int retries = 2; // Total 3 intentos (1 original + 2 reintentos)
+        int retries = MAX_RETRIES;
 
         while (retries >= 0) {
             // Tiempo de guarda: Silencio en el bus para que los esclavos se estabilicen
             vTaskDelay(pdMS_TO_TICKS(RS485_BUS_GUARD_TIME_MS)); 
 
-            // Limpiar buffer de entrada
-            while(_serial.available()) {
-                _serial.read();
-            }
+            // Limpiar bytes tardios de una transaccion anterior antes de transmitir.
+            drainRx();
 
+            _node.clearResponseBuffer();
             _node.begin(request->slaveId, _serial);
             result = _node.readHoldingRegisters(request->startReg, request->count);
 
@@ -132,6 +205,7 @@ private:
             // Si hay error, registramos y esperamos un poco antes de reintentar
             retries--;
             if (retries >= 0) {
+                drainRx();
                 if (result == ModbusMaster::ku8MBResponseTimedOut) {
                     vTaskDelay(pdMS_TO_TICKS(150)); // Mayor espera para que el sensor se recupere
                 } else {
@@ -141,11 +215,27 @@ private:
         }
 
         if (!success) {
-            LOG_F("RS485 FAILED: ID %d, Reg 0x%04X. Error: %s (0x%02X)\n", 
-                  request->slaveId, request->startReg, getErrorString(result), result);
+            drainRx(20, 100);
+            if (++_consecutiveFailures >= RECOVER_AFTER_FAILURES) {
+                recoverBus();
+                _consecutiveFailures = 0;
+            }
+
+            static unsigned long lastFailureLogMs = 0;
+            unsigned long nowMs = millis();
+            if (nowMs - lastFailureLogMs > 10000) {
+                LOG_F("RS485 FAILED: ID %d, Reg 0x%04X. Error: %s (0x%02X)\n",
+                      request->slaveId, request->startReg, getErrorString(result), result);
+                lastFailureLogMs = nowMs;
+            }
         } else {
+#if PROFILE_VERBOSE
             LOG_F("RS485 OK: ID %d, Reg 0x%04X, Count %d\n", 
                   request->slaveId, request->startReg, request->count);
+#endif
+        }
+        if (success) {
+            _consecutiveFailures = 0;
         }
 
         outSuccess = success;
@@ -154,7 +244,7 @@ private:
         // Notificar a la tarea que llamó con el resultado empaquetado
         // Usamos el bit 31 para success y los bits 0-7 para el errorCode
         if (request->callerTask != nullptr) {
-            uint32_t notificationValue = (success ? 0x80000000 : 0) | (uint32_t)result;
+            uint32_t notificationValue = packNotificationValue(success, result);
             xTaskNotify(request->callerTask, notificationValue, eSetValueWithOverwrite);
         }
     }
@@ -183,10 +273,13 @@ private:
         pinMode(RS485_DE_RE_PIN, OUTPUT);
         digitalWrite(RS485_DE_RE_PIN, LOW);
 
-        _serial.begin(RS485_BAUD_RATE, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+        _activeBus = this;
+        _serial.begin(RS485_BAUD_RATE, SWSERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+        drainRx(20, 100);
 
         _node.preTransmission(_preTransmission);
         _node.postTransmission(_postTransmission);
+        _node.idle(_modbusIdle);
 
         // Crear task del bus
         if (_busTaskHandle == nullptr) {
@@ -197,7 +290,7 @@ private:
                 this,
                 BUS_TASK_PRIORITY,
                 &_busTaskHandle,
-                1  // Core 1 (deja Core 0 para otras tareas críticas)
+                BUS_TASK_CORE
             );
         }
 
@@ -207,8 +300,30 @@ private:
 
     // API de lectura solicitando notificación al terminar
     bool readRegistersAsync(uint8_t slaveId, uint16_t startReg, uint8_t count,
-                           uint16_t* dataBuffer, uint32_t timeoutMs = 5000) {
+                           uint16_t* dataBuffer, uint32_t timeoutMs = READ_TIMEOUT_MS) {
         if (!_initialized || !_requestQueue) {
+            LOG_F("RS485: lectura rechazada sin bus inicializado (ID %d).\n", slaveId);
+            return false;
+        }
+
+        if (dataBuffer == nullptr) {
+            LOG_F("RS485: lectura rechazada por buffer nulo (ID %d, Reg 0x%04X).\n", slaveId, startReg);
+            return false;
+        }
+
+        if (count == 0 || count > MAX_READ_REGISTERS) {
+            LOG_F(
+                "RS485: lectura rechazada por cantidad invalida (ID %d, Count %d, Max %d).\n",
+                slaveId,
+                count,
+                MAX_READ_REGISTERS
+            );
+            return false;
+        }
+
+        RS485PatternValidator::getInstance().validateSyncReadContext();
+        if (xPortGetCoreID() == UI_LOOP_CORE) {
+            LOG_F("RS485: lectura bloqueante rechazada desde core UI (ID %d).\n", slaveId);
             return false;
         }
 
@@ -221,19 +336,22 @@ private:
         };
 
         // Limpiar cualquier notificación previa en esta tarea
-        ulTaskNotifyTake(pdTRUE, 0);
+        clearCurrentTaskNotification();
 
         // Enviar solicitud a la cola
-        if (xQueueSend(_requestQueue, &request, pdMS_TO_TICKS(100)) != pdTRUE) {
+        if (xQueueSend(_requestQueue, &request, pdMS_TO_TICKS(REQUEST_QUEUE_SEND_TIMEOUT_MS)) != pdTRUE) {
             LOG_LN("RS485: Cola de solicitudes llena");
+            RS485Monitor::getInstance().recordQueueOverflow();
             return false;
         }
 
-        // Esperar notificación de la tarea gestora (se suspende la tarea eficientemente)
-        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(timeoutMs));
+        (void)timeoutMs;
 
-        if (notificationValue == 0) {
-            LOG_F("RS485: Timeout esperando notificación (ID %d). Bus saturado o bloqueado.\n", slaveId);
+        // Esperar a que la tarea del bus procese la solicitud aceptada. No se retorna
+        // por timeout externo para evitar dejar punteros del caller vivos en la cola.
+        uint32_t notificationValue = 0;
+        if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, portMAX_DELAY) != pdTRUE) {
+            LOG_F("RS485: espera de notificación interrumpida (ID %d).\n", slaveId);
             return false;
         }
 
@@ -244,7 +362,7 @@ private:
 
     // API sincrónica para mantener compatibilidad
     bool readRegisters(uint8_t slaveId, uint16_t startReg, uint8_t count, uint16_t* dataBuffer) {
-        return readRegistersAsync(slaveId, startReg, count, dataBuffer, 3000);
+        return readRegistersAsync(slaveId, startReg, count, dataBuffer, READ_TIMEOUT_MS);
     }
 
     // Obtener la cantidad de solicitudes pendientes en la cola
@@ -253,5 +371,7 @@ private:
         return uxQueueMessagesWaiting(_requestQueue);
     }
 };
+
+inline RS485Bus* RS485Bus::_activeBus = nullptr;
 
 #endif

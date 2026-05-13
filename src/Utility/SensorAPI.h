@@ -28,15 +28,28 @@ class SensorAPI
             if (xTaskNotifyWait(0, ULONG_MAX, &flags, portMAX_DELAY) == pdTRUE) {
                 if (flags & SENSOR_CMD_INIT) {
                     LOG_LN("Inicializando SensorAPI...");
-                    self->modem->begin();
-                    LOG_LN("SensorAPI inicializada");
+                    if (self->modem->begin()) {
+                        LOG_LN("SensorAPI inicializada");
+                    } else {
+                        LOG_LN("SensorAPI: fallo al iniciar modem");
+                    }
                 }
                 
                 if (flags & SENSOR_CMD_SEND) {
                     LOG_LN("SensorAPI: Enviando datos...");
-                    self->modem->get(self->urlBuffer, self->apiBuffer, self->API_BUFFER_SIZE);
+                    if (!self->modem->ensureConnected()) {
+                        LOG_LN("SensorAPI: sin conexion de modem; envio cancelado");
+                        self->isBusy = false;
+                        continue;
+                    }
+
+                    bool sent = self->modem->get(self->urlBuffer, self->apiBuffer, self->API_BUFFER_SIZE);
                     self->isBusy = false;
-                    LOG_LN("SensorAPI: Datos enviados");
+                    if (sent) {
+                        LOG_LN("SensorAPI: Datos enviados");
+                    } else {
+                        LOG_LN("SensorAPI: fallo al enviar datos");
+                    }
                 }
             }
         }

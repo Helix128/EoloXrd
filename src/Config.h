@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <string.h>
+#include "Utility/SerialOutput.h"
 
 // CONFIGURACIONES GENERALES DEL PROGRAMA
 
@@ -11,36 +12,36 @@
 #endif
  
 #define LOG_F(fmt, ...) do { \
-    Serial.print("["); \
-    Serial.print(FILENAME); \
-    Serial.print(":"); \
-    Serial.print(__LINE__); \
-    Serial.print("]["); \
-    Serial.print(__func__); \
-    Serial.print("] "); \
-    Serial.printf(fmt, ##__VA_ARGS__); \
+    normalOut.print("["); \
+    normalOut.print(FILENAME); \
+    normalOut.print(":"); \
+    normalOut.print(__LINE__); \
+    normalOut.print("]["); \
+    normalOut.print(__func__); \
+    normalOut.print("] "); \
+    normalOut.printf(fmt, ##__VA_ARGS__); \
 } while(0)
 
 #define LOG_LN(msg) do { \
-    Serial.print("["); \
-    Serial.print(FILENAME); \
-    Serial.print(":"); \
-    Serial.print(__LINE__); \
-    Serial.print("]["); \
-    Serial.print(__func__); \
-    Serial.print("] "); \
-    Serial.println(msg); \
+    normalOut.print("["); \
+    normalOut.print(FILENAME); \
+    normalOut.print(":"); \
+    normalOut.print(__LINE__); \
+    normalOut.print("]["); \
+    normalOut.print(__func__); \
+    normalOut.print("] "); \
+    normalOut.println(msg); \
 } while(0)
 
 #define LOG_P(msg) do { \
-    Serial.print("["); \
-    Serial.print(FILENAME); \
-    Serial.print(":"); \
-    Serial.print(__LINE__); \
-    Serial.print("]["); \
-    Serial.print(__func__); \
-    Serial.print("] "); \
-    Serial.print(msg); \
+    normalOut.print("["); \
+    normalOut.print(FILENAME); \
+    normalOut.print(":"); \
+    normalOut.print(__LINE__); \
+    normalOut.print("]["); \
+    normalOut.print(__func__); \
+    normalOut.print("] "); \
+    normalOut.print(msg); \
 } while(0)
 
 // Habilitar pruebas de componentes al inicio (desactivar para booteo rápido)
@@ -98,4 +99,3 @@
 #endif
 
 #endif // CONFIG_H
-

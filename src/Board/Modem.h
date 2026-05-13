@@ -2,6 +2,7 @@
 #define MODEM_H
 
 #include <Arduino.h>
+#include <RTClib.h>
 #include "../Config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,46 +19,191 @@ public:
 
   Modem() {}
 
-  void begin()
+  bool begin()
   {
-    pinMode(powerPin, OUTPUT);
-    digitalWrite(powerPin, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    ModemIO.begin(115200, SERIAL_8N1, MODEM_TX, MODEM_RX);
-    
-    unsigned long start = millis();
-    while (!ModemIO.available() && millis() - start < 5000)
+    if (serialStarted)
     {
-      vTaskDelay(pdMS_TO_TICKS(100));
+      return atReady || waitForAT(2000);
     }
 
-    sendAT("ATE0", "OK", 1000);
-    connect();
+    pinMode(powerPin, OUTPUT);
+    digitalWrite(powerPin, HIGH);
+    powered = true;
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    ModemIO.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+    serialStarted = true;
+    LOG_F("UART modem iniciado RX=%d TX=%d\n", MODEM_RX, MODEM_TX);
+
+    if (!waitForAT(10000))
+    {
+      LOG_LN("Modem no responde a AT");
+      return false;
+    }
+
+    if (!sendAT("ATE0", "OK", 1000))
+    {
+      LOG_LN("No se pudo desactivar eco del modem");
+      return false;
+    }
+
+    atReady = true;
+    return true;
   }
 
   void end()
   {
-    sendAT("AT+NETCLOSE", "OK", 1000);
-    ModemIO.end();
-    digitalWrite(powerPin, LOW);
+    if (serialStarted)
+    {
+      if (atReady)
+      {
+        sendAT("AT+NETCLOSE", "OK", 1000);
+      }
+      ModemIO.end();
+      serialStarted = false;
+      atReady = false;
+    }
+
+    if (powered)
+    {
+      digitalWrite(powerPin, LOW);
+      powered = false;
+    }
   }
 
   bool connect()
   {
+    return ensureConnected();
+  }
+
+  bool connect(const char *apnOverride)
+  {
+    return ensureConnected(apnOverride);
+  }
+
+  bool ensureConnected()
+  {
+    return ensureConnected(apn);
+  }
+
+  bool ensureConnected(const char *apnOverride)
+  {
     if (!sendAT("AT", "OK", 2000)) return false;
     if (!sendAT("AT+CPIN?", "READY", 5000)) return false;
 
-    sendAT("AT+CGDCONT=1,\"IP\",\"gigsky-02\"", "OK", 5000);
-    sendAT("AT+CGACT=1,1", "OK", 10000);
+    if (isConnected()) return true;
 
-    if (!sendAT("AT+NETOPEN", "0", 10000))
+    if (openNetwork(apnOverride) && isConnected()) return true;
+
+    LOG_LN("Modem sin IP valida; reintentando conexion PDP");
+    sendAT("AT+NETCLOSE", "OK", 5000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    return openNetwork(apnOverride) && isConnected();
+  }
+
+  bool isConnected()
+  {
+    if (!sendAT("AT", "OK", 2000)) return false;
+
+    String netState = sendATResponse("AT+NETOPEN?", 5000);
+    if (netState.indexOf("+NETOPEN: 1") == -1) return false;
+
+    String ip = sendATResponse("AT+IPADDR", 5000);
+    return hasValidIp(ip);
+  }
+
+  bool openNetwork()
+  {
+    return openNetwork(apn);
+  }
+
+  bool openNetwork(const char *apnOverride)
+  {
+    if (apnOverride == nullptr || apnOverride[0] == '\0') apnOverride = apn;
+
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "AT+CGDCONT=1,\"IP\",\"%s\"", apnOverride);
+    if (!sendAT(cmd, "OK", 5000)) return false;
+    if (!sendAT("AT+CGACT=1,1", "OK", 10000)) return false;
+
+    if (!sendAT("AT+NETOPEN", "0", 20000))
     {
       if (!sendAT("AT+NETOPEN?", "1", 5000)) return false;
     }
 
     String ip = sendATResponse("AT+IPADDR", 5000);
-    return ip.length() > 5;
+    if (!hasValidIp(ip))
+    {
+      LOG_LN("Modem no obtuvo direccion IP");
+      return false;
+    }
+
+    return true;
+  }
+
+  bool isSerialStarted() const
+  {
+    return serialStarted;
+  }
+
+  bool isPowered() const
+  {
+    return powered;
+  }
+
+  bool rawAT(const char *command, String &response, unsigned long timeout = 5000)
+  {
+    if (command == nullptr || command[0] == '\0') return false;
+    response = sendATResponseUntilFinal(command, timeout);
+    return response.length() > 0 && response.indexOf("ERROR") == -1;
+  }
+
+  bool scanOperators(String &response, unsigned long timeout = 180000)
+  {
+    response = "";
+    if (!sendAT("AT", "OK", 2000)) return false;
+    response = sendATResponseUntilFinal("AT+COPS=?", timeout);
+    return response.indexOf("+COPS:") != -1 && response.indexOf("ERROR") == -1;
+  }
+
+  bool selectOperatorAuto()
+  {
+    return sendAT("AT+COPS=0", "OK", 120000);
+  }
+
+  bool selectOperatorNumeric(const char *numericCode)
+  {
+    if (numericCode == nullptr || numericCode[0] == '\0') return false;
+
+    char cmd[40];
+    snprintf(cmd, sizeof(cmd), "AT+COPS=1,2,\"%s\"", numericCode);
+    return sendAT(cmd, "OK", 120000);
+  }
+
+  void printDiagnostics(Print &out)
+  {
+    out.printf("power=%s serial=%s at=%s\n",
+               powered ? "on" : "off",
+               serialStarted ? "on" : "off",
+               atReady ? "ready" : "unknown");
+
+    if (!serialStarted)
+    {
+      out.println("Modem apagado/no inicializado. Usa: m begin");
+      return;
+    }
+
+    printAT(out, "AT");
+    printAT(out, "ATI");
+    printAT(out, "AT+CPIN?");
+    printAT(out, "AT+CSQ");
+    printAT(out, "AT+COPS?");
+    printAT(out, "AT+CREG?");
+    printAT(out, "AT+CGREG?");
+    printAT(out, "AT+CEREG?");
+    printAT(out, "AT+CGACT?");
+    printAT(out, "AT+NETOPEN?");
+    printAT(out, "AT+IPADDR");
   }
 
   bool get(const char *url, char *respBuffer, int bufferSize)
@@ -206,6 +352,7 @@ public:
 
   bool sendAT(const char *command, const char *expected, unsigned long timeout)
   {
+    if (!serialStarted) return false;
     while (ModemIO.available()) ModemIO.read();
     ModemIO.println(command);
     return waitFor(expected, timeout);
@@ -213,6 +360,7 @@ public:
 
   String sendATResponse(const char *command, unsigned long timeout)
   {
+    if (!serialStarted) return "";
     while (ModemIO.available()) ModemIO.read();
     ModemIO.println(command);
 
@@ -233,7 +381,71 @@ public:
     return response;
   }
 
+  String sendATResponseUntilFinal(const char *command, unsigned long timeout)
+  {
+    if (!serialStarted) return "";
+    while (ModemIO.available()) ModemIO.read();
+    ModemIO.println(command);
+
+    String response = "";
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = ModemIO.read();
+        response += c;
+
+        if (response.indexOf("\r\nOK\r\n") != -1 ||
+            response.indexOf("\nOK\r") != -1 ||
+            response.indexOf("\nOK\n") != -1 ||
+            response.indexOf("ERROR") != -1)
+        {
+          break;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+    return response;
+  }
+
+  bool getNetworkTimeUTC(const char *serverHost, DateTime &utcTime)
+  {
+    if (!sendAT("AT", "OK", 2000)) return false;
+
+    char cmd[96];
+    snprintf(cmd, sizeof(cmd), "AT+CNTP=\"%s\",0", serverHost);
+    if (!sendAT(cmd, "OK", 5000)) return false;
+
+    if (!runNtpSync())
+    {
+      LOG_LN("Servidor NTP no respondio correctamente");
+      return false;
+    }
+
+    String clockResponse = sendATResponse("AT+CCLK?", 5000);
+    return parseClockResponse(clockResponse, utcTime);
+  }
+
 private:
+  bool serialStarted = false;
+  bool powered = false;
+  bool atReady = false;
+
+  bool waitForAT(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (sendAT("AT", "OK", 1000)) return true;
+      vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    return false;
+  }
+
   bool waitFor(const char *expected, unsigned long timeout)
   {
     unsigned long start = millis();
@@ -276,6 +488,103 @@ private:
       }
     }
     return line;
+  }
+
+  bool runNtpSync()
+  {
+    while (ModemIO.available()) ModemIO.read();
+    ModemIO.println("AT+CNTP");
+
+    String buffer = "";
+    bool sawNtpResult = false;
+    unsigned long start = millis();
+    while (millis() - start < 65000)
+    {
+      if (ModemIO.available())
+      {
+        char c = ModemIO.read();
+        buffer += c;
+        if (buffer.length() > 300) buffer = buffer.substring(80);
+        if (buffer.indexOf("+CNTP: 1,0") != -1 || buffer.indexOf("+CNTP: 1, 0") != -1)
+          return true;
+        if (buffer.indexOf("+CNTP:") != -1)
+          sawNtpResult = true;
+        if (sawNtpResult && c == '\n')
+          return false;
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(20));
+      }
+    }
+    return false;
+  }
+
+  bool hasValidIp(const String &response)
+  {
+    if (response.indexOf("ERROR") != -1) return false;
+
+    int dots = 0;
+    int digits = 0;
+    bool inAddress = false;
+
+    for (size_t i = 0; i < response.length(); i++)
+    {
+      char c = response.charAt(i);
+      if (c >= '0' && c <= '9')
+      {
+        digits++;
+        inAddress = true;
+      }
+      else if (c == '.' && inAddress)
+      {
+        dots++;
+      }
+      else if (inAddress)
+      {
+        if (dots == 3 && digits >= 4) return true;
+        dots = 0;
+        digits = 0;
+        inAddress = false;
+      }
+    }
+
+    return dots == 3 && digits >= 4;
+  }
+
+  bool parseClockResponse(const String &response, DateTime &utcTime)
+  {
+    int quoteStart = response.indexOf('"');
+    int quoteEnd = response.indexOf('"', quoteStart + 1);
+    if (quoteStart == -1 || quoteEnd == -1) return false;
+
+    String value = response.substring(quoteStart + 1, quoteEnd);
+    if (value.length() < 17) return false;
+
+    int year = value.substring(0, 2).toInt() + 2000;
+    int month = value.substring(3, 5).toInt();
+    int day = value.substring(6, 8).toInt();
+    int hour = value.substring(9, 11).toInt();
+    int minute = value.substring(12, 14).toInt();
+    int second = value.substring(15, 17).toInt();
+
+    if (year < 2024 || month < 1 || month > 12 || day < 1 || day > 31 ||
+        hour > 23 || minute > 59 || second > 59)
+    {
+      return false;
+    }
+
+    utcTime = DateTime(year, month, day, hour, minute, second);
+    return true;
+  }
+
+  void printAT(Print &out, const char *command)
+  {
+    out.printf("> %s\n", command);
+    String response = sendATResponseUntilFinal(command, 5000);
+    response.trim();
+    if (response.length() == 0) response = "(sin respuesta)";
+    out.println(response);
   }
 };
 
