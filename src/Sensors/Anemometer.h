@@ -20,16 +20,18 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _dataMutex;
     AnemometerData _data;
+    unsigned long _lastSuccessMs = 0;
 
     static const uint16_t REG_START = 0x0000;
     static const uint8_t REG_COUNT = 2;
+    static const uint32_t READ_INTERVAL_MS = 1100;
+    static const uint32_t ERROR_BACKOFF_MS = 5000;
+    static const uint32_t STALE_DATA_MS = 15000;
+    static const BaseType_t TASK_CORE = 0;
 
     static void taskWorker(void* arg) {
         Anemometer* self = (Anemometer*)arg;
         
-        TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(1100);
-
         uint16_t buffer[2];
 
         vTaskDelay(pdMS_TO_TICKS(100)); // Diferencia con el AFM07 al arrancar
@@ -37,6 +39,7 @@ private:
         while (true) {
             // Solicitar lectura del bus centralizado
             bool success = RS485Bus::getInstance().readRegisters(ANEM_ID, REG_START, REG_COUNT, buffer);
+            unsigned long now = millis();
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -45,17 +48,24 @@ private:
                     self->_data.windKph = self->_data.speed * 3.6f;
                     self->_data.direction = (int)buffer[1];
                     self->_data.valid = true;
-                    LOG_F("Anemómetro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
+                    self->_lastSuccessMs = now;
+#if PROFILE_VERBOSE
+                    LOG_F("Anemometro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
                           rawSpeed, self->_data.speed, self->_data.windKph, self->_data.direction);
+#endif
                 } else {
-                    self->_data.valid = false;
+                    self->_data.valid = self->_lastSuccessMs > 0 && (now - self->_lastSuccessMs) <= STALE_DATA_MS;
                 }
                 xSemaphoreGive(self->_dataMutex);
             } else {
-                LOG_LN("[Anemómetro] Semaphore timeout — dato anterior puede estar desactualizado");
+                static unsigned long lastTimeoutLogMs = 0;
+                if (now - lastTimeoutLogMs > 10000) {
+                    LOG_LN("[Anemometro] Semaphore timeout - dato anterior puede estar desactualizado");
+                    lastTimeoutLogMs = now;
+                }
             }
             
-            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+            vTaskDelay(pdMS_TO_TICKS(success ? READ_INTERVAL_MS : ERROR_BACKOFF_MS));
         }
     }
 
@@ -66,6 +76,7 @@ public:
         _data.speed = 0.0f;
         _data.windKph = 0.0f;
         _data.direction = 0;
+        _lastSuccessMs = 0;
     }
 
     ~Anemometer() {
@@ -75,12 +86,15 @@ public:
 
     void begin() {
         RS485Bus::getInstance().begin();
-        xTaskCreatePinnedToCore(taskWorker, "AnemTask", 4096, this, 1, &_taskHandle, 1);
+        xTaskCreatePinnedToCore(taskWorker, "AnemTask", 4096, this, 1, &_taskHandle, TASK_CORE);
     }
 
     bool getData(AnemometerData& output) {
         bool success = false;
         if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (_lastSuccessMs == 0 || (millis() - _lastSuccessMs) > STALE_DATA_MS) {
+                _data.valid = false;
+            }
             output = _data;
             success = _data.valid;
             xSemaphoreGive(_dataMutex);

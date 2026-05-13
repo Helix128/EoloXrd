@@ -19,21 +19,24 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _dataMutex;
     FlowData _data;
+    unsigned long _lastSuccessMs = 0;
     static const uint16_t REG_INSTANT_FLOW = 0x0000;
     static const uint8_t FACTOR_LECTURA = 10;
+    static const uint32_t READ_INTERVAL_MS = 800;
+    static const uint32_t ERROR_BACKOFF_MS = 5000;
+    static const uint32_t STALE_DATA_MS = 15000;
+    static const BaseType_t TASK_CORE = 0;
 
     static void taskWorker(void* arg) {
         AFM07* self = (AFM07*)arg;
         
-        TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(800); 
-
         uint16_t rawData[1];
 
         vTaskDelay(pdMS_TO_TICKS(500)); // Delay inicial para evitar colisión con Anemómetro al arrancar
         while (true) {
             // Solicitar lectura del bus centralizado
             bool success = RS485Bus::getInstance().readRegisters(AFM_ID, REG_INSTANT_FLOW, 1, rawData);
+            unsigned long now = millis();
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
@@ -41,15 +44,22 @@ private:
                     self->_data.flow = val;
                     self->_data.velocity = val;
                     self->_data.valid = true;
+                    self->_lastSuccessMs = now;
+#if PROFILE_VERBOSE
                     LOG_F("AFM07: raw=%d, flow=%.2f L/min \n", rawData[0], self->_data.flow);
+#endif
                 } else {
-                    self->_data.valid = false;
+                    self->_data.valid = self->_lastSuccessMs > 0 && (now - self->_lastSuccessMs) <= STALE_DATA_MS;
                 }
                 xSemaphoreGive(self->_dataMutex);
             } else {
-                LOG_LN("[AFM07] Semaphore timeout — dato anterior puede estar desactualizado");
+                static unsigned long lastTimeoutLogMs = 0;
+                if (now - lastTimeoutLogMs > 10000) {
+                    LOG_LN("[AFM07] Semaphore timeout - dato anterior puede estar desactualizado");
+                    lastTimeoutLogMs = now;
+                }
             }
-            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+            vTaskDelay(pdMS_TO_TICKS(success ? READ_INTERVAL_MS : ERROR_BACKOFF_MS));
         }
     }
 
@@ -59,6 +69,7 @@ public:
         _data.valid = false;
         _data.flow = 0.0;
         _data.velocity = 0.0;
+        _lastSuccessMs = 0;
     }
 
     ~AFM07() {
@@ -68,12 +79,15 @@ public:
 
     void begin() {
         RS485Bus::getInstance().begin();
-        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, 1);
+        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, TASK_CORE);
     }
 
     bool getData(FlowData& output) {
         bool success = false;
         if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (_lastSuccessMs == 0 || (millis() - _lastSuccessMs) > STALE_DATA_MS) {
+                _data.valid = false;
+            }
             output = _data;
             success = _data.valid;
             xSemaphoreGive(_dataMutex);

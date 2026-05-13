@@ -14,9 +14,9 @@ private:
     bool _syncReadFromCorrectCore = true;
     SemaphoreHandle_t _validateMutex = nullptr;
     
-    // Detectar si estamos en Core 0 (loop) o Core 1 (tasks)
-    bool isCore0() {
-        return xPortGetCoreID() == 0;
+    // Detectar si estamos en el core del loop/UI
+    bool isUiCore() {
+        return xPortGetCoreID() == 1;
     }
 
     RS485PatternValidator() {
@@ -29,15 +29,15 @@ public:
         return instance;
     }
 
-    // Validar que RS485Bus::readRegisters() no se llama desde Core 0
+    // Validar que RS485Bus::readRegisters() no se llama desde el core de UI
     void validateSyncReadContext() {
         if (xSemaphoreTake(_validateMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
             return;
         }
 
-        if (isCore0()) {
+        if (isUiCore()) {
             _syncReadFromCorrectCore = false;
-            LOG_LN("VIOLATION: RS485 sync read called from Core 0 (Loop). This will block the UI!");
+            LOG_LN("VIOLATION: RS485 sync read called from Core 1 (UI loop). This will block the UI!");
             LOG_LN("Use flowSensor.getData() or anemometer.getData() instead.");
         } else {
             _syncReadFromCorrectCore = true;
@@ -57,14 +57,14 @@ public:
         }
     }
 
-    // Validar que no hay reads sincronicos desde Core 0 recientemente
+    // Validar que no hay reads sincronicos desde el core de UI recientemente
     bool checkSyncReadViolation() {
         if (xSemaphoreTake(_validateMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
             return false;
         }
 
         bool violation = false;
-        // Si hay un sync read en los ultimos 100ms y fue desde Core 0, es violation
+        // Si hay un sync read en los ultimos 100ms y fue desde el core de UI, es violation
         if (!_syncReadFromCorrectCore && (millis() - _lastSyncReadTime < 100)) {
             violation = true;
         }
@@ -76,7 +76,7 @@ public:
     // Reportar violaciones detectadas
     void reportViolations() {
         if (checkSyncReadViolation()) {
-            LOG_LN("PATTERN VIOLATION: Sincronous RS485 read detected on Core 0 (main loop)");
+            LOG_LN("PATTERN VIOLATION: Synchronous RS485 read detected on Core 1 (UI loop)");
             LOG_LN("This will cause frame drops and UI freezing.");
         }
     }

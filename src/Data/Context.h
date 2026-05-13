@@ -4,6 +4,7 @@
 #include "Session.h"
 #include "Components.h"
 #include "CalibrationManager.h"
+#include "ClockSettings.h"
 #include "UiSnapshot.h"
 #include "../Config.h"
 #include "../Board/I2CBus.h"
@@ -54,11 +55,16 @@ typedef struct Context
     const char *logsDir = "/EOLO/logs";
 
     CalibrationManager calibration;
+    ClockSettings clockSettings;
 
     Preferences preferences;
     UiSnapshot uiSnapshot;
     QueueHandle_t logQueue = nullptr;
     TaskHandle_t logTaskHandle = nullptr;
+    TaskHandle_t bootTaskHandle = nullptr;
+    bool bootInitComplete = false;
+    bool bootInitRunning = false;
+    const char *rtcAdjustReturnScene = "inicio";
 
     struct LogJob
     {
@@ -70,7 +76,7 @@ public:
 
     void begin()
     {
-        Profiler p("Context begin");
+        PROFILE_SCOPE("context.begin");
         instance = this;
 
         // 1. Esperar a que los periféricos (ya encendidos en main.cpp) se estabilicen
@@ -99,9 +105,68 @@ public:
         components.begin();
 
         calibration.load();
-        initSD();
         startLogTask();
         updateUiSnapshot(true);
+        startBootInitTask();
+    }
+
+    static void bootInitWorker(void *arg)
+    {
+        Context *self = static_cast<Context *>(arg);
+        self->bootInitRunning = true;
+        self->syncRTCFromNtp();
+        self->initSD();
+        self->bootInitComplete = true;
+        self->bootInitRunning = false;
+        self->markUiDirty();
+        self->bootTaskHandle = nullptr;
+        vTaskDelete(nullptr);
+    }
+
+    void startBootInitTask()
+    {
+        if (bootTaskHandle != nullptr || bootInitComplete || bootInitRunning)
+            return;
+
+        xTaskCreatePinnedToCore(
+            bootInitWorker,
+            "EoloBootInit",
+            8192,
+            this,
+            1,
+            &bootTaskHandle,
+            0);
+    }
+
+    bool syncRTCFromNtp()
+    {
+#ifdef FEATURE_MODEM
+        RTCManager::NtpServer server = RTCManager::defaultNtpServer();
+        LOG_F("Sincronizando RTC con NTP %s (%s)...\n", server.name, server.host);
+        bool synced = false;
+
+        if (!components.modem.begin())
+        {
+            LOG_LN("No se pudo iniciar modem para sincronizacion NTP");
+            components.modem.end();
+            return false;
+        }
+
+        if (!components.modem.ensureConnected())
+        {
+            LOG_LN("No hay conexion de modem; se omite sincronizacion NTP");
+            components.modem.end();
+            return false;
+        }
+
+        synced = components.rtc.syncNtp(components.modem, clockSettings, server);
+        components.modem.end();
+        if (!synced)
+            LOG_LN("Sincronizacion RTC fallida; continua booteo normal");
+        return synced;
+#else
+        return false;
+#endif
     }
 
     void initDisplay()
@@ -536,7 +601,7 @@ public:
 
     bool logData()
     {
-        Profiler p("Context logData");
+        PROFILE_SCOPE("context.log");
 
         if (!isSdReady)
         {
@@ -687,7 +752,7 @@ public:
     void uploadData()
     {
 #ifdef FEATURE_MODEM
-        Profiler p("Context uploadData");
+        PROFILE_SCOPE("context.upload");
         uploadActive = true;
         markUiDirty();
         components.api.begin();
@@ -729,7 +794,6 @@ public:
 
     bool update()
     {
-        Profiler p("Context update");
         components.input.poll();
         components.poll();
 

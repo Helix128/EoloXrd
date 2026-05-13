@@ -6,6 +6,7 @@
 #include "../Scenes/InicioScene.h"
 #include "../Scenes/Setup/CalibrationScene.h"
 #include "../Scenes/Setup/TimeScene.h"
+#include "../Scenes/Setup/RTCAdjustMenuScene.h"
 #include "../Scenes/Setup/FlujoScene.h"
 #include "../Scenes/Setup/InstantFlujoScene.h"
 #include "../Scenes/Setup/PlantowerScene.h"
@@ -27,6 +28,7 @@ namespace SceneName
     constexpr const char *Flujo = FlujoScene::Name;
     constexpr const char *FlujoNow = InstantFlujoScene::Name;
     constexpr const char *Tiempo = TimeScene::Name;
+    constexpr const char *RTCAdjust = RTCAdjustMenuScene::Name;
     constexpr const char *Plantower = PlantowerScene::Name;
     constexpr const char *Wait = WaitScene::Name;
     constexpr const char *PlantowerFin = PlantowerFinScene::Name;
@@ -47,6 +49,7 @@ inline void registerAllScenes()
     static FlujoScene s_flujo;
     static InstantFlujoScene s_flujo_now;
     static TimeScene s_tiempo;
+    static RTCAdjustMenuScene s_rtc_adjust;
     static PlantowerScene s_plantower;
     static WaitScene s_wait;
     static PlantowerFinScene s_plantower_fin;
@@ -65,6 +68,7 @@ inline void registerAllScenes()
         makeScene(s_flujo),
         makeScene(s_flujo_now),
         makeScene(s_tiempo),
+        makeScene(s_rtc_adjust),
         makeScene(s_plantower),
         makeScene(s_wait),
         makeScene(s_plantower_fin),

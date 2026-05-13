@@ -44,7 +44,9 @@ public:
 
   int getEncoderDelta(int exponent = 2)
   {
-    Profiler p("Input getEncoderDelta");
+#if PROFILE_ENABLED && PROFILE_VERBOSE
+    PROFILE_SCOPE("input.delta");
+#endif
     int delta = intPow(encoderDelta, exponent);
     if (encoderDelta < 0 && exponent % 2 == 0)
     {
@@ -78,7 +80,7 @@ public:
   // Actualizar lecturas desde el driver
   void poll()
   {
-    Profiler p("Input poll");
+    PROFILE_SCOPE("input.poll");
     readEncoderData();
     debounce();  
   }
@@ -134,7 +136,9 @@ private:
         prevButtonPressed = buttonPressed;
         buttonPressed = rawButton;
         lastButtonMs = currentMs;
+#if PROFILE_VERBOSE
         LOG_F("Botón cambiado a: %d\n", buttonPressed);
+#endif
       }
     }
     if(rawCounter!=prevRawCounter){
@@ -156,7 +160,9 @@ private:
         prevRawCounter = rawCounter;
         
         lastEncoderMs = currentMs;
+#if PROFILE_VERBOSE
         LOG_F("Encoder cambiado a: %d\n", encoderDelta);
+#endif
       }
     }
   }
@@ -178,18 +184,24 @@ private:
       
       if (rawCounter != prevCounter)
       {
+#if PROFILE_VERBOSE
         LOG_F("Encoder: Contador cambio a %d\n", rawCounter);
+#endif
         hasChanged = true;
       }
       if(rawDirection != prevDirection)
       { 
         
+#if PROFILE_VERBOSE
         LOG_F("Encoder: Dirección cambio a %d\n", rawDirection);
+#endif
         hasChanged = true;
       }
       if (rawButton != prevButton)
       {
+#if PROFILE_VERBOSE
         LOG_F("Encoder: Boton pulsado? %d\n", rawButton);
+#endif
         hasChanged = true;
       }
     }
