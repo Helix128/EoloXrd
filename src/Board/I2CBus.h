@@ -69,6 +69,12 @@ public:
         return _lastScanCount;
     }
 
+    bool reset() {
+        _ready = false;
+        Wire.end();
+        return begin();
+    }
+
     bool writeCommand(uint8_t addr, uint8_t command, bool logError = true) {
         return writeBytes(addr, &command, 1, logError);
     }
