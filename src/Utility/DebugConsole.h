@@ -4,10 +4,12 @@
 #include <Arduino.h>
 #include "DebugCommandRouter.h"
 #include "ModemDebugCommands.h"
+#include "I2CDebugCommands.h"
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
 #ifdef FEATURE_MODEM
 #include "../Board/Modem.h"
+#include "../Board/RTCManager.h"
 #endif
 
 class DebugConsole {
@@ -22,6 +24,7 @@ private:
     static const size_t MAX_LINE_LENGTH = 160;
     SystemDebugCommands _systemCommands;
     ModemDebugCommands _modemCommands;
+    I2CDebugCommands _i2cCommands;
     DebugCommandRouter _router;
 
     bool isQuickCommand(char c) const {
@@ -98,13 +101,22 @@ public:
           _router(cmdOut) {
         _router.addHandler(_systemCommands);
         _router.addHandler(_modemCommands);
+        _router.addHandler(_i2cCommands);
     }
 
 #ifdef FEATURE_MODEM
     void attachModem(Modem* modem) {
         _modemCommands.attachModem(modem);
     }
+
+    void attachRTC(RTCManager* rtc) {
+        _modemCommands.attachRTC(rtc);
+    }
 #endif
+
+    void attachDisplay(U8G2* display) {
+        _i2cCommands.attachDisplay(display);
+    }
 
     void poll() {
         if (_mode == Terminal) {

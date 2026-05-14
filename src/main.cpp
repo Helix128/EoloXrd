@@ -39,6 +39,7 @@ void setup()
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   digitalWrite(PPH_PWR_PIN, HIGH); // Encender perifericos (I2C, display) lo antes posible
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
+  digitalWrite(MODEM_PWR_PIN, HIGH);
   
   ctx.components.motor.begin(); // apagar motores
 
@@ -46,7 +47,9 @@ void setup()
 
 #ifdef FEATURE_MODEM
   debugConsole.attachModem(&ctx.components.modem);
+  debugConsole.attachRTC(&ctx.components.rtc);
 #endif
+  debugConsole.attachDisplay(&u8g2);
 
   RS485Monitor::getInstance(); // Inicializar monitor RS485
   LOG_LN("RS485 Monitor inicializado");

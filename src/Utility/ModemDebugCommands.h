@@ -5,12 +5,15 @@
 #include "DebugCommandRouter.h"
 #ifdef FEATURE_MODEM
 #include "../Board/Modem.h"
+#include "../Board/RTCManager.h"
+#include "../Data/ClockSettings.h"
 #endif
 
 class ModemDebugCommands : public ConsoleCommandHandler {
 private:
 #ifdef FEATURE_MODEM
     Modem* _modem = nullptr;
+    RTCManager* _rtc = nullptr;
 #endif
 
     void printHelp(Print& out) {
@@ -24,6 +27,9 @@ private:
         out.println("  m operator <MCCMNC>  registra operador por código numérico");
         out.println("  m connect [APN]      conecta datos, default gigsky-02");
         out.println("  m at <AT...>         comando AT crudo");
+        out.println("  m get <URL>          HTTP GET: imprime respuesta, tiempo y tamaño");
+        out.println("  m time               muestra hora actual del RTC");
+        out.println("  m ntp [host]         sincroniza RTC con NTP (default: ntp.shoa.cl)");
 #else
         out.println("Modem no compilado. Usa el environment eolo_standard.");
 #endif
@@ -43,6 +49,10 @@ public:
 #ifdef FEATURE_MODEM
     void attachModem(Modem* modem) {
         _modem = modem;
+    }
+
+    void attachRTC(RTCManager* rtc) {
+        _rtc = rtc;
     }
 #endif
 
@@ -115,6 +125,62 @@ public:
             out.println(response.length() > 0 ? response.c_str() : "(sin respuesta)");
             if (!ok) {
                 out.printf("AT falló (%s)\n", _modem->lastErrorText());
+            }
+        } else if (args.startsWith("get ")) {
+            String url = args.substring(strlen("get "));
+            url.trim();
+            if (url.length() == 0) {
+                out.println("Uso: m get <URL>");
+            } else {
+                const int bufSize = 2048;
+                char* buf = (char*)malloc(bufSize);
+                if (!buf) {
+                    out.println("Sin memoria para buffer HTTP");
+                } else {
+                    out.printf("GET %s\n", url.c_str());
+                    unsigned long t0 = millis();
+                    bool ok = _modem->get(url.c_str(), buf, bufSize);
+                    unsigned long elapsed = millis() - t0;
+                    if (ok) {
+                        int len = (int)strlen(buf);
+                        out.printf("Tiempo: %lu ms | Tamaño: %d bytes\n", elapsed, len);
+                        out.println("--- Respuesta ---");
+                        out.println(buf);
+                        out.println("---");
+                    } else {
+                        out.printf("GET falló en %lu ms (%s)\n", elapsed, _modem->lastErrorText());
+                    }
+                    free(buf);
+                }
+            }
+        } else if (args == "time") {
+            if (_rtc == nullptr) {
+                out.println("RTC no disponible (usa attachRTC)");
+            } else {
+                out.println(_rtc->getTimeString());
+            }
+        } else if (args == "ntp" || args.startsWith("ntp ")) {
+            if (_rtc == nullptr) {
+                out.println("RTC no disponible (usa attachRTC)");
+            } else {
+                char serverHostBuf[64] = "";
+                RTCManager::NtpServer server = RTCManager::defaultNtpServer();
+                if (args.startsWith("ntp ")) {
+                    String hostArg = args.substring(strlen("ntp "));
+                    hostArg.trim();
+                    if (hostArg.length() > 0 && hostArg.length() < sizeof(serverHostBuf)) {
+                        memcpy(serverHostBuf, hostArg.c_str(), hostArg.length() + 1);
+                        server = {"custom", serverHostBuf};
+                    }
+                }
+                out.printf("Sincronizando con NTP %s (%s)...\n", server.name, server.host);
+                ClockSettings cs;
+                bool synced = _rtc->syncNtp(*_modem, cs, server);
+                if (synced) {
+                    out.printf("OK. Hora: %s (%s)\n", _rtc->getTimeString().c_str(), cs.label());
+                } else {
+                    out.printf("Fallo NTP (%s)\n", _modem->lastErrorText());
+                }
             }
         } else {
             out.println("Comando modem desconocido. Usa: m help");

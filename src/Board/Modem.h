@@ -322,14 +322,14 @@ private:
     if (serialStarted)
     {
       if (atReady) return true;
-      atReady = waitForATLocked(2000);
+      atReady = waitForATLocked(8000);
       return atReady;
     }
 
     pinMode(powerPin, OUTPUT);
     digitalWrite(powerPin, HIGH);
     powered = true;
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    vTaskDelay(pdMS_TO_TICKS(15000));
 
     // Los nombres MODEM_RX/MODEM_TX vienen desde la perspectiva del modem.
     // HardwareSerial espera pines desde la perspectiva del ESP32: rxPin, txPin.
@@ -338,14 +338,14 @@ private:
     clearRxLocked();
     LOG_F("UART modem iniciado ESP32_RX=%d ESP32_TX=%d\n", MODEM_TX, MODEM_RX);
 
-    if (!waitForATLocked(10000))
+    if (!waitForATLocked(20000))
     {
       LOG_LN("Modem no responde a AT");
       atReady = false;
       return false;
     }
 
-    if (!sendATLocked("ATE0", "OK", 1000))
+    if (!sendATLocked("ATE0", "OK", 10000))
     {
       LOG_LN("No se pudo desactivar eco del modem");
       atReady = false;
@@ -370,11 +370,9 @@ private:
       atReady = false;
     }
 
-    if (powered)
-    {
-      digitalWrite(powerPin, LOW);
-      powered = false;
-    }
+    pinMode(powerPin, OUTPUT);
+    digitalWrite(powerPin, HIGH);
+    powered = true;
     clearLastError();
   }
 

@@ -34,9 +34,21 @@ public:
 
     static NtpServer defaultNtpServer()
     {
-        return {"SHOA", "ntp.shoa.cl"};
+        return {"pool.ntp.org", "0.cl.pool.ntp.org"};
     }
-    
+
+    static constexpr size_t NtpServerCount = 4;
+    static const NtpServer* defaultNtpServers()
+    {
+        static const NtpServer servers[NtpServerCount] = {
+            {"pool.ntp.org CL 0", "0.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 1", "1.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 2", "2.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 3", "3.cl.pool.ntp.org"},
+        };
+        return servers;
+    }
+
     bool begin()
     {
         LOG_LN("Iniciando RTC...");
@@ -138,8 +150,15 @@ public:
 #ifdef FEATURE_MODEM
     bool syncNtp(Modem &modem, const ClockSettings &settings)
     {
-        NtpServer server = defaultNtpServer();
-        return syncNtp(modem, settings, server);
+        const NtpServer* servers = defaultNtpServers();
+        for (size_t i = 0; i < NtpServerCount; i++)
+        {
+            LOG_F("Intentando NTP %s (%s) [%u/%u]\n", servers[i].name, servers[i].host, (unsigned)(i + 1), (unsigned)NtpServerCount);
+            if (syncNtp(modem, settings, servers[i]))
+                return true;
+        }
+        LOG_LN("Todos los servidores NTP fallaron");
+        return false;
     }
 
     bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)
@@ -202,7 +221,19 @@ public:
 
     static NtpServer defaultNtpServer()
     {
-        return {"SHOA", "ntp.shoa.cl"};
+        return {"pool.ntp.org", "0.cl.pool.ntp.org"};
+    }
+
+    static constexpr size_t NtpServerCount = 4;
+    static const NtpServer* defaultNtpServers()
+    {
+        static const NtpServer servers[NtpServerCount] = {
+            {"pool.ntp.org CL 0", "0.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 1", "1.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 2", "2.cl.pool.ntp.org"},
+            {"pool.ntp.org CL 3", "3.cl.pool.ntp.org"},
+        };
+        return servers;
     }
 
     // Inicializa el RTC interno del ESP32. Siempre devuelve true.
@@ -291,8 +322,15 @@ public:
 #ifdef FEATURE_MODEM
     bool syncNtp(Modem &modem, const ClockSettings &settings)
     {
-        NtpServer server = defaultNtpServer();
-        return syncNtp(modem, settings, server);
+        const NtpServer* servers = defaultNtpServers();
+        for (size_t i = 0; i < NtpServerCount; i++)
+        {
+            LOG_F("Intentando NTP %s (%s) [%u/%u]\n", servers[i].name, servers[i].host, (unsigned)(i + 1), (unsigned)NtpServerCount);
+            if (syncNtp(modem, settings, servers[i]))
+                return true;
+        }
+        LOG_LN("Todos los servidores NTP fallaron");
+        return false;
     }
 
     bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)

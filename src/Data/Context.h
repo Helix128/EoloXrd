@@ -148,19 +148,16 @@ public:
         if (!components.modem.begin())
         {
             LOG_LN("No se pudo iniciar modem para sincronizacion NTP");
-            components.modem.end();
             return false;
         }
 
         if (!components.modem.ensureConnected())
         {
             LOG_LN("No hay conexion de modem; se omite sincronizacion NTP");
-            components.modem.end();
             return false;
         }
 
         synced = components.rtc.syncNtp(components.modem, clockSettings, server);
-        components.modem.end();
         if (!synced)
             LOG_LN("Sincronizacion RTC fallida; continua booteo normal");
         return synced;
