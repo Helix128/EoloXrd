@@ -20,11 +20,20 @@ public:
         selected = 0;
         field = 0;
         spinnerFrame = 0;
+        lastStatus = ctx.getRTCNetworkSyncStatus();
+        statusShownAtMs = millis();
     }
 
     void update(Context &ctx) override
     {
-        bool syncRunning = ctx.getRTCNetworkSyncStatus() == Context::RTCNetworkSyncStatus::Running;
+        Context::RTCNetworkSyncStatus status = ctx.getRTCNetworkSyncStatus();
+        if (status != lastStatus)
+        {
+            lastStatus = status;
+            statusShownAtMs = millis();
+        }
+
+        bool syncRunning = status == Context::RTCNetworkSyncStatus::Running;
         int delta = ctx.components.input.getEncoderDelta(1);
         bool pressed = ctx.components.input.isButtonPressed();
 
@@ -59,6 +68,8 @@ private:
     int hour = 0;
     int minute = 0;
     uint8_t spinnerFrame = 0;
+    Context::RTCNetworkSyncStatus lastStatus = Context::RTCNetworkSyncStatus::Idle;
+    uint32_t statusShownAtMs = 0;
 
     void updateMain(Context &ctx, int delta, bool pressed)
     {
@@ -139,7 +150,7 @@ private:
         for (int i = 0; i < count; i++)
         {
             bool highlight = selected == i;
-            int y = 33 + i * 10;
+            int y = 31 + i * 10;
             if (highlight)
             {
                 ctx.u8g2.drawBox(2, y - 8, 124, 10);
@@ -155,7 +166,7 @@ private:
             ctx.u8g2.setDrawColor(1);
         }
 
-        drawSyncStatus(ctx);
+        drawStatusLine(ctx);
     }
 
     void drawManual(Context &ctx)
@@ -172,22 +183,27 @@ private:
         centerText(ctx, field == 0 ? "Hora" : "Minuto", 61);
     }
 
-    void drawSyncStatus(Context &ctx)
+    void drawStatusLine(Context &ctx)
     {
         Context::RTCNetworkSyncStatus status = ctx.getRTCNetworkSyncStatus();
-        if (status == Context::RTCNetworkSyncStatus::Idle ||
-            status == Context::RTCNetworkSyncStatus::Running)
-            return;
 
-        const char *text = "";
         char buffer[22];
-        if (status == Context::RTCNetworkSyncStatus::Success)
-            text = "RTC sincronizado";
+        if (status == Context::RTCNetworkSyncStatus::Success &&
+            millis() - statusShownAtMs < 3000)
+        {
+            snprintf(buffer, sizeof(buffer), "RTC sincronizado");
+        }
+        else if (status == Context::RTCNetworkSyncStatus::Failed &&
+                 millis() - statusShownAtMs < 3000)
+        {
+            snprintf(buffer, sizeof(buffer), "Fallo sincroniz.");
+        }
         else
-            text = "Fallo sincroniz.";
-
+        {
+            snprintf(buffer, sizeof(buffer), "Bat RTC: %s", ctx.components.rtc.getBackupBatteryStatusText());
+        }
         ctx.u8g2.setFont(FONT_REGULAR_S);
-        centerText(ctx, text, 63);
+        centerText(ctx, buffer, 63);
     }
 
     void drawSyncWaiting(Context &ctx)

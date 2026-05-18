@@ -123,7 +123,6 @@ public:
     {
         Context *self = static_cast<Context *>(arg);
         self->bootInitRunning = true;
-        self->syncRTCFromTimeServer();
         self->initSD();
         self->bootInitComplete = true;
         self->bootInitRunning = false;
