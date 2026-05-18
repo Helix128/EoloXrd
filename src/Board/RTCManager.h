@@ -16,6 +16,13 @@ private:
     RTC_DS3231 rtc;
 
 public:
+    enum class BackupBatteryStatus : uint8_t
+    {
+        Unknown,
+        Good,
+        Check
+    };
+
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
     static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
     static constexpr size_t TimeServerResponseBufferSize = 4096;
@@ -112,6 +119,31 @@ public:
     bool lostPower() const
     {
         return powerLost;
+    }
+
+    BackupBatteryStatus getBackupBatteryStatus()
+    {
+        if (!ok)
+            return BackupBatteryStatus::Unknown;
+
+        DateTime current = rtc.now();
+        if (powerLost || !isValid(current))
+            return BackupBatteryStatus::Check;
+
+        return BackupBatteryStatus::Good;
+    }
+
+    const char *getBackupBatteryStatusText()
+    {
+        switch (getBackupBatteryStatus())
+        {
+        case BackupBatteryStatus::Good:
+            return "OK";
+        case BackupBatteryStatus::Check:
+            return "REVISAR";
+        default:
+            return "N/D";
+        }
     }
 
     bool isValid(const DateTime &time) const
@@ -251,6 +283,13 @@ private:
 class RTCManager
 {
 public:
+    enum class BackupBatteryStatus : uint8_t
+    {
+        Unknown,
+        Good,
+        Check
+    };
+
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
     static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
     static constexpr size_t TimeServerResponseBufferSize = 4096;
@@ -332,6 +371,16 @@ public:
     bool lostPower() const
     {
         return powerLost;
+    }
+
+    BackupBatteryStatus getBackupBatteryStatus()
+    {
+        return BackupBatteryStatus::Unknown;
+    }
+
+    const char *getBackupBatteryStatusText()
+    {
+        return "N/D";
     }
 
     bool isValid(const DateTime &time) const
