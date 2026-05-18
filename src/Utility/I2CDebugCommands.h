@@ -2,14 +2,12 @@
 #define I2C_DEBUG_COMMANDS_H
 
 #include <Arduino.h>
-#include <U8g2lib.h>
 #include "DebugCommandRouter.h"
 #include "../Board/I2CBus.h"
-#include "../Config.h"
 
 class I2CDebugCommands : public ConsoleCommandHandler {
 private:
-    U8G2* _display = nullptr;
+    void (*_displayReinitFn)() = nullptr;
 
     void printHelp(Print& out) {
         out.println("Comandos I2C:");
@@ -18,8 +16,8 @@ private:
     }
 
 public:
-    void attachDisplay(U8G2* display) {
-        _display = display;
+    void attachDisplayReinit(void (*fn)()) {
+        _displayReinitFn = fn;
     }
 
     bool handle(const String& line, Print& out) override {
@@ -41,18 +39,12 @@ public:
             out.println("Reiniciando bus I2C...");
             bool busOk = I2CBus::getInstance().reset();
             out.printf("Bus I2C: %s\n", busOk ? "OK" : "fallo");
-
-            if (_display != nullptr) {
+            if (_displayReinitFn != nullptr) {
                 out.println("Reinicializando pantalla...");
-                bool dispOk = _display->begin();
-                if (dispOk) {
-                    _display->setBusClock(I2C_CLOCK);
-                    out.println("Pantalla OK.");
-                } else {
-                    out.println("Fallo al reinicializar pantalla.");
-                }
+                _displayReinitFn();
+                out.println("Pantalla OK.");
             } else {
-                out.println("Pantalla no adjuntada (usa attachDisplay).");
+                out.println("Pantalla no adjuntada.");
             }
         } else {
             out.println("Comando i2c desconocido. Usa: i2c help");

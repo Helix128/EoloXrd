@@ -34,6 +34,11 @@ DisplayModel u8g2(U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN);
 Context ctx(u8g2); // Aquí se procesa toda la lógica
 DebugConsole debugConsole;
 
+static void reinitDisplay() {
+    u8g2.begin();
+    u8g2.setBusClock(I2C_CLOCK);
+}
+
 void setup()
 {   
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
@@ -46,11 +51,10 @@ void setup()
   Serial.begin(115200);
 
 #ifdef FEATURE_MODEM
-  debugConsole.attachModem(&ctx.components.modem);
+  debugConsole.attachModemService(&ctx.components.modemService);
   debugConsole.attachRTC(&ctx.components.rtc);
 #endif
-  debugConsole.attachDisplay(&u8g2);
-
+  debugConsole.attachDisplayReinit(reinitDisplay);
   RS485Monitor::getInstance(); // Inicializar monitor RS485
   LOG_LN("RS485 Monitor inicializado");
 
