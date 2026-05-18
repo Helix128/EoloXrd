@@ -10,6 +10,7 @@
 #include "../Sensors/BME280.h"
 #include "../Board/Battery.h"
 #include "../Board/Modem.h"
+#include "../Board/ModemService.h"
 #include "../Sensors/Anemometer.h"
 #include "../Utility/SensorAPI.h"
 #include "Profiler.h" 
@@ -24,7 +25,8 @@ typedef struct Components{
 
   #ifdef FEATURE_MODEM
     Modem modem;           // Módem celular    
-    SensorAPI api = SensorAPI(&modem, 20); // API de sensores
+    ModemService modemService = ModemService(modem); // Servicio async del módem
+    SensorAPI api = SensorAPI(&modemService, 20); // API de sensores
   #endif
 
   #ifdef FEATURE_FLOW_AFM07
@@ -53,6 +55,10 @@ typedef struct Components{
     
     #ifdef FEATURE_ANEMOMETER
       anemometer.begin();
+    #endif
+
+    #ifdef FEATURE_MODEM
+      modemService.begin();
     #endif
 
     battery.begin();

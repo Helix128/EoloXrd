@@ -8,7 +8,7 @@
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
 #ifdef FEATURE_MODEM
-#include "../Board/Modem.h"
+#include "../Board/ModemService.h"
 #include "../Board/RTCManager.h"
 #endif
 
@@ -105,8 +105,8 @@ public:
     }
 
 #ifdef FEATURE_MODEM
-    void attachModem(Modem* modem) {
-        _modemCommands.attachModem(modem);
+    void attachModemService(ModemService* modem) {
+        _modemCommands.attachModemService(modem);
     }
 
     void attachRTC(RTCManager* rtc) {
@@ -114,8 +114,8 @@ public:
     }
 #endif
 
-    void attachDisplay(U8G2* display) {
-        _i2cCommands.attachDisplay(display);
+    void attachDisplayReinit(void (*fn)()) {
+        _i2cCommands.attachDisplayReinit(fn);
     }
 
     void poll() {

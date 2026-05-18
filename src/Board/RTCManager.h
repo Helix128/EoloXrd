@@ -5,12 +5,7 @@
 #include "Wire.h"
 #include <RTClib.h>
 #include "../Config.h"
-#include "../Data/ClockSettings.h"
 #include "ESPJob.h"
-
-#ifdef FEATURE_MODEM
-#include "Modem.h"
-#endif
 
 #if BAREBONES == false
 
@@ -21,33 +16,12 @@ private:
     RTC_DS3231 rtc;
 
 public:
-    struct NtpServer
-    {
-        const char *name;
-        const char *host;
-    };
-
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
+    static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
+    static constexpr size_t TimeServerResponseBufferSize = 4096;
 
     bool ok = false;
     bool powerLost = false;
-
-    static NtpServer defaultNtpServer()
-    {
-        return {"pool.ntp.org", "0.cl.pool.ntp.org"};
-    }
-
-    static constexpr size_t NtpServerCount = 4;
-    static const NtpServer* defaultNtpServers()
-    {
-        static const NtpServer servers[NtpServerCount] = {
-            {"pool.ntp.org CL 0", "0.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 1", "1.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 2", "2.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 3", "3.cl.pool.ntp.org"},
-        };
-        return servers;
-    }
 
     bool begin()
     {
@@ -147,41 +121,111 @@ public:
                time.day() >= 1 && time.day() <= 31;
     }
 
-#ifdef FEATURE_MODEM
-    bool syncNtp(Modem &modem, const ClockSettings &settings)
-    {
-        const NtpServer* servers = defaultNtpServers();
-        for (size_t i = 0; i < NtpServerCount; i++)
-        {
-            LOG_F("Intentando NTP %s (%s) [%u/%u]\n", servers[i].name, servers[i].host, (unsigned)(i + 1), (unsigned)NtpServerCount);
-            if (syncNtp(modem, settings, servers[i]))
-                return true;
-        }
-        LOG_LN("Todos los servidores NTP fallaron");
-        return false;
-    }
-
-    bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)
+    bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
     {
         if (!ok)
         {
-            LOG_LN("RTC no disponible; se omite sincronizacion NTP");
+            LOG_LN("RTC no disponible; se omite aplicar hora HTTP");
             return false;
         }
 
-        DateTime utcTime;
-        if (!modem.getNetworkTimeUTC(server.host, utcTime))
+        DateTime localTime;
+        int32_t offsetSeconds = 0;
+        if (!parseTimeServerResponse(response, localTime, offsetSeconds))
         {
-            LOG_F("No se pudo obtener hora UTC desde NTP %s (%s)\n", server.name, server.host);
             return false;
         }
 
-        uint32_t utcUnix = utcTime.unixtime();
-        int32_t offsetSeconds = settings.utcOffsetSeconds();
-        uint32_t localUnix = offsetSeconds >= 0
-                                 ? utcUnix + (uint32_t)offsetSeconds
-                                 : utcUnix - (uint32_t)(-offsetSeconds);
-        DateTime localTime = DateTime(localUnix);
+        return applyNetworkTime(localTime, offsetSeconds, source);
+    }
+
+    static bool parseTimeServerResponse(const char *json, DateTime &localTime, int32_t &offsetSeconds)
+    {
+        int64_t utcUnix = 0;
+        if (!extractJsonInt(json, "unix", utcUnix))
+        {
+            LOG_LN("Respuesta de tiempo sin campo unix");
+            return false;
+        }
+
+        int64_t offset = 0;
+        if (!extractJsonInt(json, "utc_offset", offset))
+        {
+            LOG_LN("Respuesta de tiempo sin campo utc_offset");
+            return false;
+        }
+
+        if (offset < -12 * 3600 || offset > 14 * 3600)
+        {
+            LOG_F("utc_offset invalido: %lld\n", (long long)offset);
+            return false;
+        }
+
+        int64_t localUnix = utcUnix + offset;
+        if (localUnix < 0 || localUnix > UINT32_MAX)
+        {
+            LOG_F("unix local fuera de rango: %lld\n", (long long)localUnix);
+            return false;
+        }
+
+        DateTime parsed = DateTime((uint32_t)localUnix);
+        if (parsed.year() < 2024 || parsed.year() > 2099)
+        {
+            LOG_F("Anio de servidor fuera de rango: %u\n", parsed.year());
+            return false;
+        }
+
+        localTime = parsed;
+        offsetSeconds = (int32_t)offset;
+        return true;
+    }
+
+private:
+    static bool extractJsonInt(const char *json, const char *key, int64_t &value)
+    {
+        if (json == nullptr || key == nullptr)
+            return false;
+
+        char pattern[40];
+        int written = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+        if (written < 0 || written >= (int)sizeof(pattern))
+            return false;
+
+        const char *pos = strstr(json, pattern);
+        if (pos == nullptr)
+            return false;
+
+        pos = strchr(pos + written, ':');
+        if (pos == nullptr)
+            return false;
+        pos++;
+
+        while (*pos == ' ' || *pos == '\t' || *pos == '\r' || *pos == '\n')
+            pos++;
+
+        bool negative = false;
+        if (*pos == '-')
+        {
+            negative = true;
+            pos++;
+        }
+
+        if (*pos < '0' || *pos > '9')
+            return false;
+
+        int64_t result = 0;
+        while (*pos >= '0' && *pos <= '9')
+        {
+            result = result * 10 + (*pos - '0');
+            pos++;
+        }
+
+        value = negative ? -result : result;
+        return true;
+    }
+
+    bool applyNetworkTime(const DateTime &localTime, int32_t offsetSeconds, const char *source)
+    {
         DateTime current = now();
         bool invalidRtc = !isValid(current);
         uint32_t currentUnix = current.unixtime();
@@ -191,50 +235,28 @@ public:
         if (lostPower() || invalidRtc || diff > MaxNtpAdjustDiffSeconds)
         {
             adjust(localTime);
-            LOG_F("RTC ajustado desde NTP %s: %s (%s)\n",
-                  server.name,
+            LOG_F("RTC ajustado desde HTTP %s: %s (UTC%+ld)\n",
+                  source,
                   localTime.timestamp().c_str(),
-                  settings.label());
+                  (long)(offsetSeconds / 3600));
             return true;
         }
 
-        LOG_F("RTC ya esta sincronizado con NTP; diferencia %lu s\n", (unsigned long)diff);
+        LOG_F("RTC ya esta sincronizado con HTTP; diferencia %lu s\n", (unsigned long)diff);
         return true;
     }
-#endif
 };
 #else
 // Manejo del RTC interno del ESP32
 class RTCManager
 {
 public:
-    struct NtpServer
-    {
-        const char *name;
-        const char *host;
-    };
-
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
+    static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
+    static constexpr size_t TimeServerResponseBufferSize = 4096;
 
     bool ok = true;
     bool powerLost = false;
-
-    static NtpServer defaultNtpServer()
-    {
-        return {"pool.ntp.org", "0.cl.pool.ntp.org"};
-    }
-
-    static constexpr size_t NtpServerCount = 4;
-    static const NtpServer* defaultNtpServers()
-    {
-        static const NtpServer servers[NtpServerCount] = {
-            {"pool.ntp.org CL 0", "0.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 1", "1.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 2", "2.cl.pool.ntp.org"},
-            {"pool.ntp.org CL 3", "3.cl.pool.ntp.org"},
-        };
-        return servers;
-    }
 
     // Inicializa el RTC interno del ESP32. Siempre devuelve true.
     bool begin()
@@ -319,34 +341,90 @@ public:
                time.day() >= 1 && time.day() <= 31;
     }
 
-#ifdef FEATURE_MODEM
-    bool syncNtp(Modem &modem, const ClockSettings &settings)
+    bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
     {
-        const NtpServer* servers = defaultNtpServers();
-        for (size_t i = 0; i < NtpServerCount; i++)
+        DateTime localTime;
+        int32_t offsetSeconds = 0;
+        if (!parseTimeServerResponse(response, localTime, offsetSeconds))
         {
-            LOG_F("Intentando NTP %s (%s) [%u/%u]\n", servers[i].name, servers[i].host, (unsigned)(i + 1), (unsigned)NtpServerCount);
-            if (syncNtp(modem, settings, servers[i]))
-                return true;
-        }
-        LOG_LN("Todos los servidores NTP fallaron");
-        return false;
-    }
-
-    bool syncNtp(Modem &modem, const ClockSettings &settings, const NtpServer &server)
-    {
-        DateTime utcTime;
-        if (!modem.getNetworkTimeUTC(server.host, utcTime))
-        {
-            LOG_F("No se pudo obtener hora UTC desde NTP %s (%s)\n", server.name, server.host);
             return false;
         }
 
-        (void)settings;
-        (void)utcTime;
+        (void)localTime;
+        (void)offsetSeconds;
+        (void)source;
         return true;
     }
-#endif
+
+    static bool parseTimeServerResponse(const char *json, DateTime &localTime, int32_t &offsetSeconds)
+    {
+        int64_t utcUnix = 0;
+        if (!extractJsonInt(json, "unix", utcUnix))
+            return false;
+
+        int64_t offset = 0;
+        if (!extractJsonInt(json, "utc_offset", offset))
+            return false;
+
+        if (offset < -12 * 3600 || offset > 14 * 3600)
+            return false;
+
+        int64_t localUnix = utcUnix + offset;
+        if (localUnix < 0 || localUnix > UINT32_MAX)
+            return false;
+
+        DateTime parsed = DateTime((uint32_t)localUnix);
+        if (parsed.year() < 2024 || parsed.year() > 2099)
+            return false;
+
+        localTime = parsed;
+        offsetSeconds = (int32_t)offset;
+        return true;
+    }
+
+private:
+    static bool extractJsonInt(const char *json, const char *key, int64_t &value)
+    {
+        if (json == nullptr || key == nullptr)
+            return false;
+
+        char pattern[40];
+        int written = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+        if (written < 0 || written >= (int)sizeof(pattern))
+            return false;
+
+        const char *pos = strstr(json, pattern);
+        if (pos == nullptr)
+            return false;
+
+        pos = strchr(pos + written, ':');
+        if (pos == nullptr)
+            return false;
+        pos++;
+
+        while (*pos == ' ' || *pos == '\t' || *pos == '\r' || *pos == '\n')
+            pos++;
+
+        bool negative = false;
+        if (*pos == '-')
+        {
+            negative = true;
+            pos++;
+        }
+
+        if (*pos < '0' || *pos > '9')
+            return false;
+
+        int64_t result = 0;
+        while (*pos >= '0' && *pos <= '9')
+        {
+            result = result * 10 + (*pos - '0');
+            pos++;
+        }
+
+        value = negative ? -result : result;
+        return true;
+    }
 };
 #endif
 #endif

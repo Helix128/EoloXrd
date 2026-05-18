@@ -4,7 +4,6 @@
 #include "Session.h"
 #include "Components.h"
 #include "CalibrationManager.h"
-#include "ClockSettings.h"
 #include "UiSnapshot.h"
 #include "../Config.h"
 #include "../Board/I2CBus.h"
@@ -55,16 +54,26 @@ typedef struct Context
     const char *logsDir = "/EOLO/logs";
 
     CalibrationManager calibration;
-    ClockSettings clockSettings;
 
     Preferences preferences;
     UiSnapshot uiSnapshot;
     QueueHandle_t logQueue = nullptr;
     TaskHandle_t logTaskHandle = nullptr;
     TaskHandle_t bootTaskHandle = nullptr;
+    TaskHandle_t rtcSyncTaskHandle = nullptr;
     bool bootInitComplete = false;
     bool bootInitRunning = false;
     const char *rtcAdjustReturnScene = "inicio";
+
+    enum class RTCNetworkSyncStatus : uint8_t
+    {
+        Idle,
+        Running,
+        Success,
+        Failed
+    };
+
+    volatile RTCNetworkSyncStatus rtcNetworkSyncStatus = RTCNetworkSyncStatus::Idle;
 
     struct LogJob
     {
@@ -114,7 +123,7 @@ public:
     {
         Context *self = static_cast<Context *>(arg);
         self->bootInitRunning = true;
-        self->syncRTCFromNtp();
+        self->syncRTCFromTimeServer();
         self->initSD();
         self->bootInitComplete = true;
         self->bootInitRunning = false;
@@ -138,32 +147,91 @@ public:
             0);
     }
 
-    bool syncRTCFromNtp()
+    bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl)
     {
 #ifdef FEATURE_MODEM
-        RTCManager::NtpServer server = RTCManager::defaultNtpServer();
-        LOG_F("Sincronizando RTC con NTP %s (%s)...\n", server.name, server.host);
-        bool synced = false;
+        if (url == nullptr || url[0] == '\0')
+            url = RTCManager::DefaultTimeServerUrl;
 
-        if (!components.modem.begin())
+        LOG_F("Encolando sincronizacion RTC desde %s...\n", url);
+        ModemJobId id = components.modemService.enqueueHttpGet(url, "rtc-timesync", rtcTimeSyncCallback, this);
+        if (id == 0)
         {
-            LOG_LN("No se pudo iniciar modem para sincronizacion NTP");
+            LOG_F("No se pudo encolar sincronizacion RTC (%s)\n", components.modemService.lastErrorText());
             return false;
         }
-
-        if (!components.modem.ensureConnected())
-        {
-            LOG_LN("No hay conexion de modem; se omite sincronizacion NTP");
-            return false;
-        }
-
-        synced = components.rtc.syncNtp(components.modem, clockSettings, server);
-        if (!synced)
-            LOG_LN("Sincronizacion RTC fallida; continua booteo normal");
-        return synced;
+        return true;
 #else
+        (void)url;
         return false;
 #endif
+    }
+
+#ifdef FEATURE_MODEM
+    static void rtcTimeSyncCallback(const ModemJobResult &result, void *context)
+    {
+        Context *self = static_cast<Context *>(context);
+        if (self == nullptr) return;
+
+        bool ok = result.status == ModemJobStatus::Succeeded &&
+                  self->components.rtc.applyTimeServerResponse(result.responsePreview, RTCManager::DefaultTimeServerUrl);
+
+        self->rtcNetworkSyncStatus = ok ? RTCNetworkSyncStatus::Success : RTCNetworkSyncStatus::Failed;
+        if (!ok)
+        {
+            LOG_F("Sincronizacion RTC fallida (%s)\n", result.errorText);
+        }
+        self->markUiDirty();
+    }
+#endif
+
+    static void rtcNetworkSyncWorker(void *arg)
+    {
+        Context *self = static_cast<Context *>(arg);
+        bool queued = self->syncRTCFromTimeServer();
+        if (!queued)
+            self->rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
+        self->markUiDirty();
+        self->rtcSyncTaskHandle = nullptr;
+        vTaskDelete(nullptr);
+    }
+
+    bool startRTCNetworkSync()
+    {
+#ifdef FEATURE_MODEM
+        if (rtcSyncTaskHandle != nullptr || rtcNetworkSyncStatus == RTCNetworkSyncStatus::Running)
+            return false;
+
+        rtcNetworkSyncStatus = RTCNetworkSyncStatus::Running;
+        markUiDirty();
+        BaseType_t created = xTaskCreatePinnedToCore(
+            rtcNetworkSyncWorker,
+            "EoloRTCSync",
+            8192,
+            this,
+            1,
+            &rtcSyncTaskHandle,
+            0);
+
+        if (created != pdPASS)
+        {
+            rtcSyncTaskHandle = nullptr;
+            rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
+            markUiDirty();
+            return false;
+        }
+
+        return true;
+#else
+        rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
+        markUiDirty();
+        return false;
+#endif
+    }
+
+    RTCNetworkSyncStatus getRTCNetworkSyncStatus() const
+    {
+        return rtcNetworkSyncStatus;
     }
 
     void initDisplay()

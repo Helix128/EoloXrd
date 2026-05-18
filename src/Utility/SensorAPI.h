@@ -3,12 +3,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "../Board/Modem.h"
-
-#define SENSOR_CMD_INIT (1 << 0)
-#define SENSOR_CMD_SEND (1 << 1)
+#include "../Board/ModemService.h"
 
 class SensorAPI
 {
@@ -17,46 +12,25 @@ class SensorAPI
     const char* varPrefix = "&idsVariables";
     const char* valuePrefix = "&valores";
 
-    TaskHandle_t taskHandle = nullptr;
     volatile bool isBusy = false;
 
-    static void taskWorker(void* arg) {
-        SensorAPI* self = (SensorAPI*)arg;
-        uint32_t flags = 0;
+    static void onSendDone(const ModemJobResult& result, void* context) {
+        SensorAPI* self = static_cast<SensorAPI*>(context);
+        if (self != nullptr) self->isBusy = false;
 
-        while (true) {
-            if (xTaskNotifyWait(0, ULONG_MAX, &flags, portMAX_DELAY) == pdTRUE) {
-                if (flags & SENSOR_CMD_INIT) {
-                    LOG_LN("Inicializando SensorAPI...");
-                    if (self->modem->begin()) {
-                        LOG_LN("SensorAPI inicializada");
-                    } else {
-                        LOG_LN("SensorAPI: fallo al iniciar modem");
-                    }
-                }
-                
-                if (flags & SENSOR_CMD_SEND) {
-                    LOG_LN("SensorAPI: Enviando datos...");
-                    if (!self->modem->ensureConnected()) {
-                        LOG_LN("SensorAPI: sin conexion de modem; envio cancelado");
-                        self->isBusy = false;
-                        continue;
-                    }
-
-                    bool sent = self->modem->get(self->urlBuffer, self->apiBuffer, self->API_BUFFER_SIZE);
-                    self->isBusy = false;
-                    if (sent) {
-                        LOG_LN("SensorAPI: Datos enviados");
-                    } else {
-                        LOG_LN("SensorAPI: fallo al enviar datos");
-                    }
-                }
-            }
+        if (result.status == ModemJobStatus::Succeeded) {
+            LOG_F("SensorAPI: Datos enviados (job #%lu, %u bytes)\n",
+                  (unsigned long)result.id,
+                  (unsigned int)result.bytes);
+        } else {
+            LOG_F("SensorAPI: fallo al enviar datos (job #%lu, %s)\n",
+                  (unsigned long)result.id,
+                  result.errorText);
         }
     }
 
 public:
-    Modem* modem;
+    ModemService* modem;
     int* sensorIds;
     int* variableIds;
     float* values;
@@ -67,18 +41,15 @@ public:
     const int API_BUFFER_SIZE = 4096;
     const int MAX_URL_SIZE = 2048;
 
-    SensorAPI(Modem* modemInstance, int count) : modem(modemInstance), dataCount(count) {
+    SensorAPI(ModemService* modemInstance, int count) : modem(modemInstance), dataCount(count) {
         sensorIds = new int[count];
         variableIds = new int[count];
         values = new float[count];
         urlBuffer = new char[MAX_URL_SIZE];
         apiBuffer = new char[API_BUFFER_SIZE];
-
-        xTaskCreatePinnedToCore(taskWorker, "SensorAPI", 4096, this, 1, &taskHandle, 0);
     }
 
     ~SensorAPI() {
-        if (taskHandle) vTaskDelete(taskHandle);
         delete[] sensorIds;
         delete[] variableIds;
         delete[] values;
@@ -87,7 +58,7 @@ public:
     }
 
     void begin() {
-        xTaskNotify(taskHandle, SENSOR_CMD_INIT, eSetBits);
+        if (modem != nullptr) modem->begin();
     }
 
     void addData(int sensorId, int variableId, float value) {
@@ -120,9 +91,16 @@ public:
         }
 
         currentId = 0;
-        xTaskNotify(taskHandle, SENSOR_CMD_SEND, eSetBits);
+        ModemJobId id = modem != nullptr
+            ? modem->enqueueHttpGet(urlBuffer, "sensor-api", onSendDone, this)
+            : 0;
 
-        LOG_LN("SensorAPI: Preparado para enviar datos");
+        if (id == 0) {
+            isBusy = false;
+            LOG_LN("SensorAPI: no se pudo encolar envio");
+        } else {
+            LOG_F("SensorAPI: envio encolado (job #%lu)\n", (unsigned long)id);
+        }
     }
 };
 
