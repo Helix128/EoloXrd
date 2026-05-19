@@ -97,6 +97,15 @@ typedef struct Context
     TaskHandle_t rtcSyncTaskHandle = nullptr;
     bool bootInitComplete = false;
     bool bootInitRunning = false;
+
+    enum class BootPhase : uint8_t {
+        Idle,
+        StartingModem,
+        InitSD,
+        Done
+    };
+    volatile BootPhase bootPhase = BootPhase::Idle;
+    uint32_t bootPhaseStartMs = 0;
     const char *rtcAdjustReturnScene = "inicio";
 
     enum class RTCNetworkSyncStatus : uint8_t
@@ -166,7 +175,20 @@ public:
     {
         Context *self = static_cast<Context *>(arg);
         self->bootInitRunning = true;
+
+#ifdef FEATURE_MODEM
+        self->bootPhase = BootPhase::StartingModem;
+        self->bootPhaseStartMs = millis();
+        self->markUiDirty();
+        self->components.modemService.begin();
+#endif
+
+        self->bootPhase = BootPhase::InitSD;
+        self->bootPhaseStartMs = millis();
+        self->markUiDirty();
         self->initSD();
+
+        self->bootPhase = BootPhase::Done;
         self->bootInitComplete = true;
         self->bootInitRunning = false;
         self->markUiDirty();
@@ -651,12 +673,21 @@ public:
         uiSnapshot.status.sdReady = isSdReady;
         uiSnapshot.status.sdStatus = (int)sdStatus;
 #ifdef FEATURE_MODEM
+        ModemServiceState modemState = components.modemService.state();
         uiSnapshot.status.modemEnabled = true;
+        uiSnapshot.status.modemPowered = modemState != ModemServiceState::Off;
+        uiSnapshot.status.modemActive = modemState == ModemServiceState::Booting ||
+                                        modemState == ModemServiceState::Busy ||
+                                        uploadActive;
+        uiSnapshot.status.modemError = modemState == ModemServiceState::Error;
         uiSnapshot.status.modemSignalKnown = components.modemService.hasSignalQuality();
         uiSnapshot.status.modemSignalBars = components.modemService.signalQualityBars();
         uiSnapshot.status.modemSignalCsq = components.modemService.signalQualityCsq();
 #else
         uiSnapshot.status.modemEnabled = false;
+        uiSnapshot.status.modemPowered = false;
+        uiSnapshot.status.modemActive = false;
+        uiSnapshot.status.modemError = false;
         uiSnapshot.status.modemSignalKnown = false;
         uiSnapshot.status.modemSignalBars = 0;
         uiSnapshot.status.modemSignalCsq = 99;
@@ -672,8 +703,12 @@ public:
                        previous.status.sdStatus != uiSnapshot.status.sdStatus ||
                        previous.status.uploadPending != uiSnapshot.status.uploadPending ||
                        previous.status.uploadActive != uiSnapshot.status.uploadActive ||
+                       previous.status.modemPowered != uiSnapshot.status.modemPowered ||
+                       previous.status.modemActive != uiSnapshot.status.modemActive ||
+                       previous.status.modemError != uiSnapshot.status.modemError ||
                        previous.status.modemSignalKnown != uiSnapshot.status.modemSignalKnown ||
                        previous.status.modemSignalBars != uiSnapshot.status.modemSignalBars ||
+                       previous.status.modemSignalCsq != uiSnapshot.status.modemSignalCsq ||
                        previous.status.displayOn != uiSnapshot.status.displayOn ||
                        previous.status.minute != uiSnapshot.status.minute ||
                        previous.power.batteryPct != uiSnapshot.power.batteryPct;

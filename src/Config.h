@@ -131,6 +131,17 @@
 #define PPH_PWR_PIN 4 // perifericos
 #define MODEM_PWR_PIN 13 // modem
 
+#define MODEM_POWER_ALWAYS_ON 1
+#define MODEM_POWER_ON_DEMAND 2
+
+#ifndef MODEM_POWER_MODE
+  #define MODEM_POWER_MODE MODEM_POWER_ALWAYS_ON
+#endif
+
+#if MODEM_POWER_MODE != MODEM_POWER_ALWAYS_ON && MODEM_POWER_MODE != MODEM_POWER_ON_DEMAND
+  #error "MODEM_POWER_MODE debe ser MODEM_POWER_ALWAYS_ON o MODEM_POWER_ON_DEMAND"
+#endif
+
 // Validación de combinaciones inválidas de feature flags
 #if defined(FEATURE_FLOW_AFM07) && defined(FEATURE_FLOW_FS3000)
   #error "Conflicto! define solo un sensor de flujo (FEATURE_FLOW_AFM07 o FEATURE_FLOW_FS3000)"

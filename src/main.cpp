@@ -144,10 +144,14 @@ static void updateDroneController()
 #ifdef FEATURE_MODEM
     if (!ctx.logsIdle() ||
         ctx.uploadPending || ctx.uploadActive ||
-        ctx.components.modemService.pendingCount() > 0 ||
-        ctx.components.modemService.state() != ModemServiceState::Off)
+        ctx.components.modemService.pendingCount() > 0)
     {
       ctx.components.modemService.shutdownWhenIdle();
+      return;
+    }
+    if (ctx.components.modemService.state() != ModemServiceState::Off)
+    {
+      ctx.components.modemService.shutdownNow();
       return;
     }
 #endif
@@ -166,7 +170,11 @@ void setup()
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   digitalWrite(PPH_PWR_PIN, HIGH); // Encender perifericos (I2C, display) lo antes posible
 #ifdef FEATURE_MODEM
+#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
+  Modem::configurePowerPinOn();
+#else
   Modem::configurePowerPinOff();
+#endif
 #else
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   digitalWrite(MODEM_PWR_PIN, LOW);
