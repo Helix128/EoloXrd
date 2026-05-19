@@ -97,6 +97,12 @@ public:
     digitalWrite(MODEM_PWR_PIN, PowerOffLevel);
   }
 
+  static void configurePowerPinOn()
+  {
+    pinMode(MODEM_PWR_PIN, OUTPUT);
+    digitalWrite(MODEM_PWR_PIN, PowerOnLevel);
+  }
+
   const char *lastErrorText()
   {
     return lastError;

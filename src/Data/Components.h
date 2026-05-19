@@ -65,10 +65,6 @@ typedef struct Components{
       anemometer.begin();
     #endif
 
-    #ifdef FEATURE_MODEM
-      modemService.begin();
-    #endif
-
     battery.begin();
     int batteryLevel = battery.getRawLevel();
     float batteryPct = battery.getPct();

@@ -60,6 +60,9 @@ struct SystemStatusSnapshot
     bool sdReady = false;
     int sdStatus = 0;
     bool modemEnabled = false;
+    bool modemPowered = false;
+    bool modemActive = false;
+    bool modemError = false;
     bool modemSignalKnown = false;
     uint8_t modemSignalBars = 0;
     uint8_t modemSignalCsq = 99;

@@ -36,11 +36,28 @@ public:
         drawBatteryIcon(ctx, cursorX - 9, 3, (int)snapshot.power.batteryPct1, !isDC && activeMosfet == 2);
         drawBatteryIcon(ctx, cursorX - 20, 3, (int)snapshot.power.batteryPct0, !isDC && activeMosfet == 1);
         if (isDC)
-            drawDcText(ctx, cursorX - 31, 11);
+            drawDcText(ctx, cursorX - 27, 11);
 #ifdef FEATURE_MODEM
-        drawModemSignalIcon(ctx, 83, 3, snapshot.status.modemSignalKnown, snapshot.status.modemSignalBars);
+        drawModemSignalIcon(ctx,
+                            84,
+                            3,
+                            snapshot.status.modemPowered,
+                            snapshot.status.modemActive,
+                            snapshot.status.modemError,
+                            snapshot.status.modemSignalKnown,
+                            snapshot.status.modemSignalBars);
 #endif
 #else
+#ifdef FEATURE_MODEM
+        drawModemSignalIcon(ctx,
+                            100,
+                            3,
+                            snapshot.status.modemPowered,
+                            snapshot.status.modemActive,
+                            snapshot.status.modemError,
+                            snapshot.status.modemSignalKnown,
+                            snapshot.status.modemSignalBars);
+#endif
         drawBatteryIcon(ctx, 116, 3, (int)snapshot.power.batteryPct, false);
 #endif
         // Línea separadora 
@@ -77,15 +94,45 @@ private:
         }
     }
 
-    static void drawModemSignalIcon(Context &ctx, int x, int y, bool known, uint8_t bars)
+    static void drawModemSignalIcon(Context &ctx,
+                                    int x,
+                                    int y,
+                                    bool powered,
+                                    bool active,
+                                    bool error,
+                                    bool known,
+                                    uint8_t bars)
     {
         const uint8_t maxBars = 4;
         if (bars > maxBars) bars = maxBars;
 
+        ctx.u8g2.drawVLine(x, y + 4, 5);
+        ctx.u8g2.drawLine(x, y + 4, x + 3, y + 1);
+        ctx.u8g2.drawLine(x, y + 4, x + 3, y + 7);
+
+        if (!powered)
+        {
+            ctx.u8g2.drawLine(x - 1, y + 8, x + 13, y);
+            ctx.u8g2.drawPixel(x + 1, y + 8);
+            return;
+        }
+
+        if (active)
+            ctx.u8g2.drawBox(x + 1, y + 3, 3, 3);
+        else
+            ctx.u8g2.drawFrame(x + 1, y + 3, 3, 3);
+
+        if (error)
+        {
+            ctx.u8g2.drawLine(x + 8, y + 2, x + 12, y + 6);
+            ctx.u8g2.drawLine(x + 12, y + 2, x + 8, y + 6);
+            return;
+        }
+
         for (uint8_t i = 0; i < maxBars; ++i)
         {
             int h = 2 + i * 2;
-            int bx = x + i * 3;
+            int bx = x + 5 + i * 3;
             int by = y + 8 - h;
             if (known && i < bars)
                 ctx.u8g2.drawBox(bx, by, 2, h);

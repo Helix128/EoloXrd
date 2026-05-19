@@ -63,6 +63,7 @@ public:
   static constexpr uint8_t HttpMaxAttempts = 3;
   static constexpr uint32_t HttpRetryDelayMs = 3000;
   static constexpr uint32_t IdlePowerOffMs = 2UL * 60UL * 1000UL;
+  static constexpr uint32_t SignalPollMs = 15000;
   static constexpr size_t MaxResponseBytes = sizeof(ModemJobResult::responsePreview);
   static constexpr size_t HttpResponseBytes = 4096;
 
@@ -115,6 +116,15 @@ public:
     }
 
     if (createdWorker) setState(ModemServiceState::Off);
+
+#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
+    if (!ensureAlwaysOn())
+    {
+      setState(ModemServiceState::Error);
+      return false;
+    }
+#endif
+
     setLastError("OK");
     return true;
   }
@@ -150,6 +160,10 @@ public:
 
   void shutdownWhenIdle()
   {
+#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
+    _shutdownWhenIdle = false;
+    return;
+#else
     _shutdownWhenIdle = true;
     if (_activeId == 0 && pendingCount() == 0)
     {
@@ -158,6 +172,7 @@ public:
       clearSignalQuality();
       setState(ModemServiceState::Off);
     }
+#endif
   }
 
   ModemServiceState state() const
@@ -186,12 +201,11 @@ public:
 
   uint8_t signalQualityBars() const
   {
-    if (!_signalKnown || _signalCsq == 99) return 0;
-    if (_signalCsq >= 20) return 4;
-    if (_signalCsq >= 14) return 3;
-    if (_signalCsq >= 8) return 2;
-    if (_signalCsq >= 2) return 1;
-    return 0;
+    if (!takeMutex(pdMS_TO_TICKS(50))) return 0;
+    bool known = _signalKnown;
+    uint8_t csq = _signalCsq;
+    giveMutex();
+    return signalBarsFromCsq(csq, known);
   }
 
   uint32_t signalQualityAgeMs() const
@@ -275,7 +289,10 @@ private:
   bool _shutdownWhenIdle = false;
   bool _signalKnown = false;
   uint8_t _signalCsq = 99;
+  uint8_t _signalBer = 99;
   uint32_t _signalUpdatedAtMs = 0;
+  uint32_t _lastSignalPollMs = 0;
+  uint32_t _idleSinceMs = 0;
   Job _jobPool[QueueDepth];
   bool _jobUsed[QueueDepth]{};
   char _responseBuffer[HttpResponseBytes] = "";
@@ -322,6 +339,7 @@ private:
     }
 
     setState(ModemServiceState::IdleWaitingPowerOff);
+    _idleSinceMs = 0;
     _shutdownWhenIdle = false;
     return job->id;
   }
@@ -345,7 +363,7 @@ private:
     Job *job = nullptr;
     while (true)
     {
-      if (xQueueReceive(_queue, &job, pdMS_TO_TICKS(IdlePowerOffMs)) == pdTRUE && job != nullptr)
+      if (xQueueReceive(_queue, &job, pdMS_TO_TICKS(SignalPollMs)) == pdTRUE && job != nullptr)
       {
         processJob(job);
         freeJob(job);
@@ -355,10 +373,18 @@ private:
 
       if (_activeId == 0 && pendingCount() == 0 && _state != ModemServiceState::Off)
       {
+        uint32_t now = millis();
+        if (_idleSinceMs == 0) _idleSinceMs = now;
+        refreshSignalQualityIfDue(now);
+#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
+        continue;
+#else
+        if ((uint32_t)(now - _idleSinceMs) < IdlePowerOffMs) continue;
         _driver.end();
         _shutdownWhenIdle = false;
         clearSignalQuality();
         setState(ModemServiceState::Off);
+#endif
       }
     }
   }
@@ -421,13 +447,18 @@ private:
     pushHistory(result);
     clearActive();
     setState(ok ? ModemServiceState::IdleWaitingPowerOff : ModemServiceState::Error);
+    _idleSinceMs = millis();
 
     if (_shutdownWhenIdle && pendingCount() == 0)
     {
+#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
+      _shutdownWhenIdle = false;
+#else
       _driver.end();
       _shutdownWhenIdle = false;
       clearSignalQuality();
       setState(ModemServiceState::Off);
+#endif
     }
 
     if (job->callback != nullptr)
@@ -484,28 +515,89 @@ private:
     giveMutex();
   }
 
+  bool ensureAlwaysOn()
+  {
+    if (_driver.begin())
+    {
+      setState(ModemServiceState::AtReady);
+      clearSignalQuality();
+      refreshSignalQuality();
+      return true;
+    }
+
+    setLastError(_driver.lastErrorText());
+    return false;
+  }
+
   void refreshSignalQuality()
   {
+    _lastSignalPollMs = millis();
     if (_driver.rawAT("AT+CSQ", _responseBuffer, HttpResponseBytes, 5000))
     {
       updateSignalFromResponse(_responseBuffer);
+      return;
     }
+
+    setSignalQuality(99, 99);
+  }
+
+  void refreshSignalQualityIfDue(uint32_t now)
+  {
+    if (_lastSignalPollMs != 0 && (uint32_t)(now - _lastSignalPollMs) < SignalPollMs) return;
+    refreshSignalQuality();
   }
 
   void updateSignalFromResponse(const char *response)
   {
-    int csq = parseCsq(response);
-    if (csq < 0) return;
+    int ber = 99;
+    int csq = parseCsq(response, &ber);
+    if (csq < 0)
+    {
+      setSignalQuality(99, 99);
+      return;
+    }
 
-    _signalCsq = (uint8_t)csq;
-    _signalKnown = csq != 99;
+    setSignalQuality((uint8_t)csq, (uint8_t)ber);
+  }
+
+  void setSignalQuality(uint8_t csq, uint8_t ber)
+  {
+    if (!takeMutex(portMAX_DELAY)) return;
+    _signalCsq = csq;
+    _signalBer = ber;
+    _signalKnown = csq != 99 && csq != 199;
     _signalUpdatedAtMs = millis();
+    giveMutex();
+  }
+
+  static uint8_t signalBarsFromCsq(uint8_t csq, bool known)
+  {
+    if (!known || csq == 99 || csq == 199) return 0;
+
+    int dbm = -120;
+    if (csq <= 31)
+    {
+      dbm = -113 + (2 * (int)csq);
+    }
+    else if (csq >= 100 && csq <= 191)
+    {
+      dbm = (int)csq - 216;
+    }
+    else
+    {
+      return 0;
+    }
+
+    if (dbm >= -73) return 4;
+    if (dbm >= -85) return 3;
+    if (dbm >= -97) return 2;
+    if (dbm >= -109) return 1;
+    return 0;
   }
 
   void clearSignalQuality()
   {
-    _signalKnown = false;
-    _signalCsq = 99;
+    setSignalQuality(99, 99);
     _signalUpdatedAtMs = 0;
   }
 
@@ -547,7 +639,7 @@ private:
     if (_mutex != nullptr) xSemaphoreGive(_mutex);
   }
 
-  static int parseCsq(const char *response)
+  static int parseCsq(const char *response, int *berOut = nullptr)
   {
     if (response == nullptr) return -1;
 
@@ -565,7 +657,25 @@ private:
       pos++;
     }
 
-    if (value < 0 || value > 99) return -1;
+    if (value < 0 || value > 199) return -1;
+
+    while (*pos == ' ' || *pos == '\t') pos++;
+    if (*pos == ',')
+    {
+      pos++;
+      while (*pos == ' ' || *pos == '\t') pos++;
+      int ber = 0;
+      if (*pos >= '0' && *pos <= '9')
+      {
+        while (*pos >= '0' && *pos <= '9')
+        {
+          ber = ber * 10 + (*pos - '0');
+          pos++;
+        }
+        if (berOut != nullptr) *berOut = ber;
+      }
+    }
+
     return value;
   }
 
