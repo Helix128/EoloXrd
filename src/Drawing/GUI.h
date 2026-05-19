@@ -21,14 +21,12 @@ public:
         int nowHr = snapshot.status.hour;
         char timeStr[9];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", nowHr, nowMin);
-        ctx.u8g2.drawStr(1, 11, timeStr);
-        drawSdIcon(ctx, 34, 3, snapshot.status.sdStatus);
+        ctx.u8g2.drawStr(6, 11, timeStr);
+        drawSdIcon(ctx, 35, 3, snapshot.status.sdStatus);
 
-        // Marca centrada geométricamente, independiente de los indicadores.
         ctx.u8g2.setFont(FONT_BOLD_S);
-        const char *brand = "EOLO";
-        int brandWidth = ctx.u8g2.getStrWidth(brand);
-        ctx.u8g2.drawStr((128 - brandWidth) / 2, 11, brand);
+        ctx.u8g2.drawStr(51, 11, "EOLO");
+        ctx.u8g2.setFont(FONT_REGULAR_S);
 
         // Zona derecha: señal módem y energía.
 #ifdef FEATURE_DUAL_BATTERY
@@ -38,7 +36,7 @@ public:
         drawBatteryIcon(ctx, cursorX - 9, 3, (int)snapshot.power.batteryPct1, !isDC && activeMosfet == 2);
         drawBatteryIcon(ctx, cursorX - 20, 3, (int)snapshot.power.batteryPct0, !isDC && activeMosfet == 1);
         if (isDC)
-            drawDcIcon(ctx, cursorX - 31, 4);
+            drawDcText(ctx, cursorX - 31, 11);
 #ifdef FEATURE_MODEM
         drawModemSignalIcon(ctx, 83, 3, snapshot.status.modemSignalKnown, snapshot.status.modemSignalBars);
 #endif
@@ -52,29 +50,30 @@ public:
 private:
     static void drawSdIcon(Context &ctx, int x, int y, int status)
     {
-        const int w = 11;
-        const int h = 8;
+        const int w = 13;
+        const int h = 9;
         const int bevel = 2;
-        ctx.u8g2.drawLine(x, y + bevel, x, y + h - 1);
-        ctx.u8g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-        ctx.u8g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y + bevel);
-        ctx.u8g2.drawLine(x + w - 1, y + bevel, x + w - bevel, y);
-        ctx.u8g2.drawLine(x + w - bevel, y, x, y);
+
+        ctx.u8g2.drawVLine(x, y, h);
+        ctx.u8g2.drawHLine(x, y + h - 1, w);
+        ctx.u8g2.drawVLine(x + w - 1, y + bevel, h - bevel);
+        ctx.u8g2.drawLine(x + w - 1, y + bevel, x + w - bevel - 1, y);
+        ctx.u8g2.drawHLine(x, y, w - bevel - 1);
 
         if (status == SD_ERROR || status == SD_MISSING)
         {
-            ctx.u8g2.drawLine(x + 3, y + 2, x + 7, y + 6);
-            ctx.u8g2.drawLine(x + 7, y + 2, x + 3, y + 6);
+            ctx.u8g2.drawLine(x + 4, y + 2, x + 8, y + 6);
+            ctx.u8g2.drawLine(x + 8, y + 2, x + 4, y + 6);
         }
         else if (status == SD_WRITING)
         {
-            ctx.u8g2.drawBox(x + 2, y + 2, w - 4, h - 3);
+            ctx.u8g2.drawBox(x + 2, y + 2, w - 4, h - 4);
         }
         else
         {
-            ctx.u8g2.drawPixel(x + 3, y + 5);
-            ctx.u8g2.drawHLine(x + 5, y + 5, 3);
-            ctx.u8g2.drawPixel(x + 8, y + 4);
+            ctx.u8g2.setFont(u8g2_font_tiny5_tf);
+            ctx.u8g2.drawStr(x + 2, y + 7, "SD");
+            ctx.u8g2.setFont(FONT_REGULAR_S);
         }
     }
 
@@ -113,13 +112,11 @@ private:
             ctx.u8g2.drawHLine(x, y + h + 1, w);
     }
 
-    static void drawDcIcon(Context &ctx, int x, int y)
+    static void drawDcText(Context &ctx, int x, int y)
     {
-        ctx.u8g2.drawCircle(x + 3, y + 4, 3);
-        ctx.u8g2.drawPixel(x + 2, y + 4);
-        ctx.u8g2.drawPixel(x + 4, y + 4);
-        ctx.u8g2.drawVLine(x + 7, y + 2, 5);
-        ctx.u8g2.drawHLine(x + 7, y + 4, 3);
+        ctx.u8g2.setFont(u8g2_font_tiny5_tf);
+        ctx.u8g2.drawStr(x, y, "DC");
+        ctx.u8g2.setFont(FONT_REGULAR_S);
     }
 };
 
