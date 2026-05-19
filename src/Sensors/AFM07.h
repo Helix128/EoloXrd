@@ -77,13 +77,24 @@ public:
         if (_dataMutex) vSemaphoreDelete(_dataMutex);
     }
 
-    void begin() {
+    bool begin() {
+        if (_dataMutex == nullptr) {
+            LOG_LN("AFM07 sin mutex");
+            return false;
+        }
         RS485Bus::getInstance().begin();
-        xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, TASK_CORE);
+        BaseType_t ok = xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, TASK_CORE);
+        if (ok != pdPASS) {
+            _taskHandle = nullptr;
+            LOG_LN("No se pudo crear AFM07Task");
+            return false;
+        }
+        return true;
     }
 
     bool getData(FlowData& output) {
         bool success = false;
+        if (_dataMutex == nullptr) return false;
         if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             if (_lastSuccessMs == 0 || (millis() - _lastSuccessMs) > STALE_DATA_MS) {
                 _data.valid = false;

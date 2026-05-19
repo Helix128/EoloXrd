@@ -28,6 +28,7 @@ public:
 
         Wire.begin(SDA_PIN, SCL_PIN);
         Wire.setClock(I2C_CLOCK);
+        Wire.setTimeOut(50);
         _ready = true;
 
         LOG_F("I2C iniciado: SDA=%d, SCL=%d, clock=%lu Hz\n",

@@ -16,7 +16,9 @@
 #include "Profiler.h" 
 
 typedef struct Components{
+#ifndef FEATURE_HEADLESS
   Input input;        // Manejo entradas (encoder/botón)
+#endif
   MotorManager motor; // Control de motor
 
   #ifdef FEATURE_ANEMOMETER
@@ -35,7 +37,9 @@ typedef struct Components{
     FS3K flowSensor;     // Sensor de flujo de aire FS3000 (Legacy)
   #endif
 
+#ifdef FEATURE_PLANTOWER
   Plantower plantower; // Sensor Plantower
+#endif
   BME280 bme;          // Sensor BME280
   Battery battery;     // Monitoreo del nivel de batería
   RTCManager rtc;      // Manejo RTC
@@ -44,14 +48,18 @@ typedef struct Components{
   void begin(){
     LOG_LN("Iniciando componentes de hardware...");
 
+#ifndef FEATURE_HEADLESS
     input.begin();
+#endif
     //motor.begin();
    // motor.setPowerPct(100); // ENCENDER MOTORES AL MAXIMO
     flowSensor.begin();
    // motor.setPowerPct(0); // APAGAR MOTORES
     bme.begin();
     rtc.begin();
+#ifdef FEATURE_PLANTOWER
     plantower.begin();
+#endif
     
     #ifdef FEATURE_ANEMOMETER
       anemometer.begin();

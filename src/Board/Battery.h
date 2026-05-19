@@ -20,6 +20,16 @@ public:
 
 #ifdef FEATURE_DUAL_BATTERY
     static constexpr uint8_t DEFAULT_I2C_ADDR = 10;
+    static constexpr uint8_t FrameMagic = 0xBA;
+
+    struct __attribute__((packed)) BatteryFrame {
+        uint8_t magic;
+        uint8_t activeMosfet;
+        int16_t dcMv;
+        int16_t batt0Mv;
+        int16_t batt1Mv;
+        uint8_t crc8;
+    };
 #endif
 
     void begin(uint8_t batteryPin = 34, float ema_alpha = 0.005f) {
@@ -53,20 +63,19 @@ public:
     bool pollFromI2C(uint8_t addr = DEFAULT_I2C_ADDR) {
         PROFILE_SCOPE("battery.i2c");
         
-        uint8_t buffer[sizeof(uint8_t) + 3 * sizeof(float)];
-        const size_t toRead = sizeof(buffer);
-        if (!I2CBus::getInstance().readBytes(addr, buffer, toRead)) {
+        BatteryFrame frame;
+        if (!I2CBus::getInstance().readBytes(addr, reinterpret_cast<uint8_t *>(&frame), sizeof(frame))) {
+            return false;
+        }
+        if (frame.magic != FrameMagic || crc8(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - 1) != frame.crc8) {
+            LOG_LN("Battery I2C frame invalido");
             return false;
         }
 
-        size_t offset = 0;
-        memcpy(&activeMosfet, buffer + offset, sizeof(activeMosfet));
-        offset += sizeof(activeMosfet);
-        memcpy(&dcVoltage, buffer + offset, sizeof(dcVoltage));
-        offset += sizeof(dcVoltage);
-        memcpy(&battVoltage[0], buffer + offset, sizeof(battVoltage[0]));
-        offset += sizeof(battVoltage[0]);
-        memcpy(&battVoltage[1], buffer + offset, sizeof(battVoltage[1]));
+        activeMosfet = frame.activeMosfet;
+        dcVoltage = mvToVolts(frame.dcMv);
+        battVoltage[0] = mvToVolts(frame.batt0Mv);
+        battVoltage[1] = mvToVolts(frame.batt1Mv);
         lastI2CReadMs = millis();
 
         //LOG_OUT_F("Battery I2C Read: ActiveMosfet=%d, DC=%.2fV, Batt0=%.2fV, Batt1=%.2fV\n",activeMosfet, dcVoltage, battVoltage[0], battVoltage[1]);
@@ -141,6 +150,21 @@ private:
     float emaLevel = 0.0f;
     float alpha = 0.005f;
     bool emaInitialized = false;
+
+    static float mvToVolts(int16_t mv) {
+        return (float)mv / 1000.0f;
+    }
+
+    static uint8_t crc8(const uint8_t *data, size_t len) {
+        uint8_t crc = 0;
+        for (size_t i = 0; i < len; ++i) {
+            crc ^= data[i];
+            for (uint8_t bit = 0; bit < 8; ++bit) {
+                crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+            }
+        }
+        return crc;
+    }
 
     float pctFromVoltage(float v) {
         float pct = (v / BATT_MAX_VOLTAGE) * 100.0f;

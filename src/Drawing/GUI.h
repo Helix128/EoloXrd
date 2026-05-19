@@ -13,137 +13,113 @@ public:
     static void displayHeader(Context &ctx)
     {   
         //Profiler p("GUI displayHeader");
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-
-        // Tiempo
         const UiSnapshot &snapshot = ctx.getUiSnapshot();
+
+        // Zona izquierda: hora y SD.
+        ctx.u8g2.setFont(FONT_REGULAR_S);
         int nowMin = snapshot.status.minute;
         int nowHr = snapshot.status.hour;
         char timeStr[9];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", nowHr, nowMin);
-        ctx.u8g2.drawStr(6, 11, timeStr);
+        ctx.u8g2.drawStr(1, 11, timeStr);
+        drawSdIcon(ctx, 34, 3, snapshot.status.sdStatus);
 
-    
-        // Estado de la SD - dibujar icono de tarjeta SDs
-        int iconX = 35;
-        int iconY = 3;
-        int iconW = 13;
-        int iconH = 8;
-        int bevelSize = 1;
-        
-        ctx.u8g2.setFont(u8g2_font_tiny5_tf);        
-        if (snapshot.status.sdStatus == SD_ERROR || snapshot.status.sdStatus == SD_MISSING) {
-            // Outline with X and bevel
-            ctx.u8g2.drawLine(iconX, iconY + bevelSize, iconX, iconY + iconH - 1);
-            ctx.u8g2.drawLine(iconX, iconY + iconH - 1, iconX + iconW - 1, iconY + iconH - 1);
-            ctx.u8g2.drawLine(iconX + iconW - 1, iconY + iconH - 1, iconX + iconW - 1, iconY + bevelSize);
-            ctx.u8g2.drawLine(iconX + iconW - 1, iconY + bevelSize, iconX + iconW - 1 - bevelSize, iconY);
-            ctx.u8g2.drawLine(iconX + iconW - 1 - bevelSize, iconY, iconX, iconY);
-            // Centered X inside the SD icon
-            ctx.u8g2.drawLine(iconX + 4, iconY + 1, iconX + 8, iconY + 6);
-            ctx.u8g2.drawLine(iconX + 8, iconY + 1, iconX + 4, iconY + 6);
-        } else if (snapshot.status.sdStatus == SD_WRITING) {
-            // Filled with bevel cutout
-            ctx.u8g2.drawBox(iconX, iconY + bevelSize, iconW, iconH - bevelSize);
-            ctx.u8g2.drawBox(iconX, iconY, iconW - bevelSize, bevelSize);
-        } else {
-            // OK: Outline with bevel
-            ctx.u8g2.drawLine(iconX, iconY + bevelSize, iconX, iconY + iconH - 1);
-            ctx.u8g2.drawLine(iconX, iconY + iconH - 1, iconX + iconW - 1, iconY + iconH - 1);
-            ctx.u8g2.drawLine(iconX + iconW - 1, iconY + iconH - 1, iconX + iconW - 1, iconY + bevelSize);
-            ctx.u8g2.drawLine(iconX + iconW - 1, iconY + bevelSize, iconX + iconW - 1 - bevelSize, iconY);
-            ctx.u8g2.drawLine(iconX + iconW - 1 - bevelSize, iconY, iconX, iconY);
-            ctx.u8g2.drawStr(iconX + 2, iconY + 7, "OK");
-        }
-
+        // Marca centrada geométricamente, independiente de los indicadores.
         ctx.u8g2.setFont(FONT_BOLD_S);
-        ctx.u8g2.drawStr(51, 11, "EOLO");
-        ctx.u8g2.setFont(FONT_REGULAR_S);
+        const char *brand = "EOLO";
+        int brandWidth = ctx.u8g2.getStrWidth(brand);
+        ctx.u8g2.drawStr((128 - brandWidth) / 2, 11, brand);
 
-        // Batería (soporte para FEATURE_DUAL_BATTERY con 2 baterías y DC)
+        // Zona derecha: señal módem y energía.
 #ifdef FEATURE_DUAL_BATTERY
-        ctx.u8g2.setFont(u8g2_font_tiny5_tf);
-        
-        int cursorX = 126; // Empezamos desde la derecha
+        int cursorX = 126;
         bool isDC = snapshot.power.poweredByDc;
         uint8_t activeMosfet = snapshot.power.activeBattery;
-
-        // Indicador DC (ajustado a la derecha)
-        if (isDC) {
-            const char* dcStr = "DC";
-            int w = ctx.u8g2.getStrWidth(dcStr);
-            cursorX -= w;
-            ctx.u8g2.drawStr(cursorX, 11, dcStr);
-            cursorX -= 3; // Espaciador
-        }
-
-        // Dos iconos de batería
-        // Renderizado en bucle inverso (Bat 1 a la derecha, Bat 0 a la izquierda de esta)
-        for (int i = 1; i >= 0; i--) {
-            int pct = (int)(i == 0 ? snapshot.power.batteryPct0 : snapshot.power.batteryPct1);
-            if (pct < 0) pct = 0; if (pct > 100) pct = 100;
-
-            // marcos
-            int batW = 6; 
-            int batH = 8;
-            int batY = 4; // y=4 a y=11
-            cursorX -= batW; // Reservar espacio para icono
-
-            // pequeño terminal a la derecha (ajustado: mitad superior) -> Ahora arriba
-            ctx.u8g2.drawBox(cursorX + 2, batY - 1, 2, 1);
-            ctx.u8g2.drawFrame(cursorX, batY, batW, batH);
-
-            // Porcentajes y relleno
-            int fillH = map(pct, 0, 100, 0, batH - 2);
-            if (fillH > 0) {
-                ctx.u8g2.drawBox(cursorX + 1, batY + (batH - 1) - fillH, batW - 2, fillH);
-            }
-
-            // Indicar batería activa si no es DC
-            if (!isDC && activeMosfet == (i + 1)) {
-                ctx.u8g2.drawHLine(cursorX, batY + batH + 1, batW); // Subrayado activo
-            }
-
-            // Etiquetas de porcentaje centradas dentro de cada batería
-            // (Ahora a la izquierda del icono para ahorrar verticalidad)
-            char buf[5];
-            snprintf(buf, sizeof(buf), "%d", pct);
-            int textW = ctx.u8g2.getStrWidth(buf);
-            ctx.u8g2.drawStr(cursorX - textW - 1, 11, buf);
-            
-            cursorX -= (textW + 3); // Mover cursor para la siguiente batería
-        }
-
+        drawBatteryIcon(ctx, cursorX - 9, 3, (int)snapshot.power.batteryPct1, !isDC && activeMosfet == 2);
+        drawBatteryIcon(ctx, cursorX - 20, 3, (int)snapshot.power.batteryPct0, !isDC && activeMosfet == 1);
+        if (isDC)
+            drawDcIcon(ctx, cursorX - 31, 4);
+#ifdef FEATURE_MODEM
+        drawModemSignalIcon(ctx, 83, 3, snapshot.status.modemSignalKnown, snapshot.status.modemSignalBars);
+#endif
 #else
-        // Batería única (altura combinada de las dos anteriores)
-        ctx.u8g2.drawRFrame(81, 3, 13, 9, 1); // x, y, w, h (h = 9 para cubrir desde y=3 hasta y=11)
-        ctx.u8g2.drawVLine(81,3,9);
-
-        int batteryPct = (int)snapshot.power.batteryPct;
-
-        // Relleno vertical dentro del marco (interior height = 9 - 2 = 7)
-        {
-            int pct = batteryPct;
-            if (pct < 0) pct = 0;
-            if (pct > 100) pct = 100;
-            int interiorX = 81 + 1; // 82
-            int interiorY = 3 + 1;  // 4
-            int interiorWidth = 13 - 2; // 11
-            int interiorHeight = 9 - 2; // 7
-            int fillWidth = map(pct, 0, 100, 0, interiorWidth);
-            if (fillWidth > 0) {
-                // Rellenar horizontalmente de izquierda a derecha
-                ctx.u8g2.drawBox(interiorX, interiorY, fillWidth, interiorHeight);
-            }
-        }
-
-        // (Opcional) pequeño terminal de batería a la derecha
-        ctx.u8g2.drawBox(95, 6, 1, 3);
-        String batteryStr = String(batteryPct) + "%";
-        ctx.u8g2.drawStr(97, 11, batteryStr.c_str());
+        drawBatteryIcon(ctx, 116, 3, (int)snapshot.power.batteryPct, false);
 #endif
         // Línea separadora 
         ctx.u8g2.drawLine(0, 13, 127, 13);
+    }
+
+private:
+    static void drawSdIcon(Context &ctx, int x, int y, int status)
+    {
+        const int w = 11;
+        const int h = 8;
+        const int bevel = 2;
+        ctx.u8g2.drawLine(x, y + bevel, x, y + h - 1);
+        ctx.u8g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
+        ctx.u8g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y + bevel);
+        ctx.u8g2.drawLine(x + w - 1, y + bevel, x + w - bevel, y);
+        ctx.u8g2.drawLine(x + w - bevel, y, x, y);
+
+        if (status == SD_ERROR || status == SD_MISSING)
+        {
+            ctx.u8g2.drawLine(x + 3, y + 2, x + 7, y + 6);
+            ctx.u8g2.drawLine(x + 7, y + 2, x + 3, y + 6);
+        }
+        else if (status == SD_WRITING)
+        {
+            ctx.u8g2.drawBox(x + 2, y + 2, w - 4, h - 3);
+        }
+        else
+        {
+            ctx.u8g2.drawPixel(x + 3, y + 5);
+            ctx.u8g2.drawHLine(x + 5, y + 5, 3);
+            ctx.u8g2.drawPixel(x + 8, y + 4);
+        }
+    }
+
+    static void drawModemSignalIcon(Context &ctx, int x, int y, bool known, uint8_t bars)
+    {
+        const uint8_t maxBars = 4;
+        if (bars > maxBars) bars = maxBars;
+
+        for (uint8_t i = 0; i < maxBars; ++i)
+        {
+            int h = 2 + i * 2;
+            int bx = x + i * 3;
+            int by = y + 8 - h;
+            if (known && i < bars)
+                ctx.u8g2.drawBox(bx, by, 2, h);
+            else
+                ctx.u8g2.drawFrame(bx, by, 2, h);
+        }
+    }
+
+    static void drawBatteryIcon(Context &ctx, int x, int y, int pct, bool active)
+    {
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+
+        const int w = 8;
+        const int h = 9;
+        ctx.u8g2.drawFrame(x, y, w, h);
+        ctx.u8g2.drawBox(x + w, y + 3, 1, 3);
+
+        int fillH = map(pct, 0, 100, 0, h - 2);
+        if (fillH > 0)
+            ctx.u8g2.drawBox(x + 1, y + h - 1 - fillH, w - 2, fillH);
+
+        if (active)
+            ctx.u8g2.drawHLine(x, y + h + 1, w);
+    }
+
+    static void drawDcIcon(Context &ctx, int x, int y)
+    {
+        ctx.u8g2.drawCircle(x + 3, y + 4, 3);
+        ctx.u8g2.drawPixel(x + 2, y + 4);
+        ctx.u8g2.drawPixel(x + 4, y + 4);
+        ctx.u8g2.drawVLine(x + 7, y + 2, 5);
+        ctx.u8g2.drawHLine(x + 7, y + 4, 3);
     }
 };
 

@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <string.h>
+#include <stdint.h>
 #include "Utility/SerialOutput.h"
 
 // CONFIGURACIONES GENERALES DEL PROGRAMA
@@ -91,6 +92,31 @@
 #define MINUTE 60UL
 #define HOUR 3600UL
 #define DAY 86400UL
+
+#ifndef DRONE_TARGET_FLOW_LPM
+  #define DRONE_TARGET_FLOW_LPM 5.0f
+#endif
+
+#define DRONE_DURATION_INFINITE UINT32_MAX
+
+#ifndef WAIT_SW0_PIN
+  #define WAIT_SW0_PIN 32
+#endif
+#ifndef WAIT_SW1_PIN
+  #define WAIT_SW1_PIN 14
+#endif
+#ifndef DURATION_SW0_PIN
+  #define DURATION_SW0_PIN 36
+#endif
+#ifndef DURATION_SW1_PIN
+  #define DURATION_SW1_PIN 39
+#endif
+
+#if defined(EOLO_TARGET_DRON) && \
+    (DURATION_SW0_PIN >= 34 || DURATION_SW1_PIN >= 34) && \
+    !defined(DRONE_SWITCHES_HAVE_EXTERNAL_PULLS)
+  #error "GPIO34-39 requieren pull-up/down externo para switches de dron"
+#endif
 
 #define FONT_BOLD u8g2_font_helvB10_tf
 #define FONT_REGULAR u8g2_font_helvR10_tf
