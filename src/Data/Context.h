@@ -7,7 +7,9 @@
 #include "UiSnapshot.h"
 #include "../Config.h"
 #include "../Board/I2CBus.h"
+#ifndef FEATURE_HEADLESS
 #include "../Drawing/SceneManager.h"
+#endif
 #include "ESPJob.h"
 #include <SD.h>
 #include <Preferences.h>
@@ -24,10 +26,41 @@ enum SDStatus
     SD_ERROR
 };
 
+namespace ApiId
+{
+    constexpr int WindSensor = 748;
+    constexpr int PlantowerSensor = 749;
+    constexpr int BmeSensor = 750;
+    constexpr int FlowSensor = 751;
+    constexpr int AmbientTemperatureSensor = 752;
+    constexpr int BatterySensor = 753;
+    constexpr int GpsSensor = 754;
+
+    constexpr int Temperature = 3;
+    constexpr int BatteryVoltage = 4;
+    constexpr int WindSpeed = 5;
+    constexpr int Humidity = 6;
+    constexpr int Pm1 = 7;
+    constexpr int Pm25 = 8;
+    constexpr int Pm10 = 9;
+    constexpr int Latitude = 11;
+    constexpr int Longitude = 12;
+    constexpr int Pressure = 13;
+    constexpr int SignalStrength = 15;
+    constexpr int WindDirection = 17;
+    constexpr int GpsSpeed = 45;
+    constexpr int Satellites = 46;
+    constexpr int TargetFlow = 48;
+    constexpr int CapturedVolume = 49;
+    constexpr int MeasuredFlow = 50;
+}
+
 typedef struct Context
 {
     static Context *instance;
+#ifndef FEATURE_HEADLESS
     DisplayModel &u8g2;
+#endif
     bool isDisplayOn = true;
     bool isDisplayReady = false;
     unsigned long int lastInputTime = 0;
@@ -48,6 +81,7 @@ typedef struct Context
     bool sdMissingLogReported = false;
     bool uploadPending = false;
     bool uploadActive = false;
+    volatile bool logActive = false;
     bool uiDirty = true;
 
     const char *eoloDir = "/EOLO";
@@ -81,7 +115,11 @@ typedef struct Context
     };
 
 public:
+#ifndef FEATURE_HEADLESS
     Context(DisplayModel &display) : u8g2(display) {}
+#else
+    Context() {}
+#endif
 
     void begin()
     {
@@ -101,10 +139,15 @@ public:
         const char *versionType = grande ? "Standard" : "Express";
         LOG_F("Iniciando EOLO %s\n", versionType);
 
+#ifndef FEATURE_HEADLESS
         // 3. Inicializar pantalla
         LOG_LN("Iniciando pantalla...");
         initDisplay();
         LOG_LN("Pantalla iniciada");
+#else
+        isDisplayOn = false;
+        isDisplayReady = false;
+#endif
 
         // 4. Inicializar motores y componentes
         components.motor.begin();
@@ -235,6 +278,7 @@ public:
 
     void initDisplay()
     {
+#ifndef FEATURE_HEADLESS
         bool began = u8g2.begin();
         if (!began)
         {
@@ -250,10 +294,12 @@ public:
         u8g2.drawStr(x, y, "EOLO");
         u8g2.sendBuffer();
         isDisplayReady = true;
+#endif
     }
 
     void setDisplayPower(bool on)
     {
+#ifndef FEATURE_HEADLESS
         isDisplayOn = on;
         if (on)
         {
@@ -263,13 +309,19 @@ public:
         {
             u8g2.setPowerSave(1);
         }
+#else
+        (void)on;
+        isDisplayOn = false;
+#endif
     }
 
     void enableDisplay()
     {
+#ifndef FEATURE_HEADLESS
         lastInputTime = millis();
         components.input.hasChanged = false;
         setDisplayPower(true);
+#endif
     }
 
     /* TODO - cambiar SD.h por SdFat.h para que el tiempo de los logs esté bien
@@ -529,6 +581,7 @@ public:
         uiSnapshot.environment.pressure = components.bme.pressure;
 
         uiSnapshot.airQuality.enabled = session.usePlantower;
+#ifdef FEATURE_PLANTOWER
         PlantowerData ptowerData;
         if (session.usePlantower && components.plantower.getData(ptowerData) && ptowerData.valid)
         {
@@ -544,6 +597,13 @@ public:
             uiSnapshot.airQuality.pm25 = 0.0f;
             uiSnapshot.airQuality.pm10 = 0.0f;
         }
+#else
+        uiSnapshot.airQuality.enabled = false;
+        uiSnapshot.airQuality.valid = false;
+        uiSnapshot.airQuality.pm1 = 0.0f;
+        uiSnapshot.airQuality.pm25 = 0.0f;
+        uiSnapshot.airQuality.pm10 = 0.0f;
+#endif
 
 #ifdef FEATURE_ANEMOMETER
         uiSnapshot.wind.enabled = true;
@@ -592,8 +652,14 @@ public:
         uiSnapshot.status.sdStatus = (int)sdStatus;
 #ifdef FEATURE_MODEM
         uiSnapshot.status.modemEnabled = true;
+        uiSnapshot.status.modemSignalKnown = components.modemService.hasSignalQuality();
+        uiSnapshot.status.modemSignalBars = components.modemService.signalQualityBars();
+        uiSnapshot.status.modemSignalCsq = components.modemService.signalQualityCsq();
 #else
         uiSnapshot.status.modemEnabled = false;
+        uiSnapshot.status.modemSignalKnown = false;
+        uiSnapshot.status.modemSignalBars = 0;
+        uiSnapshot.status.modemSignalCsq = 99;
 #endif
         uiSnapshot.status.uploadPending = uploadPending;
         uiSnapshot.status.uploadActive = uploadActive;
@@ -606,6 +672,8 @@ public:
                        previous.status.sdStatus != uiSnapshot.status.sdStatus ||
                        previous.status.uploadPending != uiSnapshot.status.uploadPending ||
                        previous.status.uploadActive != uiSnapshot.status.uploadActive ||
+                       previous.status.modemSignalKnown != uiSnapshot.status.modemSignalKnown ||
+                       previous.status.modemSignalBars != uiSnapshot.status.modemSignalBars ||
                        previous.status.displayOn != uiSnapshot.status.displayOn ||
                        previous.status.minute != uiSnapshot.status.minute ||
                        previous.power.batteryPct != uiSnapshot.power.batteryPct;
@@ -623,8 +691,10 @@ public:
             if (xQueueReceive(self->logQueue, &job, portMAX_DELAY) == pdTRUE)
             {
                 (void)job;
-                self->uploadPending = false;
+                self->logActive = true;
                 self->processCaptureSample();
+                self->logActive = false;
+                self->uploadPending = self->logQueue != nullptr && uxQueueMessagesWaiting(self->logQueue) > 0;
                 self->markUiDirty();
             }
         }
@@ -652,6 +722,11 @@ public:
         }
 
         LOG_LN("Cola de log llena o no disponible; se omite log para no bloquear UI");
+    }
+
+    bool logsIdle() const
+    {
+        return !logActive && (logQueue == nullptr || uxQueueMessagesWaiting(logQueue) == 0);
     }
 
     void processCaptureSample()
@@ -689,7 +764,7 @@ public:
 
         if (!fileExists)
         {
-            File file = SD.open(filename.c_str(), "w+");
+            File file = SD.open(filename.c_str(), FILE_WRITE);
             if (!file)
             {
                 markSdFailed();
@@ -706,108 +781,114 @@ public:
 
             LOG_LN("Archivo de log creado: " + filename);
         }
-        else
+
+        LOG_LN(fileExists ? "Archivo de log ya existe: " + filename : "Archivo de log listo: " + filename);
+
+        File file = SD.open(filename.c_str(), FILE_APPEND);
+        if (!file)
         {
-            LOG_LN("Archivo de log ya existe: " + filename);
+            markSdFailed();
+            LOG_LN("No se pudo abrir el archivo para escribir");
+            return false;
+        }
 
-            File file = SD.open(filename.c_str(), "a+");
-            if (!file)
-            {
-                markSdFailed();
-                LOG_LN("No se pudo abrir el archivo para escribir");
-                return false;
-            }
+        // time
+        file.print(components.rtc.now().timestamp());
+        file.print(",");
 
-            // time
-            file.print(components.rtc.now().timestamp());
-            file.print(",");
+        // flow
+        FlowData flowData;
+        if (!components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;
+        }
+        file.print(flowData.flow);
+        file.print(",");
 
-            // flow
-            FlowData flowData;
-            if (!components.flowSensor.getData(flowData) || !flowData.valid)
-            {
-                flowData.flow = -1.0;
-            }
-            file.print(flowData.flow);
-            file.print(",");
+        // flow_target
+        file.print(session.targetFlow);
+        file.print(",");
 
-            // flow_target
-            file.print(session.targetFlow);
-            file.print(",");
+        // temperature
+        file.print(components.bme.temperature);
+        file.print(",");
 
-            // temperature
-            file.print(components.bme.temperature);
-            file.print(",");
+        // humidity
+        file.print(components.bme.humidity);
+        file.print(",");
 
-            // humidity
-            file.print(components.bme.humidity);
-            file.print(",");
+        // pressure
+        file.print(components.bme.pressure);
+        file.print(",");
 
-            // pressure
-            file.print(components.bme.pressure);
-            file.print(",");
+        float pm1 = 0.0f;
+        float pm25 = 0.0f;
+        float pm10 = 0.0f;
+#ifdef FEATURE_PLANTOWER
+        PlantowerData ptowerData;
+        (void)components.plantower.getData(ptowerData);
+        pm1 = ptowerData.pm1_0;
+        pm25 = ptowerData.pm2_5;
+        pm10 = ptowerData.pm10_0;
+#endif
 
-            PlantowerData ptowerData;
-            bool ptOk = components.plantower.getData(ptowerData);
+        // pm1
+        file.print(pm1);
+        file.print(",");
 
-            // pm1
-            file.print(ptowerData.pm1_0);
-            file.print(",");
+        // pm25
+        file.print(pm25);
+        file.print(",");
 
-            // pm25
-            file.print(ptowerData.pm2_5);
-            file.print(",");
-
-            // pm10
-            file.print(ptowerData.pm10_0);
-            file.print(",");
+        // pm10
+        file.print(pm10);
+        file.print(",");
 
 #ifdef FEATURE_ANEMOMETER
 
-            AnemometerData anemoData;
-            if (!components.anemometer.getData(anemoData) || !anemoData.valid)
-            {
-                LOG_LN("Error al leer anemómetro para log");
-            }
-            // wind_speed
-            file.print(anemoData.speed);
-            file.print(",");
+        AnemometerData anemoData;
+        if (!components.anemometer.getData(anemoData) || !anemoData.valid)
+        {
+            LOG_LN("Error al leer anemómetro para log");
+        }
+        // wind_speed
+        file.print(anemoData.speed);
+        file.print(",");
 
-            // wind_direction
-            file.print(anemoData.direction);
-            file.print(",");
+        // wind_direction
+        file.print(anemoData.direction);
+        file.print(",");
 
 #endif
 
-            // battery_pct
-            file.print(components.battery.getPct());
-            file.println();
+        // battery_pct
+        file.print(components.battery.getPct());
+        file.println();
 
-            LOG_LN("Datos registrados en SD: ");
-            LOG_OUT(" Time: ");
-            LOG_OUT_LN(components.rtc.now().timestamp());
-            LOG_OUT(" Flow: ");
-            LOG_OUT_LN(flowData.flow);
-            LOG_OUT(" Flow_target: ");
-            LOG_OUT_LN(session.targetFlow);
-            LOG_OUT(" Temp: ");
-            LOG_OUT_LN(components.bme.temperature);
-            LOG_OUT(" Hum: ");
-            LOG_OUT_LN(components.bme.humidity);
-            LOG_OUT(" Pres: ");
-            LOG_OUT_LN(components.bme.pressure);
-            LOG_OUT(" PM1: ");
-            LOG_OUT_LN(ptowerData.pm1_0);
-            LOG_OUT(" PM2.5: ");
-            LOG_OUT_LN(ptowerData.pm2_5);
-            LOG_OUT(" PM10: ");
-            LOG_OUT_LN(ptowerData.pm10_0);
-            LOG_OUT(" Battery: ");
-            LOG_OUT_LN(components.battery.getPct());
-            file.close();
+        LOG_LN("Datos registrados en SD: ");
+        LOG_OUT(" Time: ");
+        LOG_OUT_LN(components.rtc.now().timestamp());
+        LOG_OUT(" Flow: ");
+        LOG_OUT_LN(flowData.flow);
+        LOG_OUT(" Flow_target: ");
+        LOG_OUT_LN(session.targetFlow);
+        LOG_OUT(" Temp: ");
+        LOG_OUT_LN(components.bme.temperature);
+        LOG_OUT(" Hum: ");
+        LOG_OUT_LN(components.bme.humidity);
+        LOG_OUT(" Pres: ");
+        LOG_OUT_LN(components.bme.pressure);
+        LOG_OUT(" PM1: ");
+        LOG_OUT_LN(pm1);
+        LOG_OUT(" PM2.5: ");
+        LOG_OUT_LN(pm25);
+        LOG_OUT(" PM10: ");
+        LOG_OUT_LN(pm10);
+        LOG_OUT(" Battery: ");
+        LOG_OUT_LN(components.battery.getPct());
+        file.close();
 
-            LOG_LN("Archivo de log escrito!");
-        }
+        LOG_LN("Archivo de log escrito!");
         sdStatus = SD_OK;
         LOG_LN("Log completado con éxito.");
         return true;
@@ -820,36 +901,46 @@ public:
         uploadActive = true;
         markUiDirty();
         components.api.begin();
+#ifdef FEATURE_ANEMOMETER
         AnemometerData anemoData;
-        bool anemoOk = components.anemometer.getData(anemoData);
-        components.api.addData(748, 5, anemoData.speed);      // velocidad del viento
-        components.api.addData(748, 17, anemoData.direction); // direccion del viento
-        components.api.addData(749, 3, -69);                  // temperatura (deberia ser del Plantower)
-        components.api.addData(749, 6, -420);                 // humedad (deberia ser del Plantower)
+        (void)components.anemometer.getData(anemoData);
+        components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, anemoData.speed);
+        components.api.addData(ApiId::WindSensor, ApiId::WindDirection, anemoData.direction);
+#else
+        components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, -1);
+        components.api.addData(ApiId::WindSensor, ApiId::WindDirection, -1);
+#endif
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Temperature, -69);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Humidity, -420);
+#ifdef FEATURE_PLANTOWER
         PlantowerData ptowerData;
-        bool ptOk = components.plantower.getData(ptowerData);
-        components.api.addData(749, 7, ptowerData.pm1_0);           // PM1.0
-        components.api.addData(749, 8, ptowerData.pm2_5);           // PM2.5
-        components.api.addData(749, 9, ptowerData.pm10_0);          // PM10
-        components.api.addData(750, 3, components.bme.temperature); // temperatura
-        components.api.addData(750, 6, components.bme.humidity);    // humedad
-        components.api.addData(750, 13, components.bme.pressure);   // presion
-        components.api.addData(751, 48, session.targetFlow);        // flujo objetivo
-        components.api.addData(751, 49, session.capturedVolume);    // volumen capturado
+        (void)components.plantower.getData(ptowerData);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, ptowerData.pm1_0);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, ptowerData.pm2_5);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, ptowerData.pm10_0);
+#else
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, -1);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, -1);
+        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, -1);
+#endif
+        components.api.addData(ApiId::BmeSensor, ApiId::Temperature, components.bme.temperature);
+        components.api.addData(ApiId::BmeSensor, ApiId::Humidity, components.bme.humidity);
+        components.api.addData(ApiId::BmeSensor, ApiId::Pressure, components.bme.pressure);
+        components.api.addData(ApiId::FlowSensor, ApiId::TargetFlow, session.targetFlow);
+        components.api.addData(ApiId::FlowSensor, ApiId::CapturedVolume, session.capturedVolume);
         FlowData flowData;
         if (!components.flowSensor.getData(flowData) || !flowData.valid)
         {
             flowData.flow = -1.0;
         }
-        components.api.addData(751, 50, flowData.flow);                  // flujo
-        components.api.addData(752, 3, components.bme.temperature);      // temperatura
-        components.api.addData(753, 4, components.battery.getVoltage()); // voltaje batería
-        // GPS (no hay GPS aun asi que todo -1)
-        components.api.addData(754, 11, -1); // latitud
-        components.api.addData(754, 12, -1); // longitud
-        components.api.addData(754, 15, -1); // intensidad de señal
-        components.api.addData(754, 45, -1); // velocidad
-        components.api.addData(754, 46, -1); // satélites
+        components.api.addData(ApiId::FlowSensor, ApiId::MeasuredFlow, flowData.flow);
+        components.api.addData(ApiId::AmbientTemperatureSensor, ApiId::Temperature, components.bme.temperature);
+        components.api.addData(ApiId::BatterySensor, ApiId::BatteryVoltage, components.battery.getVoltage());
+        components.api.addData(ApiId::GpsSensor, ApiId::Latitude, -1);
+        components.api.addData(ApiId::GpsSensor, ApiId::Longitude, -1);
+        components.api.addData(ApiId::GpsSensor, ApiId::SignalStrength, -1);
+        components.api.addData(ApiId::GpsSensor, ApiId::GpsSpeed, -1);
+        components.api.addData(ApiId::GpsSensor, ApiId::Satellites, -1);
         components.api.send();
         uploadActive = false;
         markUiDirty();
@@ -858,10 +949,14 @@ public:
 
     bool update()
     {
+#ifndef FEATURE_HEADLESS
         components.input.poll();
+#endif
         components.poll();
 
-        bool inputChanged = components.input.hasChanged;
+        bool inputChanged = false;
+#ifndef FEATURE_HEADLESS
+        inputChanged = components.input.hasChanged;
         if (components.input.hasChanged)
         {
             setDisplayPower(true);
@@ -875,6 +970,7 @@ public:
             setDisplayPower(false);
             markUiDirty();
         }
+#endif
 
         updateCapture();
         bool statusChanged = updateUiSnapshot();
@@ -896,14 +992,21 @@ public:
         isCapturing = true;
         session.capturedVolume = 0.0;
         LOG_LN("Iniciando captura...");
+#ifdef FEATURE_MODEM
+        components.modemService.warmUp();
+#endif
+#ifndef FEATURE_HEADLESS
         SceneManager::setScene("captura", *this);
         enableDisplay();
+#endif
     }
 
     unsigned long int pauseTime = 0;
     void pauseCapture()
     {
+#ifndef FEATURE_HEADLESS
         components.input.resetCounter();
+#endif
         if (!isCapturing || isPaused)
             return;
         LOG_LN("Pausando captura...");
@@ -913,7 +1016,9 @@ public:
 
     void resumeCapture()
     {
+#ifndef FEATURE_HEADLESS
         components.input.resetCounter();
+#endif
         if (!isCapturing || !isPaused)
             return;
         LOG_LN("Resumiendo captura...");
@@ -930,9 +1035,14 @@ public:
 
         LOG_LN("Captura finalizada.");
         components.motor.setPowerPct(0);
+#ifdef FEATURE_MODEM
+        components.modemService.shutdownWhenIdle();
+#endif
+#ifndef FEATURE_HEADLESS
         components.input.resetCounter();
         SceneManager::setScene("end", *this);
         enableDisplay();
+#endif
     }
 
     void resetCapture()
@@ -941,7 +1051,12 @@ public:
         isPaused = false;
         session = Session();
         components.motor.setPowerPct(0);
+#ifdef FEATURE_MODEM
+        components.modemService.shutdownWhenIdle();
+#endif
+#ifndef FEATURE_HEADLESS
         components.input.resetCounter();
+#endif
         session.elapsedTime = 0;
         LOG_LN("Estado de captura reiniciado.");
     }
@@ -983,19 +1098,32 @@ public:
             return;
 
         unsigned long now = ctx.getUnixTime();
-        DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
-        ctx.session.elapsedTime = ctx.session.duration - (endTime.unixtime() - now);
-        if (now >= endTime.unixtime())
+        bool infiniteDuration = ctx.session.duration == DRONE_DURATION_INFINITE;
+        if (now >= ctx.session.startDate.unixtime())
         {
-            LOG_LN("Duración de captura alcanzada.");
-            LOG_OUT("Tiempo transcurrido: ");
-            LOG_OUT_LN(ctx.session.elapsedTime);
+            ctx.session.elapsedTime = now - ctx.session.startDate.unixtime();
+        }
+        else
+        {
+            ctx.session.elapsedTime = 0;
+        }
 
-            LOG_OUT("Duración establecida: ");
-            LOG_OUT_LN(ctx.session.duration);
+        if (!infiniteDuration)
+        {
+            DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
+            if (now >= endTime.unixtime())
+            {
+                LOG_LN("Duración de captura alcanzada.");
+                LOG_OUT("Tiempo transcurrido: ");
+                LOG_OUT_LN(ctx.session.elapsedTime);
 
-            endCapture();
-            return;
+                LOG_OUT("Duración establecida: ");
+                LOG_OUT_LN(ctx.session.duration);
+
+                processCaptureSample();
+                endCapture();
+                return;
+            }
         }
 
 #if !BAREBONES

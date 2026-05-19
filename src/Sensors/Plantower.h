@@ -18,6 +18,7 @@ struct PlantowerData {
 class PlantowerParser {
 public:
     enum State { HEAD1, HEAD2, LENGTH_H, LENGTH_L, DATA, CHECKSUM };
+    static constexpr uint16_t ExpectedLen = 28;
 
     PlantowerParser() : _state(HEAD1) {}
 
@@ -45,8 +46,9 @@ public:
             case LENGTH_L:
                 _packetLen |= ch;
                 _calcChecksum += ch;
-                if (_packetLen > 30) { 
+                if (_packetLen != ExpectedLen) {
                     _state = HEAD1; 
+                    _bufIdx = 0;
                 } else { 
                     _state = DATA; 
                     _bufIdx = 0; 

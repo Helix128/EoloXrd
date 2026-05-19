@@ -16,6 +16,9 @@ public:
   const int powerPin = MODEM_PWR_PIN;
   const int MODEM_RX = 16;
   const int MODEM_TX = 17;
+  static constexpr uint8_t PowerOnLevel = HIGH;
+  static constexpr uint8_t PowerOffLevel = LOW;
+  static constexpr uint32_t PowerOnSettleMs = 15000;
   static constexpr const char *DefaultApn = "gigsky-02";
   const char *apn = DefaultApn;
 
@@ -88,6 +91,12 @@ public:
     return lock.locked() && powered;
   }
 
+  static void configurePowerPinOff()
+  {
+    pinMode(MODEM_PWR_PIN, OUTPUT);
+    digitalWrite(MODEM_PWR_PIN, PowerOffLevel);
+  }
+
   const char *lastErrorText()
   {
     return lastError;
@@ -107,6 +116,21 @@ public:
 
     response = sendATResponseUntilFinalLocked(command, timeout, MaxRawResponseLength);
     return response.length() > 0 && response.indexOf("ERROR") == -1;
+  }
+
+  bool rawAT(const char *command, char *response, size_t responseLen, unsigned long timeout = 5000)
+  {
+    if (response != nullptr && responseLen > 0) response[0] = '\0';
+    if (command == nullptr || command[0] == '\0') {
+      setLastError("comando AT vacío");
+      return false;
+    }
+
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+
+    return sendATResponseUntilFinalLocked(command, response, responseLen, timeout);
   }
 
   bool scanOperators(String &response, unsigned long timeout = 180000)
@@ -321,9 +345,9 @@ private:
     }
 
     pinMode(powerPin, OUTPUT);
-    digitalWrite(powerPin, HIGH);
+    digitalWrite(powerPin, PowerOnLevel);
     powered = true;
-    vTaskDelay(pdMS_TO_TICKS(15000));
+    vTaskDelay(pdMS_TO_TICKS(PowerOnSettleMs));
 
     // Los nombres MODEM_RX/MODEM_TX vienen desde la perspectiva del modem.
     // HardwareSerial espera pines desde la perspectiva del ESP32: rxPin, txPin.
@@ -365,8 +389,8 @@ private:
     }
 
     pinMode(powerPin, OUTPUT);
-    digitalWrite(powerPin, HIGH);
-    powered = true;
+    digitalWrite(powerPin, PowerOffLevel);
+    powered = false;
     clearLastError();
   }
 
@@ -1127,6 +1151,50 @@ cleanup:
       }
     }
     return response;
+  }
+
+  bool sendATResponseUntilFinalLocked(const char *command, char *out, size_t outLen, unsigned long timeout)
+  {
+    if (out == nullptr || outLen == 0) return false;
+    out[0] = '\0';
+    if (command == nullptr || command[0] == '\0' || !serialStarted) return false;
+    clearRxLocked();
+    ModemIO.println(command);
+
+    size_t n = 0;
+    bool truncated = false;
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        if (n + 1 < outLen) {
+          out[n++] = c;
+          out[n] = '\0';
+        } else {
+          truncated = true;
+        }
+
+        if (strstr(out, "\r\nOK\r\n") != nullptr ||
+            strstr(out, "\nOK\r") != nullptr ||
+            strstr(out, "\nOK\n") != nullptr ||
+            strstr(out, "ERROR") != nullptr)
+        {
+          break;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+
+    if (truncated) {
+      setLastError("respuesta AT truncada");
+      return false;
+    }
+    return out[0] != '\0' && strstr(out, "ERROR") == nullptr;
   }
 
   bool waitForATLocked(unsigned long timeout)

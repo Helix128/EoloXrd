@@ -108,12 +108,35 @@ public:
         return rtc.now();
     }
 
-    void adjust(const DateTime &time)
+    bool adjust(const DateTime &time)
     {
         if (!ok)
-            return;
+            return false;
+        if (!isValid(time))
+            return false;
+
         rtc.adjust(time);
-        powerLost = false;
+        delay(5);
+
+        DateTime written = rtc.now();
+        uint32_t targetUnix = time.unixtime();
+        uint32_t writtenUnix = written.unixtime();
+        uint32_t diff = targetUnix > writtenUnix ? targetUnix - writtenUnix : writtenUnix - targetUnix;
+        bool verified = diff <= 2;
+
+        if (verified)
+        {
+            powerLost = false;
+        }
+        else
+        {
+            LOG_F("Fallo verificacion ajuste RTC: objetivo=%s leido=%s diff=%lu s\n",
+                  time.timestamp().c_str(),
+                  written.timestamp().c_str(),
+                  (unsigned long)diff);
+        }
+
+        return verified;
     }
 
     bool lostPower() const
@@ -266,7 +289,13 @@ private:
 
         if (lostPower() || invalidRtc || diff > MaxNtpAdjustDiffSeconds)
         {
-            adjust(localTime);
+            if (!adjust(localTime))
+            {
+                LOG_F("No se pudo guardar hora HTTP en RTC fisico: %s\n",
+                      localTime.timestamp().c_str());
+                return false;
+            }
+
             LOG_F("RTC ajustado desde HTTP %s: %s (UTC%+ld)\n",
                   source,
                   localTime.timestamp().c_str(),
@@ -363,9 +392,10 @@ public:
         return dt;
     }
 
-    void adjust(const DateTime &time)
+    bool adjust(const DateTime &time)
     {
         (void)time;
+        return false;
     }
 
     bool lostPower() const

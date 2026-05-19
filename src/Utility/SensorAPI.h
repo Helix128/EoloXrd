@@ -1,12 +1,16 @@
 #ifndef SENSOR_API_H
 #define SENSOR_API_H
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include "../Board/ModemService.h"
 
 class SensorAPI
 {
+    static constexpr size_t MaxData = 20;
+    static constexpr size_t MaxUrl = 2048;
+
     const char* baseURL = "http://api-sensores.cmasccp.cl/insertarMedicion";
     const char* idPrefix = "idsSensores";
     const char* varPrefix = "&idsVariables";
@@ -31,31 +35,19 @@ class SensorAPI
 
 public:
     ModemService* modem;
-    int* sensorIds;
-    int* variableIds;
-    float* values;
+    int sensorIds[MaxData]{};
+    int variableIds[MaxData]{};
+    float values[MaxData]{};
     int dataCount;
     int currentId = 0;
-    char* apiBuffer;
-    char* urlBuffer;
-    const int API_BUFFER_SIZE = 4096;
-    const int MAX_URL_SIZE = 2048;
+    char urlBuffer[MaxUrl]{};
 
     SensorAPI(ModemService* modemInstance, int count) : modem(modemInstance), dataCount(count) {
-        sensorIds = new int[count];
-        variableIds = new int[count];
-        values = new float[count];
-        urlBuffer = new char[MAX_URL_SIZE];
-        apiBuffer = new char[API_BUFFER_SIZE];
+        if (dataCount < 0) dataCount = 0;
+        if (dataCount > (int)MaxData) dataCount = MaxData;
     }
 
-    ~SensorAPI() {
-        delete[] sensorIds;
-        delete[] variableIds;
-        delete[] values;
-        delete[] urlBuffer;
-        delete[] apiBuffer;
-    }
+    ~SensorAPI() = default;
 
     void begin() {
         if (modem != nullptr) modem->begin();
@@ -74,20 +66,39 @@ public:
         if (currentId == 0 || isBusy) return;
         isBusy = true; 
         char* p = urlBuffer;
+        size_t left = sizeof(urlBuffer);
         
-        p += sprintf(p, "%s?%s=", baseURL, idPrefix);
+        if (!appendf(p, left, "%s?%s=", baseURL, idPrefix)) {
+            finishBuildError();
+            return;
+        }
         for(int i = 0; i < currentId; i++) {
-            p += sprintf(p, "%d%s", sensorIds[i], (i < currentId - 1) ? "," : "");
+            if (!appendf(p, left, "%d%s", sensorIds[i], (i < currentId - 1) ? "," : "")) {
+                finishBuildError();
+                return;
+            }
         }
 
-        p += sprintf(p, "%s=", varPrefix);
+        if (!appendf(p, left, "%s=", varPrefix)) {
+            finishBuildError();
+            return;
+        }
         for(int i = 0; i < currentId; i++) {
-            p += sprintf(p, "%d%s", variableIds[i], (i < currentId - 1) ? "," : "");
+            if (!appendf(p, left, "%d%s", variableIds[i], (i < currentId - 1) ? "," : "")) {
+                finishBuildError();
+                return;
+            }
         }
 
-        p += sprintf(p, "%s=", valuePrefix);
+        if (!appendf(p, left, "%s=", valuePrefix)) {
+            finishBuildError();
+            return;
+        }
         for(int i = 0; i < currentId; i++) {
-            p += sprintf(p, "%.2f%s", values[i], (i < currentId - 1) ? "," : "");
+            if (!appendf(p, left, "%.2f%s", values[i], (i < currentId - 1) ? "," : "")) {
+                finishBuildError();
+                return;
+            }
         }
 
         currentId = 0;
@@ -101,6 +112,24 @@ public:
         } else {
             LOG_F("SensorAPI: envio encolado (job #%lu)\n", (unsigned long)id);
         }
+    }
+
+private:
+    bool appendf(char*& p, size_t& left, const char* fmt, ...) {
+        va_list ap;
+        va_start(ap, fmt);
+        int n = vsnprintf(p, left, fmt, ap);
+        va_end(ap);
+        if (n < 0 || (size_t)n >= left) return false;
+        p += n;
+        left -= (size_t)n;
+        return true;
+    }
+
+    void finishBuildError() {
+        currentId = 0;
+        isBusy = false;
+        LOG_LN("SensorAPI: URL demasiado larga; envio descartado");
     }
 };
 

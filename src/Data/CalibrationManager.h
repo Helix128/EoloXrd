@@ -222,6 +222,10 @@ public:
 
     void test(Components &components)
     {
+#ifdef FEATURE_HEADLESS
+        (void)components;
+        LOG_LN("Diagnóstico de calibración no disponible en modo headless.");
+#else
         LOG_OUT_LN("\n========================================");
         LOG_OUT_LN("DIAGNÓSTICO DE CALIBRACIÓN v3");
         LOG_OUT_LN("========================================");
@@ -328,6 +332,7 @@ public:
             delay(100);
         }
         components.input.resetCounter();
+#endif
     }
 };
 
