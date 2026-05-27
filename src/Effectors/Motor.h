@@ -10,15 +10,52 @@
 class MotorManager
 {
 public:
-  static constexpr int motors[2] = {25, 27};
-  static constexpr int ledcChannels[2] = {0, 1};
+  static constexpr int motors[MOTOR_PWM_PIN_COUNT] = {
+      MOTOR_PWM_PIN_0
+#if MOTOR_PWM_PIN_COUNT > 1
+      , MOTOR_PWM_PIN_1
+#endif
+  };
+  static constexpr int ledcChannels[MOTOR_PWM_PIN_COUNT] = {
+      0
+#if MOTOR_PWM_PIN_COUNT > 1
+      , 1
+#endif
+  };
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static const int freq = 20000;
   static const int resolution = 11;
-  int pwmValues[sizeof(motors) / sizeof(motors[0])];
+  int pwmValues[MOTOR_PWM_PIN_COUNT];
   bool isReady = false;
 
 private:
+#if defined(FEATURE_MOTOR_PWM_POWER_PIN)
+  bool motorPowerPinEnabled = false;
+
+  bool anyMotorActive() const
+  {
+    for (int i = 0; i < motorCount; i++)
+    {
+      if (pwmValues[i] > 0)
+        return true;
+    }
+    return false;
+  }
+
+  void setMotorPowerPin(bool enabled)
+  {
+#if MOTOR_POWER_PIN >= 0
+    if (motorPowerPinEnabled == enabled)
+      return;
+    digitalWrite(MOTOR_POWER_PIN, enabled ? HIGH : LOW);
+    motorPowerPinEnabled = enabled;
+    LOG_LN(String("Motor power pin ") + (enabled ? "ON" : "OFF"));
+#else
+    (void)enabled;
+#endif
+  }
+#endif
+
   static int constrainPwm(int pwm)
   {
     if (pwm < 0)
@@ -40,6 +77,9 @@ private:
     }
     pwmValues[motorIdx] = pwm;
     ledcWrite(ledcChannels[motorIdx], pwmValues[motorIdx]);
+#if defined(FEATURE_MOTOR_PWM_POWER_PIN)
+    setMotorPowerPin(anyMotorActive());
+#endif
   }
 
 public:
@@ -67,6 +107,18 @@ public:
       ledcAttachPin(motors[i], ledcChannels[i]);
       ledcWrite(ledcChannels[i], 0);
     }
+#if defined(FEATURE_MOTOR_PWM_POWER_PIN)
+#if MOTOR_POWER_PIN >= 0
+    pinMode(MOTOR_POWER_PIN, OUTPUT);
+    digitalWrite(MOTOR_POWER_PIN, LOW);
+    motorPowerPinEnabled = false;
+    LOG_LN(String("Motor PWM con power pin inicializado en GPIO ") + String(MOTOR_POWER_PIN));
+#else
+    LOG_LN("Motor PWM con power pin seleccionado, pero MOTOR_POWER_PIN no esta configurado; usando PWM puro temporalmente.");
+#endif
+#else
+    LOG_LN("Motor PWM puro inicializado.");
+#endif
 #if CHECK_SENSORS
     testMotors();
 #endif
@@ -126,7 +178,7 @@ public:
   }
 };
 
-constexpr int MotorManager::motors[2];
-constexpr int MotorManager::ledcChannels[2];
+constexpr int MotorManager::motors[MOTOR_PWM_PIN_COUNT];
+constexpr int MotorManager::ledcChannels[MOTOR_PWM_PIN_COUNT];
 
 #endif

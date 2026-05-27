@@ -18,6 +18,25 @@ struct CaptureSwitchSelection
   bool shouldStart = false;
 };
 
+struct CaptureSwitchPinState
+{
+  const char* name = "";
+  int pin = -1;
+  int level = HIGH;
+  uint8_t bit = 0;
+};
+
+struct CaptureSwitchSnapshot
+{
+  CaptureSwitchPinState waitSw0;
+  CaptureSwitchPinState waitSw1;
+  CaptureSwitchPinState durationSw0;
+  CaptureSwitchPinState durationSw1;
+  uint8_t waitCode = 0;
+  uint8_t durationCode = 0;
+  CaptureSwitchSelection selection;
+};
+
 class CaptureSwitches
 {
 public:
@@ -55,7 +74,21 @@ public:
 
   CaptureSwitchSelection read() const
   {
-    return decode(readCode(_waitSw0, _waitSw1), readCode(_durationSw0, _durationSw1));
+    return snapshot().selection;
+  }
+
+  CaptureSwitchSnapshot snapshot() const
+  {
+    CaptureSwitchSnapshot snap;
+    snap.waitSw0 = readPin("WAIT_SW0", _waitSw0);
+    snap.waitSw1 = readPin("WAIT_SW1", _waitSw1);
+    snap.durationSw0 = readPin("DURATION_SW0", _durationSw0);
+    snap.durationSw1 = readPin("DURATION_SW1", _durationSw1);
+
+    snap.waitCode = (snap.waitSw0.bit << 0) | (snap.waitSw1.bit << 1);
+    snap.durationCode = (snap.durationSw0.bit << 0) | (snap.durationSw1.bit << 1);
+    snap.selection = decode(snap.waitCode, snap.durationCode);
+    return snap;
   }
 
   static CaptureSwitchSelection decode(uint8_t waitCode, uint8_t durationCode)
@@ -75,6 +108,61 @@ public:
     return selection;
   }
 
+  static const char* waitDescription(uint8_t waitCode)
+  {
+    switch (waitCode & 0x03)
+    {
+    case 0b00:
+      return "off";
+    case 0b01:
+      return "5 min";
+    case 0b10:
+      return "15 min";
+    case 0b11:
+      return "instantanea";
+    default:
+      return "desconocida";
+    }
+  }
+
+  static const char* durationDescription(uint8_t durationCode)
+  {
+    switch (durationCode & 0x03)
+    {
+    case 0b00:
+      return "off";
+    case 0b01:
+      return "5 min";
+    case 0b10:
+      return "15 min";
+    case 0b11:
+      return "infinita";
+    default:
+      return "desconocida";
+    }
+  }
+
+  static void printSnapshot(Print& out, const CaptureSwitchSnapshot& snap)
+  {
+    out.println("Switches de captura:");
+    printPin(out, snap.waitSw0);
+    printPin(out, snap.waitSw1);
+    printPin(out, snap.durationSw0);
+    printPin(out, snap.durationSw1);
+    out.println("Parseado:");
+    out.printf("  espera: %s (code %u%u)\n",
+               waitDescription(snap.waitCode),
+               (unsigned int)((snap.waitCode >> 1) & 0x01),
+               (unsigned int)(snap.waitCode & 0x01));
+    out.printf("  duracion: %s (code %u%u)\n",
+               durationDescription(snap.durationCode),
+               (unsigned int)((snap.durationCode >> 1) & 0x01),
+               (unsigned int)(snap.durationCode & 0x01));
+    out.printf("  shouldStart: %s\n", snap.selection.shouldStart ? "si" : "no");
+    out.printf("  waitSeconds: %lu\n", (unsigned long)snap.selection.waitSeconds);
+    out.printf("  durationSeconds: %lu\n", (unsigned long)snap.selection.durationSeconds);
+  }
+
 private:
   int _waitSw0;
   int _waitSw1;
@@ -92,14 +180,28 @@ private:
     pinMode(pin, supportsInternalPullup(pin) ? INPUT_PULLUP : INPUT);
   }
 
-  static uint8_t readBit(int pin)
+  static CaptureSwitchPinState readPin(const char* name, int pin)
   {
-    return digitalRead(pin) == LOW ? 1 : 0;
+    CaptureSwitchPinState state;
+    state.name = name;
+    state.pin = pin;
+    state.level = digitalRead(pin);
+    state.bit = state.level == LOW ? 1 : 0;
+    return state;
   }
 
-  static uint8_t readCode(int sw0Pin, int sw1Pin)
+  static const char* levelDescription(int level)
   {
-    return (readBit(sw0Pin) << 0) | (readBit(sw1Pin) << 1);
+    return level == LOW ? "LOW" : "HIGH";
+  }
+
+  static void printPin(Print& out, const CaptureSwitchPinState& state)
+  {
+    out.printf("  %s pin %d nivel %s bit %u\n",
+               state.name,
+               state.pin,
+               levelDescription(state.level),
+               (unsigned int)state.bit);
   }
 };
 

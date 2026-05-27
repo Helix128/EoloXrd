@@ -14,8 +14,8 @@ class Modem
 {
 public:
   const int powerPin = MODEM_PWR_PIN;
-  const int MODEM_RX = 16;
-  const int MODEM_TX = 17;
+  const int modemRxPin = MODEM_RX_PIN;
+  const int modemTxPin = MODEM_TX_PIN;
   static constexpr uint8_t PowerOnLevel = HIGH;
   static constexpr uint8_t PowerOffLevel = LOW;
   static constexpr uint32_t PowerOnSettleMs = 15000;
@@ -355,12 +355,12 @@ private:
     powered = true;
     vTaskDelay(pdMS_TO_TICKS(PowerOnSettleMs));
 
-    // Los nombres MODEM_RX/MODEM_TX vienen desde la perspectiva del modem.
+    // Los nombres modemRxPin/modemTxPin vienen desde la perspectiva del modem.
     // HardwareSerial espera pines desde la perspectiva del ESP32: rxPin, txPin.
-    ModemIO.begin(115200, SERIAL_8N1, MODEM_TX, MODEM_RX);
+    ModemIO.begin(115200, SERIAL_8N1, modemTxPin, modemRxPin);
     serialStarted = true;
     clearRxLocked();
-    LOG_F("UART modem iniciado ESP32_RX=%d ESP32_TX=%d\n", MODEM_TX, MODEM_RX);
+    LOG_F("UART modem iniciado ESP32_RX=%d ESP32_TX=%d\n", modemTxPin, modemRxPin);
 
     if (!waitForATLocked(20000))
     {

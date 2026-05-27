@@ -7,9 +7,12 @@
 #include "I2CDebugCommands.h"
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
+#include "../Board/RTCManager.h"
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#include "CaptureSwitchDebugCommands.h"
+#endif
 #ifdef FEATURE_MODEM
 #include "../Board/ModemService.h"
-#include "../Board/RTCManager.h"
 #endif
 
 class DebugConsole {
@@ -25,6 +28,9 @@ private:
     SystemDebugCommands _systemCommands;
     ModemDebugCommands _modemCommands;
     I2CDebugCommands _i2cCommands;
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+    CaptureSwitchDebugCommands _captureSwitchCommands;
+#endif
     DebugCommandRouter _router;
 
     bool isQuickCommand(char c) const {
@@ -102,15 +108,27 @@ public:
         _router.addHandler(_systemCommands);
         _router.addHandler(_modemCommands);
         _router.addHandler(_i2cCommands);
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+        _router.addHandler(_captureSwitchCommands);
+#endif
     }
 
 #ifdef FEATURE_MODEM
     void attachModemService(ModemService* modem) {
         _modemCommands.attachModemService(modem);
     }
+#endif
 
     void attachRTC(RTCManager* rtc) {
+        _systemCommands.attachRTC(rtc);
+#ifdef FEATURE_MODEM
         _modemCommands.attachRTC(rtc);
+#endif
+    }
+
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+    void attachCaptureSwitches(CaptureSwitches* switches) {
+        _captureSwitchCommands.attachCaptureSwitches(switches);
     }
 #endif
 
