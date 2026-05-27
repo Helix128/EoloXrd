@@ -15,9 +15,6 @@
 #include "../Utility/RS485Monitor.h"
 #include "../Utility/RS485PatternValidator.h"
 
-#define RS485_RX_PIN 35
-#define RS485_TX_PIN 33
-#define RS485_DE_RE_PIN 26
 #define RS485_BAUD_RATE 4800
 #define RS485_BUS_GUARD_TIME_MS 20     // Tiempo de silencio antes de cada transmisión
 #define RS485_INTER_FRAME_TIME_US 100  // Tiempo entre fin de transmisión y bajada DE/RE

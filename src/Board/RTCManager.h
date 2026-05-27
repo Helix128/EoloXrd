@@ -4,8 +4,88 @@
 #include <Arduino.h>
 #include "Wire.h"
 #include <RTClib.h>
+#include <sys/time.h>
 #include "../Config.h"
 #include "ESPJob.h"
+
+namespace RTCParse
+{
+    static bool parseFixedInt(const char *text, size_t start, size_t len, int &value)
+    {
+        if (text == nullptr)
+            return false;
+
+        int result = 0;
+        for (size_t i = 0; i < len; i++)
+        {
+            char c = text[start + i];
+            if (c < '0' || c > '9')
+                return false;
+            result = result * 10 + (c - '0');
+        }
+        value = result;
+        return true;
+    }
+
+    static bool parseDateTime(const char *text, DateTime &time)
+    {
+        if (text == nullptr || strlen(text) != 19)
+            return false;
+
+        if (text[4] != '-' || text[7] != '-' ||
+            (text[10] != ' ' && text[10] != 'T') ||
+            text[13] != ':' || text[16] != ':')
+            return false;
+
+        int year = 0;
+        int month = 0;
+        int day = 0;
+        int hour = 0;
+        int minute = 0;
+        int second = 0;
+
+        if (!parseFixedInt(text, 0, 4, year) ||
+            !parseFixedInt(text, 5, 2, month) ||
+            !parseFixedInt(text, 8, 2, day) ||
+            !parseFixedInt(text, 11, 2, hour) ||
+            !parseFixedInt(text, 14, 2, minute) ||
+            !parseFixedInt(text, 17, 2, second))
+            return false;
+
+        if (year < 2024 || year > 2099 ||
+            month < 1 || month > 12 ||
+            day < 1 || day > 31 ||
+            hour < 0 || hour > 23 ||
+            minute < 0 || minute > 59 ||
+            second < 0 || second > 59)
+            return false;
+
+        DateTime parsed(year, month, day, hour, minute, second);
+        if (parsed.year() != year || parsed.month() != month || parsed.day() != day ||
+            parsed.hour() != hour || parsed.minute() != minute || parsed.second() != second)
+            return false;
+
+        time = parsed;
+        return true;
+    }
+
+    static bool fromUnixWithOffset(uint32_t unixUtc, int32_t offsetSeconds, DateTime &time)
+    {
+        if (offsetSeconds < -12 * 3600 || offsetSeconds > 14 * 3600)
+            return false;
+
+        int64_t localUnix = (int64_t)unixUtc + offsetSeconds;
+        if (localUnix < 0 || localUnix > UINT32_MAX)
+            return false;
+
+        DateTime parsed((uint32_t)localUnix);
+        if (parsed.year() < 2024 || parsed.year() > 2099)
+            return false;
+
+        time = parsed;
+        return true;
+    }
+}
 
 #if BAREBONES == false
 
@@ -176,6 +256,16 @@ public:
                time.day() >= 1 && time.day() <= 31;
     }
 
+    static bool parseDateTimeString(const char *text, DateTime &time)
+    {
+        return RTCParse::parseDateTime(text, time);
+    }
+
+    static bool fromUnixWithOffset(uint32_t unixUtc, int32_t offsetSeconds, DateTime &time)
+    {
+        return RTCParse::fromUnixWithOffset(unixUtc, offsetSeconds, time);
+    }
+
     bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
     {
         if (!ok)
@@ -216,17 +306,16 @@ public:
             return false;
         }
 
-        int64_t localUnix = utcUnix + offset;
-        if (localUnix < 0 || localUnix > UINT32_MAX)
+        if (utcUnix < 0 || utcUnix > UINT32_MAX)
         {
-            LOG_F("unix local fuera de rango: %lld\n", (long long)localUnix);
+            LOG_F("unix UTC fuera de rango: %lld\n", (long long)utcUnix);
             return false;
         }
 
-        DateTime parsed = DateTime((uint32_t)localUnix);
-        if (parsed.year() < 2024 || parsed.year() > 2099)
+        DateTime parsed;
+        if (!fromUnixWithOffset((uint32_t)utcUnix, (int32_t)offset, parsed))
         {
-            LOG_F("Anio de servidor fuera de rango: %u\n", parsed.year());
+            LOG_F("unix/offset fuera de rango: unix=%lld offset=%lld\n", (long long)utcUnix, (long long)offset);
             return false;
         }
 
@@ -394,8 +483,16 @@ public:
 
     bool adjust(const DateTime &time)
     {
-        (void)time;
-        return false;
+        if (!isValid(time))
+            return false;
+
+        struct timeval tv;
+        tv.tv_sec = time.unixtime();
+        tv.tv_usec = 0;
+        bool adjusted = settimeofday(&tv, nullptr) == 0;
+        if (adjusted)
+            powerLost = false;
+        return adjusted;
     }
 
     bool lostPower() const
@@ -418,6 +515,28 @@ public:
         return time.year() >= 2024 && time.year() <= 2099 &&
                time.month() >= 1 && time.month() <= 12 &&
                time.day() >= 1 && time.day() <= 31;
+    }
+
+    String getTimeString(DateTime time)
+    {
+        if (!ok)
+            return String("0000-00-00 00:00:00 RTCERROR");
+
+        char buf[20];
+        snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
+                 time.year(), time.month(), time.day(),
+                 time.hour(), time.minute(), time.second());
+        return String(buf);
+    }
+
+    static bool parseDateTimeString(const char *text, DateTime &time)
+    {
+        return RTCParse::parseDateTime(text, time);
+    }
+
+    static bool fromUnixWithOffset(uint32_t unixUtc, int32_t offsetSeconds, DateTime &time)
+    {
+        return RTCParse::fromUnixWithOffset(unixUtc, offsetSeconds, time);
     }
 
     bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
@@ -448,12 +567,11 @@ public:
         if (offset < -12 * 3600 || offset > 14 * 3600)
             return false;
 
-        int64_t localUnix = utcUnix + offset;
-        if (localUnix < 0 || localUnix > UINT32_MAX)
+        if (utcUnix < 0 || utcUnix > UINT32_MAX)
             return false;
 
-        DateTime parsed = DateTime((uint32_t)localUnix);
-        if (parsed.year() < 2024 || parsed.year() > 2099)
+        DateTime parsed;
+        if (!fromUnixWithOffset((uint32_t)utcUnix, (int32_t)offset, parsed))
             return false;
 
         localTime = parsed;

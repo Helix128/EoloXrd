@@ -53,9 +53,11 @@
 #endif
 
 static void powerOnRs485Module() {
+#if RS485_TEST_POWER_PIN >= 0
 	pinMode(RS485_TEST_POWER_PIN, OUTPUT);
 	digitalWrite(RS485_TEST_POWER_PIN, RS485_TEST_POWER_ACTIVE_LEVEL);
 	delay(200);
+#endif
 }
 
 struct Rs485ReadJob {

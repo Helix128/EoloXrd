@@ -9,10 +9,12 @@
 #include "../Sensors/Plantower.h"
 #include "../Sensors/BME280.h"
 #include "../Board/Battery.h"
+#ifdef FEATURE_MODEM
 #include "../Board/Modem.h"
 #include "../Board/ModemService.h"
-#include "../Sensors/Anemometer.h"
 #include "../Utility/SensorAPI.h"
+#endif
+#include "../Sensors/Anemometer.h"
 #include "Profiler.h" 
 
 typedef struct Components{

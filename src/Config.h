@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include "Board/Pinout.h"
 #include "Utility/SerialOutput.h"
 
 // CONFIGURACIONES GENERALES DEL PROGRAMA
@@ -67,18 +68,9 @@
 // simula encoder
 #define SERIAL_INPUT false
 
-#define SD_CS_PIN 5
-#define SD_MOSI_PIN 23
-#define SD_MISO_PIN 19
-#define SD_SCK_PIN 18
-
 // Modelo de pantalla a usar en U8G2 (default U8G2_SSD1309_128x64_NONAME2_F_HW_I2C)
 //#define DisplayModel U8G2_SSD1309_128X64_NONAME2_F_HW_I2C
 #define DisplayModel U8G2_SSD1306_128X64_NONAME_F_HW_I2C
-
-// Pines I2C
-#define SDA_PIN 21
-#define SCL_PIN 22
 
 #define I2C_CLOCK 150000 
 
@@ -99,19 +91,6 @@
 
 #define DRONE_DURATION_INFINITE UINT32_MAX
 
-#ifndef WAIT_SW0_PIN
-  #define WAIT_SW0_PIN 32
-#endif
-#ifndef WAIT_SW1_PIN
-  #define WAIT_SW1_PIN 14
-#endif
-#ifndef DURATION_SW0_PIN
-  #define DURATION_SW0_PIN 36
-#endif
-#ifndef DURATION_SW1_PIN
-  #define DURATION_SW1_PIN 39
-#endif
-
 #if defined(EOLO_TARGET_DRON) && \
     (DURATION_SW0_PIN >= 34 || DURATION_SW1_PIN >= 34) && \
     !defined(DRONE_SWITCHES_HAVE_EXTERNAL_PULLS)
@@ -127,10 +106,6 @@
 #define FONT_BOLD_L u8g2_font_helvB12_tf
 #define FONT_REGULAR_L u8g2_font_helvR12_tf
 
-// extras EOLO grande
-#define PPH_PWR_PIN 4 // perifericos
-#define MODEM_PWR_PIN 13 // modem
-
 #define MODEM_POWER_ALWAYS_ON 1
 #define MODEM_POWER_ON_DEMAND 2
 
@@ -145,6 +120,14 @@
 // Validación de combinaciones inválidas de feature flags
 #if defined(FEATURE_FLOW_AFM07) && defined(FEATURE_FLOW_FS3000)
   #error "Conflicto! define solo un sensor de flujo (FEATURE_FLOW_AFM07 o FEATURE_FLOW_FS3000)"
+#endif
+
+#if defined(FEATURE_MOTOR_PWM) && defined(FEATURE_MOTOR_PWM_POWER_PIN)
+  #error "Conflicto! define solo un tipo de motor (FEATURE_MOTOR_PWM o FEATURE_MOTOR_PWM_POWER_PIN)"
+#endif
+
+#if !defined(FEATURE_MOTOR_PWM) && !defined(FEATURE_MOTOR_PWM_POWER_PIN)
+  #define FEATURE_MOTOR_PWM
 #endif
 
 #endif // CONFIG_H

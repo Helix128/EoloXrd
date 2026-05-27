@@ -5,8 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#define PT_RX 34
-#define PT_TX 32
+#include "../Config.h"
 
 struct PlantowerData {
     uint16_t pm1_0;

@@ -59,6 +59,40 @@ void test_sw0_is_lsb()
     TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, sw1Only.durationSeconds);
 }
 
+void test_decode_full_table()
+{
+    const uint32_t waitSeconds[] = {0, 5UL * MINUTE, 15UL * MINUTE, 0};
+    const uint32_t durationSeconds[] = {0, 5UL * MINUTE, 15UL * MINUTE, DRONE_DURATION_INFINITE};
+
+    for (uint8_t waitCode = 0; waitCode < 4; waitCode++) {
+        for (uint8_t durationCode = 0; durationCode < 4; durationCode++) {
+            CaptureSwitchSelection selection = CaptureSwitches::decode(waitCode, durationCode);
+            TEST_ASSERT_EQUAL_UINT8(waitCode, selection.waitCode);
+            TEST_ASSERT_EQUAL_UINT8(durationCode, selection.durationCode);
+            TEST_ASSERT_EQUAL_UINT32(waitSeconds[waitCode], selection.waitSeconds);
+            TEST_ASSERT_EQUAL_UINT32(durationSeconds[durationCode], selection.durationSeconds);
+            TEST_ASSERT_EQUAL(waitCode != 0, selection.waitEnabled);
+            TEST_ASSERT_EQUAL(durationCode != 0, selection.durationEnabled);
+            TEST_ASSERT_EQUAL(waitCode == 0b11, selection.instantStart);
+            TEST_ASSERT_EQUAL(durationCode == 0b11, selection.infiniteDuration);
+            TEST_ASSERT_EQUAL(waitCode != 0 && durationCode != 0, selection.shouldStart);
+        }
+    }
+}
+
+void test_descriptions()
+{
+    TEST_ASSERT_EQUAL_STRING("off", CaptureSwitches::waitDescription(0b00));
+    TEST_ASSERT_EQUAL_STRING("5 min", CaptureSwitches::waitDescription(0b01));
+    TEST_ASSERT_EQUAL_STRING("15 min", CaptureSwitches::waitDescription(0b10));
+    TEST_ASSERT_EQUAL_STRING("instantanea", CaptureSwitches::waitDescription(0b11));
+
+    TEST_ASSERT_EQUAL_STRING("off", CaptureSwitches::durationDescription(0b00));
+    TEST_ASSERT_EQUAL_STRING("5 min", CaptureSwitches::durationDescription(0b01));
+    TEST_ASSERT_EQUAL_STRING("15 min", CaptureSwitches::durationDescription(0b10));
+    TEST_ASSERT_EQUAL_STRING("infinita", CaptureSwitches::durationDescription(0b11));
+}
+
 void setup()
 {
     delay(1000);
@@ -66,6 +100,8 @@ void setup()
     RUN_TEST(test_wait_table);
     RUN_TEST(test_duration_table);
     RUN_TEST(test_sw0_is_lsb);
+    RUN_TEST(test_decode_full_table);
+    RUN_TEST(test_descriptions);
     UNITY_END();
 }
 

@@ -6,7 +6,6 @@
 
 #if defined(EOLO_TARGET_DRON)
   #pragma message("Compilando para EOLO Dron headless.")
-  #include "Board/Modem.h"
 #elif defined(EOLO_TARGET_STANDARD)
   #pragma message("Compilando para EOLO Standard.")
   #include "Board/Modem.h"
@@ -78,12 +77,9 @@ static void configureDroneCapture()
 {
   captureSwitches.begin();
   delay(100);
-  CaptureSwitchSelection selection = captureSwitches.read();
-
-  LOG_OUT("Drone switches wait=");
-  LOG_OUT(selection.waitCode);
-  LOG_OUT(" duration=");
-  LOG_OUT_LN(selection.durationCode);
+  CaptureSwitchSnapshot switchSnapshot = captureSwitches.snapshot();
+  CaptureSwitches::printSnapshot(stdOut, switchSnapshot);
+  CaptureSwitchSelection selection = switchSnapshot.selection;
 
   ctx.session.usePlantower = false;
   ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
@@ -167,8 +163,10 @@ static void updateDroneController()
 
 void setup()
 {   
+#if PPH_PWR_PIN >= 0
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   digitalWrite(PPH_PWR_PIN, HIGH); // Encender perifericos (I2C, display) lo antes posible
+#endif
 #ifdef FEATURE_MODEM
 #if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
   Modem::configurePowerPinOn();
@@ -176,8 +174,10 @@ void setup()
   Modem::configurePowerPinOff();
 #endif
 #else
+#if MODEM_PWR_PIN >= 0
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
   digitalWrite(MODEM_PWR_PIN, LOW);
+#endif
 #endif
   
   ctx.components.motor.begin(); // apagar motores
@@ -186,7 +186,10 @@ void setup()
 
 #ifdef FEATURE_MODEM
   debugConsole.attachModemService(&ctx.components.modemService);
+#endif
   debugConsole.attachRTC(&ctx.components.rtc);
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+  debugConsole.attachCaptureSwitches(&captureSwitches);
 #endif
 #ifndef FEATURE_HEADLESS
   debugConsole.attachDisplayReinit(reinitDisplay);
@@ -214,7 +217,7 @@ void setup()
 #endif
 }
 
-const int targetMs = 16;
+const int targetMs = 8;
 unsigned long int lastFrameMs = 0;
 unsigned long int frameStartMs = 0;
 

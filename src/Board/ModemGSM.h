@@ -15,8 +15,8 @@ class ModemGSM
 {
 public:
   const int powerPin = MODEM_PWR_PIN;
-  const int MODEM_RX = 16;
-  const int MODEM_TX = 17;
+  const int modemRxPin = MODEM_RX_PIN;
+  const int modemTxPin = MODEM_TX_PIN;
   const char *apn = "gigsky-02";
 
   TinyGsm modem;
@@ -35,8 +35,8 @@ class ModemManual
 {
 public:
   const int powerPin = MODEM_PWR_PIN;
-  const int MODEM_RX = 16;
-  const int MODEM_TX = 17;
+  const int modemRxPin = MODEM_RX_PIN;
+  const int modemTxPin = MODEM_TX_PIN;
   const char *apn = "gigsky-02";
 
   Modem() {}
@@ -47,7 +47,7 @@ public:
     digitalWrite(powerPin, HIGH);
     vTaskDelay(pdMS_TO_TICKS(2500));
 
-    ModemIO.begin(115200, SERIAL_8N1, MODEM_TX, MODEM_RX);
+    ModemIO.begin(115200, SERIAL_8N1, modemTxPin, modemRxPin);
     
     unsigned long start = millis();
     while (!ModemIO.available() && millis() - start < 5000)
@@ -311,7 +311,7 @@ private:
     digitalWrite(powerPin, HIGH);
     vTaskDelay(pdMS_TO_TICKS(500)); 
 
-    SerialAT.begin(115200, SERIAL_8N1, MODEM_TX, MODEM_RX, false);
+    SerialAT.begin(115200, SERIAL_8N1, modemTxPin, modemRxPin, false);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     modem.restart();

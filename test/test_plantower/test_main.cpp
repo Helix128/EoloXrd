@@ -97,8 +97,10 @@ void test_parser_resync_after_noise() {
 
 void test_real_sensor_reading() {
     // Encender periféricos
+    #if PPH_PWR_PIN >= 0
     pinMode(PPH_PWR_PIN, OUTPUT);
     digitalWrite(PPH_PWR_PIN, HIGH);
+    #endif
     
     TEST_MESSAGE("Encendiendo periféricos y esperando estabilización (2s)...");
     delay(2000); // Tiempo para que el sensor arranque
