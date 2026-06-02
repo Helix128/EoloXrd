@@ -4,6 +4,7 @@
 #include "SceneManager.h"
 #include "../Scenes/LogoScene.h"
 #include "../Scenes/InicioScene.h"
+#include "../Scenes/AcercaDeScene.h"
 #include "../Scenes/Setup/CalibrationScene.h"
 #include "../Scenes/Setup/TimeScene.h"
 #include "../Scenes/Setup/RTCAdjustMenuScene.h"
@@ -39,6 +40,7 @@ namespace SceneName
     constexpr const char *End = FinScene::Name;
     constexpr const char *EndMenu = EndMenuScene::Name;
     constexpr const char *CapturaBombas = CapturaBombasScene::Name;
+    constexpr const char *AcercaDe = AcercaDeScene::Name;
 }
 
 inline void registerAllScenes()
@@ -60,6 +62,7 @@ inline void registerAllScenes()
     static FinScene s_end;
     static EndMenuScene s_end_menu;
     static CapturaBombasScene s_captura_bombas;
+    static AcercaDeScene s_acerca_de;
 
     static const SceneEntry scenes[] = {
         makeScene(s_splash),
@@ -79,6 +82,7 @@ inline void registerAllScenes()
         makeScene(s_end),
         makeScene(s_end_menu),
         makeScene(s_captura_bombas),
+        makeScene(s_acerca_de),
     };
 
     SceneManager::setScenes(scenes, sizeof(scenes) / sizeof(scenes[0]));
