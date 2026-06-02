@@ -28,6 +28,10 @@
 #ifdef FEATURE_HEADLESS
 #include <esp_sleep.h>
 #include "Board/CaptureSwitches.h"
+#if defined(EOLO_TARGET_DRON)
+#include "Board/DroneSetupServer.h"
+#include "Board/DroneSetupTypes.h"
+#endif
 #else
 // Librerías para display
 #include <U8g2lib.h>
@@ -51,6 +55,9 @@ Context ctx(u8g2); // Aquí se procesa toda la lógica
 #else
 Context ctx;
 CaptureSwitches captureSwitches;
+#if defined(EOLO_TARGET_DRON)
+DroneSetupServer droneSetupServer(ctx, captureSwitches);
+#endif
 #endif
 DebugConsole debugConsole;
 
@@ -65,6 +72,7 @@ static void reinitDisplay() {
 enum class DroneBootState : uint8_t
 {
   Idle,
+  Setup,
   Waiting,
   Capturing,
   Finished
@@ -73,6 +81,28 @@ enum class DroneBootState : uint8_t
 static DroneBootState droneState = DroneBootState::Idle;
 static bool droneFinishHandled = false;
 
+static void startDroneConfiguredCapture(const DroneSetupConfig &config)
+{
+  DateTime now = ctx.components.rtc.now();
+  DroneSetup::applyToSession(config, ctx.session, now);
+  ctx.clearSession();
+  ctx.saveSession();
+
+  if (config.waitSeconds == 0)
+  {
+    LOG_LN("Drone: captura instantanea desde setup web.");
+    ctx.beginCapture();
+    droneState = DroneBootState::Capturing;
+  }
+  else
+  {
+    LOG_OUT("Drone: setup web confirmado; esperando ");
+    LOG_OUT(config.waitSeconds);
+    LOG_OUT_LN(" segundos antes de capturar.");
+    droneState = DroneBootState::Waiting;
+  }
+}
+
 static void configureDroneCapture()
 {
   captureSwitches.begin();
@@ -80,6 +110,15 @@ static void configureDroneCapture()
   CaptureSwitchSnapshot switchSnapshot = captureSwitches.snapshot();
   CaptureSwitches::printSnapshot(stdOut, switchSnapshot);
   CaptureSwitchSelection selection = switchSnapshot.selection;
+
+  if (DroneSetup::shouldEnterWebSetup(selection.waitCode))
+  {
+    LOG_LN("Switches de espera en Off; entrando a setup web de EOLO Dron.");
+    ctx.components.motor.setPowerPct(0);
+    droneSetupServer.begin();
+    droneState = DroneBootState::Setup;
+    return;
+  }
 
   ctx.session.usePlantower = false;
   ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
@@ -118,6 +157,19 @@ static void configureDroneCapture()
 
 static void updateDroneController()
 {
+  if (droneState == DroneBootState::Setup)
+  {
+    ctx.components.motor.setPowerPct(0);
+    droneSetupServer.handleClient();
+    if (droneSetupServer.confirmed())
+    {
+      DroneSetupConfig config = droneSetupServer.confirmedConfig();
+      droneSetupServer.stop();
+      startDroneConfiguredCapture(config);
+    }
+    return;
+  }
+
   if (droneState == DroneBootState::Waiting)
   {
     uint32_t now = ctx.getUnixTime();
