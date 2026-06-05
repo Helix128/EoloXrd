@@ -12,12 +12,12 @@ El código de `src/Data/` se mantiene header-only: declaraciones en `*.h`, imple
 
 | Responsabilidad | Servicio |
 | --- | --- |
-| SD, directorios, cola FreeRTOS de log, CSV local | `src/Data/Logging/LogService.h`, `src/Data/Logging/LogServiceImpl.h` |
-| Persistencia NVS de sesión | `src/Data/SessionStore.h`, `src/Data/SessionStoreImpl.h` |
-| Sincronización RTC por red/módem | `src/Data/RTCNetworkSync.h`, `src/Data/RTCNetworkSyncImpl.h` |
-| Estado y ciclo de captura | `src/Data/CaptureController.h`, `src/Data/CaptureControllerImpl.h` |
-| Protección térmica y control de motores | `src/Data/MotorCaptureControl.h`, `src/Data/MotorCaptureControlImpl.h` |
-| Upload/API de sensores | `src/Data/UploadService.h`, `src/Data/UploadServiceImpl.h` |
+| SD, directorios, cola FreeRTOS de log, CSV local | `src/Data/Logging/LogService.h` |
+| Persistencia NVS de sesión | `src/Data/SessionStore.h` |
+| Sincronización RTC por red/módem | `src/Data/RTCNetworkSync.h` |
+| Estado y ciclo de captura | `src/Data/CaptureController.h` |
+| Protección térmica y control de motores | `src/Data/MotorCaptureControl.h` |
+| Upload/API de sensores | `src/Data/UploadService.h` |
 
 ## Compatibilidad temporal
 
