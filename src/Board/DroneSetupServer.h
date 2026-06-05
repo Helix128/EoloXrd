@@ -4,19 +4,25 @@
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
 
 #include <Arduino.h>
+#include <DNSServer.h>
 #include <Preferences.h>
 #include <SD.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include "CaptureSwitches.h"
 #include "DroneSetupTypes.h"
+#include "DroneSetupWebPage.h"
 #include "../Data/Context.h"
 
 class DroneSetupServer
 {
 public:
-  static constexpr const char *ApSsid = "EOLO-Dron-Setup";
-  static constexpr const char *ApPassword = "EoloSetup2026";
+  static constexpr const char *ApSsid = "eolo-dron";
+  static constexpr const char *ApPassword = "eolo-dron";
+  static constexpr const char *PortalHost = "eolo.setup";
+  static constexpr const char *PortalUrl = "http://eolo.setup/";
+  static constexpr const char *PortalIpUrl = "http://192.168.4.1/";
+  static constexpr uint16_t DnsPort = 53;
 
   explicit DroneSetupServer(Context &context, CaptureSwitches &switches)
       : _ctx(context), _switches(switches), _server(80)
@@ -33,7 +39,10 @@ public:
 
     WiFi.persistent(false);
     WiFi.mode(WIFI_AP);
+    IPAddress apIP(192, 168, 4, 1);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     WiFi.softAP(ApSsid, ApPassword);
+    _dnsServer.start(DnsPort, "*", WiFi.softAPIP());
 
     _server.on("/", HTTP_GET, [this]() { handleRoot(); });
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
@@ -41,7 +50,8 @@ public:
     _server.on("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
     _server.on("/download", HTTP_GET, [this]() { handleDownload(); });
     _server.on("/api/confirm", HTTP_POST, [this]() { handleConfirm(); });
-    _server.onNotFound([this]() { _server.send(404, "application/json", "{\"error\":\"not_found\"}"); });
+    registerCaptivePortalEndpoints();
+    _server.onNotFound([this]() { handleNotFound(); });
     _server.begin();
     _running = true;
 
@@ -49,14 +59,19 @@ public:
     LOG_OUT(ApSsid);
     LOG_OUT(" / ");
     LOG_OUT_LN(ApPassword);
+    LOG_OUT("URL setup: ");
+    LOG_OUT_LN(PortalUrl);
     LOG_OUT("IP setup: ");
     LOG_OUT_LN(WiFi.softAPIP());
   }
 
   void handleClient()
   {
-    if (_running)
-      _server.handleClient();
+    if (!_running)
+      return;
+
+    _dnsServer.processNextRequest();
+    _server.handleClient();
   }
 
   void stop()
@@ -65,6 +80,7 @@ public:
       return;
 
     _server.stop();
+    _dnsServer.stop();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     _running = false;
@@ -77,6 +93,7 @@ private:
   Context &_ctx;
   CaptureSwitches &_switches;
   WebServer _server;
+  DNSServer _dnsServer;
   DroneSetupConfig _defaults;
   DroneSetupConfig _confirmedConfig;
   bool _running = false;
@@ -172,9 +189,41 @@ private:
     return DroneSetup::validateConfig(config);
   }
 
+  void redirectToPortal()
+  {
+    _server.sendHeader("Location", PortalUrl, true);
+    _server.send(302, "text/plain", "");
+  }
+
+  void registerCaptivePortalEndpoints()
+  {
+    _server.on("/generate_204", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/gen_204", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/mobile/status.php", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/hotspot-detect.html", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/library/test/success.html", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/success.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/connecttest.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/ncsi.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    _server.on("/fwlink", HTTP_GET, [this]() { redirectToPortal(); });
+  }
+
+  void handleNotFound()
+  {
+    if (_server.uri().startsWith("/api/"))
+    {
+      _server.send(404, "application/json", "{\"error\":\"not_found\"}");
+      return;
+    }
+
+    redirectToPortal();
+  }
+
   void handleRoot()
   {
-    _server.send_P(200, "text/html; charset=utf-8", kHtml);
+    _server.sendHeader("Cache-Control", "no-store");
+    _server.sendHeader("Content-Encoding", "gzip");
+    _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kDroneSetupHtmlGzip), kDroneSetupHtmlGzipSize);
   }
 
   void handleStatus()
@@ -368,62 +417,6 @@ private:
     _server.send(200, "application/json", "{\"ok\":true}");
   }
 
-  static constexpr const char kHtml[] PROGMEM = R"HTML(
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EOLO Dron Setup</title>
-<style>
-:root{color-scheme:light;--bg:#f6f8fb;--fg:#17202a;--muted:#5f6b7a;--line:#d8dee8;--primary:#146c94;--danger:#b42318;--ok:#067647}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,sans-serif}header{padding:18px 16px;background:#fff;border-bottom:1px solid var(--line)}main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:16px}.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:24px;margin:0}h2{font-size:18px;margin:0 0 12px}.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.field{display:grid;gap:6px}label,.label{font-size:13px;color:var(--muted)}input,select,button{font:inherit}input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--fg)}button{border:0;border-radius:6px;padding:11px 14px;background:var(--primary);color:#fff;font-weight:650}button.secondary{background:#eef3f7;color:var(--fg)}button.link{background:transparent;color:var(--primary);padding:4px 0}.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{background:#eef3f7;color:#1f2937}.status{display:flex;gap:8px;flex-wrap:wrap}.pill{padding:5px 9px;border-radius:999px;background:#eef3f7;font-size:13px}.ok{color:var(--ok)}.bad{color:var(--danger)}.warn{color:#93370d}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:8px}pre{margin:0;white-space:pre;overflow:auto;max-height:320px;font-size:12px}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.hidden{display:none}@media(max-width:620px){main{padding:12px}.panel{padding:14px}h1{font-size:21px}table{font-size:12px}}
-</style>
-</head>
-<body>
-<header><div class="bar"><h1>EOLO Dron</h1><div class="status" id="statusPills"></div></div></header>
-<main>
-<section class="panel">
-<h2>Configuracion de captura</h2>
-<form id="setupForm" class="grid">
-<div class="field"><label>Espera antes de capturar</label><input id="waitSeconds" name="waitSeconds" type="number" min="0" max="86400" step="1"></div>
-<div class="field"><label>Duracion</label><select id="durationMode" name="durationMode"><option value="finite">Finita</option><option value="infinite">Infinita</option></select></div>
-<div class="field" id="durationField"><label>Segundos de captura</label><input id="durationSeconds" name="durationSeconds" type="number" min="1" max="86400" step="1"></div>
-<div class="field"><label>Flujo objetivo L/min</label><input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1"></div>
-<div class="field"><span class="label">Presets espera</span><div class="chips"><button type="button" class="chip" data-wait="0">Instantanea</button><button type="button" class="chip" data-wait="300">5 min</button><button type="button" class="chip" data-wait="900">15 min</button></div></div>
-<div class="field"><span class="label">Presets duracion</span><div class="chips"><button type="button" class="chip" data-duration="300">5 min</button><button type="button" class="chip" data-duration="900">15 min</button><button type="button" class="chip" data-duration="infinite">Infinita</button></div></div>
-<div class="field"><span class="label">Estado</span><div id="calibrationText">Cargando...</div><div id="flowWarning" class="warn"></div></div>
-<div class="field"><span class="label">&nbsp;</span><button type="submit">Confirmar e iniciar</button></div>
-</form>
-</section>
-<section class="panel">
-<div class="bar"><h2>Registros CSV</h2><div class="actions"><button type="button" class="secondary" id="refreshLogs">Actualizar</button><button type="button" class="secondary" id="downloadAll">Descargar todos</button></div></div>
-<table><thead><tr><th>Archivo</th><th>Tamano</th><th></th></tr></thead><tbody id="logsBody"><tr><td colspan="3">Cargando...</td></tr></tbody></table>
-</section>
-<section class="panel">
-<h2>Preview</h2>
-<pre id="preview">Seleccione un CSV.</pre>
-</section>
-</main>
-<script>
-const $=id=>document.getElementById(id);let logFiles=[],cal=null;
-function fmtSize(n){if(n>1048576)return(n/1048576).toFixed(1)+' MB';if(n>1024)return(n/1024).toFixed(1)+' KB';return n+' B'}
-function setDuration(v){if(v==='infinite'){$('durationMode').value='infinite';$('durationField').classList.add('hidden')}else{$('durationMode').value='finite';$('durationSeconds').value=v;$('durationField').classList.remove('hidden')}}
-function updateFlowWarning(){const f=parseFloat($('targetFlow').value);let msg='';if(cal&&cal.loaded&&(f<cal.minFlow||f>cal.maxFlow))msg='Fuera del rango calibrado: '+cal.minFlow.toFixed(2)+' a '+cal.maxFlow.toFixed(2)+' L/min';$('flowWarning').textContent=msg}
-async function loadStatus(){const r=await fetch('/api/status');const s=await r.json();cal=s.calibration;$('statusPills').innerHTML='<span class="pill '+(s.sdReady?'ok':'bad')+'">SD '+s.sdStatus+'</span><span class="pill">RTC '+s.rtc+'</span><span class="pill">Switch espera '+s.switches.wait+'</span>';$('waitSeconds').value=s.defaults.waitSeconds;$('targetFlow').value=Number(s.defaults.targetFlow).toFixed(1);setDuration(s.defaults.durationSeconds===4294967295?'infinite':s.defaults.durationSeconds);$('calibrationText').textContent=s.calibration.loaded?'Calibracion '+s.calibration.minFlow.toFixed(2)+' a '+s.calibration.maxFlow.toFixed(2)+' L/min':'Sin calibracion cargada';updateFlowWarning()}
-async function loadLogs(){const body=$('logsBody');body.innerHTML='<tr><td colspan="3">Cargando...</td></tr>';const r=await fetch('/api/logs');if(!r.ok){body.innerHTML='<tr><td colspan="3">SD no disponible</td></tr>';return}const j=await r.json();logFiles=j.files||[];if(!logFiles.length){body.innerHTML='<tr><td colspan="3">Sin CSV disponibles</td></tr>';return}body.innerHTML=logFiles.map(f=>'<tr><td>'+f.name+'</td><td>'+fmtSize(f.size)+'</td><td><button class="link" data-preview="'+f.name+'">Ver</button> <a href="/download?file='+encodeURIComponent(f.name)+'">Descargar</a></td></tr>').join('')}
-async function preview(name){const r=await fetch('/api/logs/preview?file='+encodeURIComponent(name));const j=await r.json();$('preview').textContent=[j.header].concat(j.rows||[]).join('\n')}
-document.addEventListener('click',e=>{const t=e.target;if(t.dataset.wait)$('waitSeconds').value=t.dataset.wait;if(t.dataset.duration)setDuration(t.dataset.duration);if(t.dataset.preview)preview(t.dataset.preview);updateFlowWarning()});
-$('durationMode').addEventListener('change',e=>setDuration(e.target.value==='infinite'?'infinite':$('durationSeconds').value||300));
-$('targetFlow').addEventListener('input',updateFlowWarning);
-$('refreshLogs').addEventListener('click',loadLogs);
-$('downloadAll').addEventListener('click',()=>logFiles.forEach((f,i)=>setTimeout(()=>{location.href='/download?file='+encodeURIComponent(f.name)},i*450)));
-$('setupForm').addEventListener('submit',async e=>{e.preventDefault();const fd=new URLSearchParams(new FormData(e.target));if($('durationMode').value==='infinite')fd.set('durationMode','infinite');const r=await fetch('/api/confirm',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd});$('preview').textContent=r.ok?'Configuracion confirmada. El Wi-Fi se apagara y comenzara la sesion.':'Configuracion invalida.'});
-loadStatus().then(loadLogs);
-</script>
-</body>
-</html>
-)HTML";
 };
 
 #endif
