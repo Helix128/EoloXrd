@@ -2,10 +2,10 @@
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 
+#if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
+    !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
 #define EOLO_MODEL_DRON
-// #define EOLO_MODEL_STANDARD
-// #define EOLO_MODEL_EXPRESS
-// #define EOLO_MODEL_EXPRESS_LEGACY
+#endif
 #include "../EoloDemoPinout.h"
 
 /*
@@ -22,7 +22,7 @@
 */
 
 static const uint32_t SERIAL_BAUD = 115200;
-static const uint8_t BME280_ADDRESS = 0x76;
+static const uint8_t DEMO_BME280_ADDRESS = 0x76;
 
 Adafruit_BME280 bme;
 bool bmeReady = false;
@@ -36,7 +36,7 @@ void setup() {
   Serial.println();
   Serial.println("Demo BME280 independiente");
 
-  bmeReady = bme.begin(BME280_ADDRESS, &Wire);
+  bmeReady = bme.begin(DEMO_BME280_ADDRESS, &Wire);
   if (!bmeReady) {
     Serial.println("No se encontro BME280 en 0x76. Revisar cableado o probar direccion 0x77.");
   } else {
