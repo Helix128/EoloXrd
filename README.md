@@ -22,10 +22,7 @@ Este repositorio contiene firmware, manuales y definiciones de pinout para la fa
 | Recurso | Descripción |
 | --- | --- |
 | [Manuales EOLO](docs/README.md) | Índice de manuales de usuario por modelo. |
-| [Manual EOLO Dron](docs/manual-eolo-dron.md) | Operación headless, switches, Wi-Fi, LED, datos y mantenimiento. |
-| [Manual EOLO Standard](docs/manual-eolo-standard.md) | Operación con pantalla, módem, anemómetro, calibración y datos. |
-| [Manual EOLO Express](docs/manual-eolo-express.md) | Operación con pantalla, Plantower, AFM07 y batería simple. |
-| [Pinouts técnicos](pinouts/README.md) | GPIO reales extraídos del firmware para cada variante. |
+| [Pinouts](pinouts/README.md) | GPIO reales extraídos del firmware para cada variante. |
 | [Demos independientes](demos/README.md) | Sketches para probar sensores y componentes aislados. |
 | [Calibración](Calibración.md) | Notas y recursos de calibración. |
 
