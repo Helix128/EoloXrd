@@ -56,6 +56,10 @@ public:
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
     _server.on("/api/logs", HTTP_GET, [this]() { handleLogs(); });
     _server.on("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
+    _server.on("/api/calibration/status", HTTP_GET, [this]() { handleCalibrationStatus(); });
+    _server.on("/api/calibration/start", HTTP_POST, [this]() { handleCalibrationStart(); });
+    _server.on("/api/calibration/abort", HTTP_POST, [this]() { handleCalibrationAbort(); });
+    _server.on("/api/calibration/clear", HTTP_POST, [this]() { handleCalibrationClear(); });
     _server.on("/download", HTTP_GET, [this]() { handleDownload(); });
     _server.on("/api/confirm", HTTP_POST, [this]() { handleConfirm(); });
     registerCaptivePortalEndpoints();
@@ -410,8 +414,69 @@ private:
     file.close();
   }
 
+  bool parseCalibrationConfig(HeadlessMotorCalibrationConfig &config)
+  {
+    if (_server.hasArg("pwmStart")) config.pwmStart = _server.arg("pwmStart").toInt();
+    if (_server.hasArg("pwmEnd")) config.pwmEnd = _server.arg("pwmEnd").toInt();
+    if (_server.hasArg("pwmStep")) config.pwmStep = _server.arg("pwmStep").toInt();
+    if (_server.hasArg("settleMs")) config.settleMs = _server.arg("settleMs").toInt();
+    if (_server.hasArg("sampleIntervalMs")) config.sampleIntervalMs = _server.arg("sampleIntervalMs").toInt();
+    if (_server.hasArg("samplesPerPoint")) config.samplesPerPoint = _server.arg("samplesPerPoint").toInt();
+    if (_server.hasArg("maxTargetFlow")) config.maxTargetFlow = _server.arg("maxTargetFlow").toFloat();
+    if (_server.hasArg("minValidFlow")) config.minValidFlow = _server.arg("minValidFlow").toFloat();
+    if (_server.hasArg("minFlowDelta")) config.minFlowDelta = _server.arg("minFlowDelta").toFloat();
+    if (_server.hasArg("maxFlowStddev")) config.maxFlowStddev = _server.arg("maxFlowStddev").toFloat();
+    return HeadlessMotorCalibration::validateConfig(config);
+  }
+
+  void handleCalibrationStatus()
+  {
+    _server.send(200, "application/json", _ctx.headlessCalibration.statusJson());
+  }
+
+  void handleCalibrationStart()
+  {
+    if (_ctx.isCapturing)
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"capturing\"}");
+      return;
+    }
+
+    HeadlessMotorCalibrationConfig config;
+    if (!parseCalibrationConfig(config))
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_config\"}");
+      return;
+    }
+
+    if (!_ctx.headlessCalibration.start(config))
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"busy\"}");
+      return;
+    }
+    _server.send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleCalibrationAbort()
+  {
+    _ctx.headlessCalibration.abort(_ctx);
+    _server.send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleCalibrationClear()
+  {
+    _ctx.headlessCalibration.clear(_ctx);
+    _server.send(200, "application/json", "{\"ok\":true}");
+  }
+
   void handleConfirm()
   {
+    if (_ctx.headlessCalibration.isRunning())
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"calibration_running\"}");
+      return;
+    }
+
     HeadlessSetupConfig config;
     if (!parseConfirm(config))
     {
