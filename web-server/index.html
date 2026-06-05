@@ -23,6 +23,21 @@
 </form>
 </section>
 <section class="panel">
+<div class="bar"><h2>Calibracion automatica</h2><div class="actions"><button type="button" class="secondary" id="calRefresh">Actualizar</button><button type="button" class="secondary" id="calAbort">Abortar</button><button type="button" class="secondary" id="calClear">Borrar</button></div></div>
+<form id="calForm" class="grid">
+<div class="field"><label>PWM inicial</label><input id="calPwmStart" name="pwmStart" type="number" min="0" max="2047" step="1" value="400"></div>
+<div class="field"><label>PWM final</label><input id="calPwmEnd" name="pwmEnd" type="number" min="1" max="2047" step="1" value="1900"></div>
+<div class="field"><label>Paso PWM</label><input id="calPwmStep" name="pwmStep" type="number" min="1" max="2047" step="1" value="80"></div>
+<div class="field"><label>Estabilizacion ms</label><input id="calSettleMs" name="settleMs" type="number" min="100" step="100" value="3000"></div>
+<div class="field"><label>Intervalo muestra ms</label><input id="calSampleMs" name="sampleIntervalMs" type="number" min="100" step="100" value="800"></div>
+<div class="field"><label>Muestras por punto</label><input id="calSamples" name="samplesPerPoint" type="number" min="1" max="50" step="1" value="5"></div>
+<div class="field"><label>Flujo maximo L/min</label><input id="calMaxFlow" name="maxTargetFlow" type="number" min="0.1" max="20" step="0.1" value="8.0"></div>
+<div class="field"><span class="label">&nbsp;</span><button type="submit">Iniciar calibracion</button></div>
+</form>
+<div id="calStatus" class="cal-status">Calibracion: sin datos</div>
+<pre id="calPoints">Sin puntos.</pre>
+</section>
+<section class="panel">
 <div class="bar"><h2>Registros CSV</h2><div class="actions"><button type="button" class="secondary" id="refreshLogs">Actualizar</button><button type="button" class="secondary" id="downloadAll">Descargar todos</button></div></div>
 <table><thead><tr><th>Archivo</th><th>Tamano</th><th></th></tr></thead><tbody id="logsBody"><tr><td colspan="3">Cargando...</td></tr></tbody></table>
 </section>
