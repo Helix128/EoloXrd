@@ -47,7 +47,7 @@ python3 -m pip install platformio
 | `eolo_express_legacy` | Express con FS3000 legacy. |
 | `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
 | `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
-| `eolo_dron_low_power` | Dron headless con LED de bajo consumo. |
+| `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
 
 Comandos básicos:
 
@@ -85,11 +85,10 @@ Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan
 - [EOLO Express](pinouts/eolo-express.md)
 - [EOLO Express Legacy](pinouts/eolo-express-legacy.md)
 
-Nota ESP32: `GPIO34-39` son solo entrada y no tienen pull-up/down interno; el firmware los configura como `INPUT` cuando aplica.
-
 ## Setup Wi-Fi headless
 
-`HeadlessSetup` es una feature genérica para equipos sin pantalla. Actualmente se activa en `eolo_dron` cuando los switches de espera están en `Off`.
+`HeadlessSetup` es una feature para equipos sin pantalla. Actualmente se activa solo en `eolo_dron`.
+Este feature crea un servidor web para configurar los parámetros de forma más libre, se puede acceder a través de la siguiente red AP + url web.
 
 Defaults:
 
@@ -105,8 +104,6 @@ Credenciales pueden cambiarse con build flags:
 -DHEADLESS_SETUP_AP_SSID=\"mi-red-setup\"
 -DHEADLESS_SETUP_AP_PASSWORD=\"clave-local\"
 ```
-
-No hay credenciales privadas de red externa en el repositorio.
 
 ## Demos
 
@@ -126,11 +123,3 @@ Hay tests en `test/`. Varios requieren hardware real conectado, por ejemplo AFM0
 ```bash
 pio test -e eolo_dron
 ```
-
-## Mantenimiento
-
-- `src/Data/Context.h` concentra demasiadas responsabilidades. Dividir gradualmente cuando se toque captura, logging, SD o sincronización RTC.
-- Evitar volver a vendorizar librerías del core ESP32 como `Wire`; usar framework y `lib_deps`.
-- Mantener `platformio.ini` como fuente única de dependencias.
-- Mantener `pinouts/` sincronizado con `src/Board/Pinout.h` y `demos/EoloDemoPinout.h`.
-- Archivos generados/cache como `.pio/`, `__pycache__/` y `.vscode` local no deben versionarse salvo recomendaciones estables.
