@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "./Board/RS485Bus.h"
+#include "../Board/RS485Bus.h"
 
 #define AFM_ID 2
 
