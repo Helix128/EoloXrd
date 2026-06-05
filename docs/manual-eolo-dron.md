@@ -8,9 +8,9 @@ EOLO Dron es la version sin pantalla. La captura se configura con switches fisic
 2. Inserte una tarjeta microSD funcional.
 3. Revise que el sensor de flujo AFM07 y las bombas esten conectados.
 4. Asegure una entrada y salida de aire libres, sin dobleces ni obstrucciones.
-5. Configure los switches de espera y duracion antes de encender, o deje la espera en `Off` para usar el setup Wi-Fi.
+5. Configure los switches de espera y duracion antes de encender, o deje la espera en `Off` para usar el setup Wi-Fi headless.
 
-Con switches fisicos, el flujo objetivo del Dron es **5.0 L/min**. En setup Wi-Fi puede configurarse entre **0.0 y 8.0 L/min** para la sesion actual. Este modelo no usa pantalla, modem, anemometro ni sensor Plantower.
+Con switches fisicos, el flujo objetivo del Dron es **5.0 L/min**. En setup Wi-Fi headless puede configurarse entre **0.0 y 8.0 L/min** para la sesion actual. Este modelo no usa pantalla, modem, anemometro ni sensor Plantower.
 
 ## Switches
 
@@ -34,16 +34,20 @@ Los switches se leen al encender. Cada grupo usa dos posiciones: `SW0` y `SW1`.
 | 1 | 0 | 15 min |
 | 1 | 1 | Infinita |
 
-Si la espera queda en `Off`, el equipo entra al setup Wi-Fi. Con espera distinta de `Off`, la duracion debe estar habilitada para iniciar una captura por switches. Si la espera no esta en `Off` y la duracion queda en `Off`, el equipo no inicia captura.
+Si la espera queda en `Off`, el equipo entra al setup Wi-Fi headless. Con espera distinta de `Off`, la duracion debe estar habilitada para iniciar una captura por switches. Si la espera no esta en `Off` y la duracion queda en `Off`, el equipo no inicia captura.
 
-## Setup Wi-Fi
+## Setup Wi-Fi headless
 
-Cuando `WAIT_SW1` y `WAIT_SW0` estan en `0`, el Dron levanta un punto de acceso:
+Cuando `WAIT_SW1` y `WAIT_SW0` estan en `0`, el Dron levanta el setup Wi-Fi headless. Esta feature es generica para equipos sin pantalla, pero hoy esta habilitada solo en EOLO Dron.
+
+Defaults de firmware:
 
 ```text
-SSID: eolo-setup
-Password: eolo-setup
+SSID: eolo-dron
+Password: eolo-dron
 ```
+
+Pueden cambiarse por build flags `HEADLESS_SETUP_AP_SSID` y `HEADLESS_SETUP_AP_PASSWORD`.
 
 Conecte un telefono o notebook a esa red y abra:
 
@@ -99,8 +103,8 @@ El modo ahorro se habilita compilando con `STATUS_LED_LOW_POWER`, por ejemplo us
 
 1. Configure los switches de espera y duracion, o deje la espera en `Off` para usar Wi-Fi.
 2. Energice el equipo.
-3. El equipo lee los switches. Si la espera esta en `Off`, abre el setup Wi-Fi; si no, prepara una sesion con flujo de 5.0 L/min.
-4. En setup Wi-Fi, conectese a `EOLO-Dron-Setup`, configure la sesion y confirme.
+3. El equipo lee los switches. Si la espera esta en `Off`, abre el setup Wi-Fi headless; si no, prepara una sesion con flujo de 5.0 L/min.
+4. En setup Wi-Fi headless, conectese a `eolo-dron`, configure la sesion y confirme.
 5. Si hay espera configurada, el equipo queda esperando hasta la hora de inicio. Si es instantanea, la captura comienza de inmediato.
 6. Durante la captura, las bombas regulan el flujo y se registran muestras cada 10 segundos. El NeoPixel indica el estado segun la tabla de patrones LED.
 7. Al cumplir la duracion configurada, las bombas se apagan.
@@ -132,7 +136,7 @@ En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de
 | --- | --- |
 | No inicia captura por switches | Verifique que la espera no este en `Off` y que la duracion este habilitada. |
 | No veo la red Wi-Fi | Verifique que los dos switches de espera esten en `Off` al energizar. |
-| No abre la pagina | Conectese a `EOLO-Dron-Setup` y abra `http://192.168.4.1/`. |
+| No abre la pagina | Conectese a `eolo-dron` y abra `http://192.168.4.1/`. |
 | No hay archivo CSV | Revise que la microSD este insertada y en buen estado. |
 | `ntc_temperature` aparece como `-1` | Revise conexion del NTC o use firmware con `FEATURE_NTC`. |
 | El flujo no alcanza el objetivo | Revise obstrucciones, mangueras, filtros, bombas, calibracion y conexion del AFM07. |

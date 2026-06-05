@@ -19,6 +19,8 @@ Configurar Arduino IDE:
 - Para `AFM07`: instalar `ModbusMaster`.
 - `Anemometer` y `Plantower` usan solo librerias incluidas con el core ESP32 Arduino.
 
+En PlatformIO no se instalan librerias manualmente: las dependencias de cada demo estan declaradas en `platformio.demos.ini`.
+
 ## PlatformIO
 
 Las demos tambien se pueden compilar y subir desde la raiz del repo. El archivo
