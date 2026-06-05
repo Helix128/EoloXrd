@@ -2,6 +2,7 @@
 #define MOTOR_H
 
 #include <Arduino.h>
+#include <math.h>
 #include "../Config.h"
 
 #define PWM_RESOLUTION 11
@@ -26,9 +27,12 @@ public:
   static const int freq = 20000;
   static const int resolution = 11;
   int pwmValues[MOTOR_PWM_PIN_COUNT];
+  int targetPwmValues[MOTOR_PWM_PIN_COUNT];
   bool isReady = false;
 
 private:
+  unsigned long lastRampMs = 0;
+
 #if defined(FEATURE_MOTOR_PWM_POWER_PIN)
   bool motorPowerPinEnabled = false;
 
@@ -65,6 +69,67 @@ private:
     return pwm;
   }
 
+public:
+  static int nextRampedPwm(int current, int target, int step)
+  {
+    current = constrainPwm(current);
+    target = constrainPwm(target);
+    if (step <= 0 || target <= current)
+      return target;
+    int next = current + step;
+    return next > target ? target : next;
+  }
+
+  static int limitPwmStep(int current, int target, int maxStep)
+  {
+    current = constrainPwm(current);
+    target = constrainPwm(target);
+    if (maxStep <= 0)
+      return target;
+    if (target > current + maxStep)
+      return current + maxStep;
+    if (target < current - maxStep)
+      return current - maxStep;
+    return target;
+  }
+
+  static int nextClosedLoopPwm(int basePwm,
+                               int currentPwm,
+                               float targetFlow,
+                               float measuredFlow,
+                               float dtSeconds,
+                               float &integral,
+                               float deadbandLpm,
+                               float kp,
+                               float ki,
+                               float integralLimit,
+                               int maxStepPwm)
+  {
+    basePwm = constrainPwm(basePwm);
+    currentPwm = constrainPwm(currentPwm);
+    if (dtSeconds < 0.0f)
+      dtSeconds = 0.0f;
+
+    float error = targetFlow - measuredFlow;
+    if (fabsf(error) < deadbandLpm)
+      error = 0.0f;
+
+    integral += error * dtSeconds;
+    if (integralLimit >= 0.0f)
+    {
+      if (integral > integralLimit)
+        integral = integralLimit;
+      else if (integral < -integralLimit)
+        integral = -integralLimit;
+    }
+
+    float correction = kp * error + ki * integral;
+    int desiredPwm = constrainPwm(basePwm + static_cast<int>(correction));
+    return limitPwmStep(currentPwm, desiredPwm, maxStepPwm);
+  }
+
+private:
+
   void writeMotorPwm(int motorIdx, int pwm)
   {
     if (motorIdx < 0 || motorIdx >= motorCount)
@@ -82,11 +147,29 @@ private:
 #endif
   }
 
+  void setMotorTargetPwm(int motorIdx, int pwm)
+  {
+    if (motorIdx < 0 || motorIdx >= motorCount)
+      return;
+
+    pwm = constrainPwm(pwm);
+    targetPwmValues[motorIdx] = pwm;
+
+#if MOTOR_RAMP_STEP > 0
+    if (pwm > pwmValues[motorIdx])
+      return;
+#endif
+    writeMotorPwm(motorIdx, pwm);
+  }
+
 public:
   MotorManager()
   {
     for (int i = 0; i < motorCount; i++)
+    {
       pwmValues[i] = 0;
+      targetPwmValues[i] = 0;
+    }
   }
 
   ~MotorManager() {}
@@ -105,6 +188,8 @@ public:
       digitalWrite(motors[i], LOW);
       ledcSetup(ledcChannels[i], freq, resolution);
       ledcAttachPin(motors[i], ledcChannels[i]);
+      pwmValues[i] = 0;
+      targetPwmValues[i] = 0;
       ledcWrite(ledcChannels[i], 0);
     }
 #if defined(FEATURE_MOTOR_PWM_POWER_PIN)
@@ -139,9 +224,51 @@ public:
     setPowerPct(0);
   }
 
+  void updateRamp()
+  {
+#if MOTOR_RAMP_STEP > 0
+    unsigned long now = millis();
+    if (now - lastRampMs < MOTOR_RAMP_INTERVAL_MS)
+      return;
+    lastRampMs = now;
+
+    for (int i = 0; i < motorCount; i++)
+    {
+      if (pwmValues[i] >= targetPwmValues[i])
+        continue;
+
+      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], MOTOR_RAMP_STEP);
+      writeMotorPwm(i, next);
+    }
+#endif
+  }
+
+  int getMotorPwm(int motorIdx) const
+  {
+    if (motorIdx < 0 || motorIdx >= motorCount)
+      return 0;
+    return pwmValues[motorIdx];
+  }
+
+  int getMotorTargetPwm(int motorIdx) const
+  {
+    if (motorIdx < 0 || motorIdx >= motorCount)
+      return 0;
+    return targetPwmValues[motorIdx];
+  }
+
   // Establecer PWM de un motor específico (0 a MAX_PWM)
   void setMotorPwm(int motorIdx, int pwm)
   {
+    setMotorTargetPwm(motorIdx, pwm);
+  }
+
+  void setMotorPwmImmediate(int motorIdx, int pwm)
+  {
+    if (motorIdx < 0 || motorIdx >= motorCount)
+      return;
+    pwm = constrainPwm(pwm);
+    targetPwmValues[motorIdx] = pwm;
     writeMotorPwm(motorIdx, pwm);
   }
 
@@ -149,7 +276,13 @@ public:
   void setPwm(int pwm)
   {
     for (int i = 0; i < motorCount; i++)
-      writeMotorPwm(i, pwm);
+      setMotorTargetPwm(i, pwm);
+  }
+
+  void setPwmImmediate(int pwm)
+  {
+    for (int i = 0; i < motorCount; i++)
+      setMotorPwmImmediate(i, pwm);
   }
 
   // Establecer TODOS los motores al mismo porcentaje (0-100%)

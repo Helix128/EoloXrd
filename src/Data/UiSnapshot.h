@@ -21,6 +21,8 @@ struct EnvironmentSnapshot
     float temperature = 0.0f;
     float humidity = 0.0f;
     float pressure = 0.0f;
+    bool ntcValid = false;
+    float ntcTemperature = -99.0f;
 };
 
 struct AirQualitySnapshot

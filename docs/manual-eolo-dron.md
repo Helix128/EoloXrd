@@ -70,6 +70,31 @@ Desde la pagina puede configurar:
 
 Al confirmar, el Wi-Fi se apaga, se guardan esos valores como defaults del formulario para la proxima vez y comienza la sesion configurada. La configuracion web no auto-inicia una captura futura: cada arranque con espera en `Off` requiere confirmar desde la pagina.
 
+## Patrones LED
+
+El EOLO Dron usa un NeoPixel de estado en GPIO 27. El codigo de color sigue esta semantica:
+
+- Azul: sistema encendido o inicio.
+- Violeta: configuracion/setup.
+- Amarillo/ambar: espera o temporizacion.
+- Verde: captura correcta.
+- Cian: actividad interna/transitoria.
+- Rojo: error.
+- Blanco/gris: finalizacion.
+
+| Estado | Modo normal / pruebas | Modo ahorro / produccion | Detalle |
+| --- | --- | --- | --- |
+| Apagado | LED apagado | LED apagado | Sin indicacion activa. |
+| Inicio / idle | Azul pulsante | Pulso azul breve cada ~3 s | Equipo iniciando o sin captura activa. |
+| Setup Wi-Fi | Violeta pulsante | Pulso violeta breve cada ~2.2 s | Punto de acceso y pagina web activos. |
+| Esperando captura | Ambar parpadeante lento | Pulso ambar breve cada ~5 s | Hay una espera configurada antes de iniciar. |
+| Captura activa | Verde pulsante | Pulso verde breve cada ~4 s | Bombas y registro de muestras activos. |
+| Ocupado durante captura | Cian parpadeante rapido | Doble pulso cian breve cada ~2.5 s | Escritura de log o tarea interna en curso. |
+| Error durante captura | Rojo parpadeante rapido | Triple pulso rojo frecuente | SD ausente o error de SD. Tiene prioridad sobre ocupado. |
+| Captura finalizada | Blanco/gris fijo | Pulso blanco/gris breve y apagado antes de dormir | Sesion terminada; el equipo entra luego en deep sleep. |
+
+El modo ahorro se habilita compilando con `STATUS_LED_LOW_POWER`, por ejemplo usando el entorno `eolo_dron_low_power`.
+
 ## Flujo de uso
 
 1. Configure los switches de espera y duracion, o deje la espera en `Off` para usar Wi-Fi.
@@ -77,7 +102,7 @@ Al confirmar, el Wi-Fi se apaga, se guardan esos valores como defaults del formu
 3. El equipo lee los switches. Si la espera esta en `Off`, abre el setup Wi-Fi; si no, prepara una sesion con flujo de 5.0 L/min.
 4. En setup Wi-Fi, conectese a `EOLO-Dron-Setup`, configure la sesion y confirme.
 5. Si hay espera configurada, el equipo queda esperando hasta la hora de inicio. Si es instantanea, la captura comienza de inmediato.
-6. Durante la captura, las bombas regulan el flujo y se registran muestras cada 10 segundos.
+6. Durante la captura, las bombas regulan el flujo y se registran muestras cada 10 segundos. El NeoPixel indica el estado segun la tabla de patrones LED.
 7. Al cumplir la duracion configurada, las bombas se apagan.
 8. El equipo entra en deep sleep hasta reset o power-cycle.
 
@@ -94,8 +119,10 @@ Los datos se guardan en la microSD:
 El intervalo de registro es de 10 segundos. El CSV del Dron usa estas columnas:
 
 ```text
-time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct
+time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,ntc_temperature,battery_pct
 ```
+
+`ntc_temperature` registra la temperatura del termistor interno si el firmware fue compilado con NTC; si no esta disponible se guarda `-1`.
 
 En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de viento, y las columnas PM no representan una medicion de particulas en este modelo.
 
@@ -107,6 +134,7 @@ En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de
 | No veo la red Wi-Fi | Verifique que los dos switches de espera esten en `Off` al energizar. |
 | No abre la pagina | Conectese a `EOLO-Dron-Setup` y abra `http://192.168.4.1/`. |
 | No hay archivo CSV | Revise que la microSD este insertada y en buen estado. |
+| `ntc_temperature` aparece como `-1` | Revise conexion del NTC o use firmware con `FEATURE_NTC`. |
 | El flujo no alcanza el objetivo | Revise obstrucciones, mangueras, filtros, bombas, calibracion y conexion del AFM07. |
 | La captura no termina | Puede estar configurada como duracion infinita. Reinicie o corte alimentacion para detener. |
 | Termino y no responde | Es normal: entra en deep sleep. Reinicie o corte y vuelva a alimentar. |

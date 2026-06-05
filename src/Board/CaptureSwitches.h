@@ -142,9 +142,29 @@ public:
     }
   }
 
+  static const char* modeDescription(const CaptureSwitchSelection& selection)
+  {
+    if (!selection.waitEnabled)
+      return "setup Wi-Fi";
+    if (!selection.durationEnabled)
+      return "idle";
+    if (selection.instantStart)
+      return "captura instantanea";
+    return "captura programada";
+  }
+
+  static void printSummary(Print& out, const CaptureSwitchSnapshot& snap)
+  {
+    out.printf("Switches: espera %s | duracion %s | modo %s\n",
+               waitDescription(snap.waitCode),
+               durationDescription(snap.durationCode),
+               modeDescription(snap.selection));
+  }
+
   static void printSnapshot(Print& out, const CaptureSwitchSnapshot& snap)
   {
-    out.println("Switches de captura:");
+    printSummary(out, snap);
+    out.println("Detalle switches:");
     printPin(out, snap.waitSw0);
     printPin(out, snap.waitSw1);
     printPin(out, snap.durationSw0);

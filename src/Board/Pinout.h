@@ -21,6 +21,11 @@
   #define DURATION_SW1_PIN 13
 
   #define NEOPIXEL_PIN 27
+  #define NEOPIXEL_COUNT 1
+  #define NEOPIXEL_BRIGHTNESS 60
+
+  #define NTC_PIN 34
+  #define BATTERY_ADC_PIN EOLO_PIN_UNUSED
 
   #define RS485_RX_PIN 16
   #define RS485_TX_PIN 17
@@ -52,6 +57,11 @@
   #define DURATION_SW1_PIN 39
 
   #define NEOPIXEL_PIN 27
+  #define NEOPIXEL_COUNT 1
+  #define NEOPIXEL_BRIGHTNESS 60
+
+  #define NTC_PIN EOLO_PIN_UNUSED
+  #define BATTERY_ADC_PIN 34
 
   #define RS485_RX_PIN 35
   #define RS485_TX_PIN 33
@@ -110,6 +120,22 @@
 
 #if defined(EOLO_TARGET_DRON) && MODEM_PWR_PIN == 13
   #error "EOLO Dron usa GPIO13 como DIP4; no lo configures como modem"
+#endif
+
+#if defined(FEATURE_NTC) && NTC_PIN < 0
+  #error "FEATURE_NTC requiere NTC_PIN configurado"
+#endif
+
+#if defined(FEATURE_NTC) && EOLO_SAME_USED_PIN(NTC_PIN, BATTERY_ADC_PIN)
+  #error "Pinout invalido: NTC_PIN y BATTERY_ADC_PIN duplican GPIO"
+#endif
+
+#if defined(FEATURE_NTC) && !EOLO_INPUT_ONLY_PIN(NTC_PIN)
+  #warning "NTC_PIN recomendado en GPIO34-39 para entrada ADC-only"
+#endif
+
+#if defined(FEATURE_NEOPIXEL) && NEOPIXEL_PIN < 0
+  #error "FEATURE_NEOPIXEL requiere NEOPIXEL_PIN configurado"
 #endif
 
 #endif

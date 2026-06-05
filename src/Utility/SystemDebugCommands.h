@@ -25,6 +25,7 @@ private:
         out.println("  time epoch <unix_utc> <offset_seconds>");
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
         out.println("  switches/sw       estado de switches de captura");
+        out.println("  drone status      diagnostico compacto EOLO Dron");
 #endif
         out.println("  !                 entrar al terminal silencioso");
         out.println("  exit              salir del terminal silencioso");

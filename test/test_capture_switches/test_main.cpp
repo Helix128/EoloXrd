@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "Board/CaptureSwitches.h"
+#include "Board/DroneSetupTypes.h"
 
 void test_wait_table()
 {
@@ -80,6 +81,14 @@ void test_decode_full_table()
     }
 }
 
+void test_web_setup_entry_uses_wait_off()
+{
+    TEST_ASSERT_TRUE(DroneSetup::shouldEnterWebSetup(0b00));
+    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b01));
+    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b10));
+    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b11));
+}
+
 void test_descriptions()
 {
     TEST_ASSERT_EQUAL_STRING("off", CaptureSwitches::waitDescription(0b00));
@@ -101,6 +110,7 @@ void setup()
     RUN_TEST(test_duration_table);
     RUN_TEST(test_sw0_is_lsb);
     RUN_TEST(test_decode_full_table);
+    RUN_TEST(test_web_setup_entry_uses_wait_off);
     RUN_TEST(test_descriptions);
     UNITY_END();
 }

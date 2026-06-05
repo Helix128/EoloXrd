@@ -81,6 +81,52 @@ enum class DroneBootState : uint8_t
 static DroneBootState droneState = DroneBootState::Idle;
 static bool droneFinishHandled = false;
 
+static void setDroneLed(StatusLedPattern pattern)
+{
+#ifdef FEATURE_NEOPIXEL
+  ctx.components.statusLed.setPattern(pattern);
+#else
+  (void)pattern;
+#endif
+}
+
+static void updateDroneStatusLed()
+{
+  if (droneState == DroneBootState::Capturing &&
+      (ctx.sdStatus == SD_ERROR || ctx.sdStatus == SD_MISSING))
+  {
+    setDroneLed(StatusLedPattern::Error);
+    return;
+  }
+
+  if (droneState == DroneBootState::Capturing &&
+      (ctx.logActive || ctx.uploadPending || ctx.uploadActive))
+  {
+    setDroneLed(StatusLedPattern::Busy);
+    return;
+  }
+
+  switch (droneState)
+  {
+  case DroneBootState::Setup:
+    setDroneLed(StatusLedPattern::Setup);
+    break;
+  case DroneBootState::Waiting:
+    setDroneLed(StatusLedPattern::Waiting);
+    break;
+  case DroneBootState::Capturing:
+    setDroneLed(StatusLedPattern::Capturing);
+    break;
+  case DroneBootState::Finished:
+    setDroneLed(StatusLedPattern::Finished);
+    break;
+  case DroneBootState::Idle:
+  default:
+    setDroneLed(StatusLedPattern::Boot);
+    break;
+  }
+}
+
 static void startDroneConfiguredCapture(const DroneSetupConfig &config)
 {
   DateTime now = ctx.components.rtc.now();
@@ -101,6 +147,7 @@ static void startDroneConfiguredCapture(const DroneSetupConfig &config)
     LOG_OUT_LN(" segundos antes de capturar.");
     droneState = DroneBootState::Waiting;
   }
+  updateDroneStatusLed();
 }
 
 static void configureDroneCapture()
@@ -117,6 +164,7 @@ static void configureDroneCapture()
     ctx.components.motor.setPowerPct(0);
     droneSetupServer.begin();
     droneState = DroneBootState::Setup;
+    updateDroneStatusLed();
     return;
   }
 
@@ -128,6 +176,7 @@ static void configureDroneCapture()
     LOG_LN("Configuracion de switches indica idle; captura no iniciada.");
     ctx.components.motor.setPowerPct(0);
     droneState = DroneBootState::Idle;
+    updateDroneStatusLed();
     return;
   }
 
@@ -153,6 +202,7 @@ static void configureDroneCapture()
     LOG_OUT_LN(" segundos antes de capturar.");
     droneState = DroneBootState::Waiting;
   }
+  updateDroneStatusLed();
 }
 
 static void updateDroneController()
@@ -167,6 +217,7 @@ static void updateDroneController()
       droneSetupServer.stop();
       startDroneConfiguredCapture(config);
     }
+    updateDroneStatusLed();
     return;
   }
 
@@ -179,6 +230,7 @@ static void updateDroneController()
       ctx.beginCapture();
       droneState = DroneBootState::Capturing;
     }
+    updateDroneStatusLed();
     return;
   }
 
@@ -186,6 +238,8 @@ static void updateDroneController()
   {
     droneState = DroneBootState::Finished;
   }
+
+  updateDroneStatusLed();
 
   if (droneState == DroneBootState::Finished && !droneFinishHandled)
   {
@@ -205,7 +259,14 @@ static void updateDroneController()
 #endif
     droneFinishHandled = true;
     ctx.clearSession();
-    ctx.components.motor.setPowerPct(0);
+    ctx.components.motor.setPwmImmediate(0);
+    setDroneLed(StatusLedPattern::Finished);
+    ctx.components.statusLed.poll(true);
+#ifdef STATUS_LED_LOW_POWER
+    delay(140);
+    setDroneLed(StatusLedPattern::Off);
+    ctx.components.statusLed.poll(true);
+#endif
     LOG_LN("Drone: captura finalizada; entrando en deep sleep hasta reset/power-cycle.");
     Serial.flush();
     esp_deep_sleep_start();
@@ -242,6 +303,7 @@ void setup()
   debugConsole.attachRTC(&ctx.components.rtc);
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
   debugConsole.attachCaptureSwitches(&captureSwitches);
+  debugConsole.attachDroneContext(&ctx);
 #endif
 #ifndef FEATURE_HEADLESS
   debugConsole.attachDisplayReinit(reinitDisplay);
@@ -262,6 +324,7 @@ void setup()
   ctx.begin();
 
 #ifdef FEATURE_HEADLESS
+  setDroneLed(StatusLedPattern::Boot);
   configureDroneCapture();
 #else
   // Carga la escena inicial (splash)

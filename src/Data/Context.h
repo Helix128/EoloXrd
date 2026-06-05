@@ -13,6 +13,7 @@
 #include "ESPJob.h"
 #include <SD.h>
 #include <Preferences.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -88,6 +89,18 @@ typedef struct Context
     const char *logsDir = "/EOLO/logs";
 
     CalibrationManager calibration;
+
+#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
+    struct MotorFlowController
+    {
+        bool initialized = false;
+        int basePwm = 0;
+        int currentPwm = 0;
+        float integral = 0.0f;
+        float targetFlow = -1.0f;
+        uint32_t lastUpdateMs = 0;
+    } motorFlowController;
+#endif
 
     Preferences preferences;
     UiSnapshot uiSnapshot;
@@ -601,6 +614,14 @@ public:
         uiSnapshot.environment.temperature = components.bme.temperature;
         uiSnapshot.environment.humidity = components.bme.humidity;
         uiSnapshot.environment.pressure = components.bme.pressure;
+#ifdef FEATURE_NTC
+        NTCData ntcData;
+        uiSnapshot.environment.ntcValid = components.ntc.getData(ntcData);
+        uiSnapshot.environment.ntcTemperature = uiSnapshot.environment.ntcValid ? ntcData.temperature : -99.0f;
+#else
+        uiSnapshot.environment.ntcValid = false;
+        uiSnapshot.environment.ntcTemperature = -1.0f;
+#endif
 
         uiSnapshot.airQuality.enabled = session.usePlantower;
 #ifdef FEATURE_PLANTOWER
@@ -808,9 +829,9 @@ public:
             }
 
 #ifdef FEATURE_ANEMOMETER
-            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct");
+            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,ntc_temperature,battery_pct");
 #else
-            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct");
+            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,ntc_temperature,battery_pct");
 #endif
             file.close();
 
@@ -896,6 +917,19 @@ public:
 
 #endif
 
+        float ntcTemperature = -1.0f;
+#ifdef FEATURE_NTC
+        NTCData ntcData;
+        if (components.ntc.getData(ntcData))
+        {
+            ntcTemperature = ntcData.temperature;
+        }
+#endif
+
+        // ntc_temperature
+        file.print(ntcTemperature);
+        file.print(",");
+
         // battery_pct
         file.print(components.battery.getPct());
         file.println();
@@ -919,6 +953,8 @@ public:
         LOG_OUT_LN(pm25);
         LOG_OUT(" PM10: ");
         LOG_OUT_LN(pm10);
+        LOG_OUT(" NTC: ");
+        LOG_OUT_LN(ntcTemperature);
         LOG_OUT(" Battery: ");
         LOG_OUT_LN(components.battery.getPct());
         file.close();
@@ -1025,7 +1061,10 @@ public:
     {
         session.elapsedTime = 0;
         isCapturing = true;
+        isPaused = false;
+        isEnd = false;
         session.capturedVolume = 0.0;
+        resetMotorFlowController();
         LOG_LN("Iniciando captura...");
 #ifdef FEATURE_MODEM
         components.modemService.warmUp();
@@ -1069,6 +1108,7 @@ public:
         isEnd = true;
 
         LOG_LN("Captura finalizada.");
+        resetMotorFlowController();
         components.motor.setPowerPct(0);
 #ifdef FEATURE_MODEM
         components.modemService.shutdownWhenIdle();
@@ -1085,6 +1125,7 @@ public:
         isCapturing = false;
         isPaused = false;
         session = Session();
+        resetMotorFlowController();
         components.motor.setPowerPct(0);
 #ifdef FEATURE_MODEM
         components.modemService.shutdownWhenIdle();
@@ -1096,8 +1137,86 @@ public:
         LOG_LN("Estado de captura reiniciado.");
     }
 
+    void resetMotorFlowController()
+    {
+#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
+        motorFlowController = MotorFlowController();
+#endif
+    }
+
+#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
+    void updateClosedLoopMotors()
+    {
+        unsigned long nowMs = millis();
+        if (motorFlowController.initialized &&
+            nowMs - motorFlowController.lastUpdateMs < MOTOR_FLOW_CONTROL_INTERVAL_MS)
+            return;
+
+        int p0 = 0, p1 = 0;
+        if (!calibration.getMotorPwms(session.targetFlow, p0, p1))
+        {
+            resetMotorFlowController();
+            components.motor.setPwm(0);
+            return;
+        }
+
+        if (!motorFlowController.initialized || fabsf(motorFlowController.targetFlow - session.targetFlow) > 0.001f)
+        {
+            motorFlowController.initialized = true;
+            motorFlowController.basePwm = p0;
+            motorFlowController.currentPwm = p0;
+            motorFlowController.integral = 0.0f;
+            motorFlowController.targetFlow = session.targetFlow;
+            motorFlowController.lastUpdateMs = nowMs;
+            components.motor.setMotorPwm(0, p0);
+            LOG_OUT("Control flujo closed-loop: objetivo ");
+            LOG_OUT(session.targetFlow, 2);
+            LOG_OUT(" L/min -> PWM base ");
+            LOG_OUT_LN(p0);
+            return;
+        }
+
+        FlowData flowData;
+        if (!components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            components.motor.setMotorPwm(0, motorFlowController.currentPwm);
+            return;
+        }
+
+        float dtSeconds = (nowMs - motorFlowController.lastUpdateMs) / 1000.0f;
+        motorFlowController.lastUpdateMs = nowMs;
+        motorFlowController.basePwm = p0;
+        motorFlowController.currentPwm = MotorManager::nextClosedLoopPwm(
+            motorFlowController.basePwm,
+            motorFlowController.currentPwm,
+            session.targetFlow,
+            flowData.flow,
+            dtSeconds,
+            motorFlowController.integral,
+            MOTOR_FLOW_DEADBAND_LPM,
+            MOTOR_FLOW_KP,
+            MOTOR_FLOW_KI,
+            MOTOR_FLOW_INTEGRAL_LIMIT,
+            MOTOR_FLOW_MAX_STEP_PWM);
+
+        LOG_OUT("Control flujo closed-loop: medido ");
+        LOG_OUT(flowData.flow, 2);
+        LOG_OUT(" L/min, PWM ");
+        LOG_OUT(motorFlowController.currentPwm);
+        LOG_OUT(" base ");
+        LOG_OUT(motorFlowController.basePwm);
+        LOG_OUT(" integral ");
+        LOG_OUT_LN(motorFlowController.integral, 3);
+
+        components.motor.setMotorPwm(0, motorFlowController.currentPwm);
+    }
+#endif
+
     void updateMotors()
     {
+#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
+        updateClosedLoopMotors();
+#else
         static float lastTargetFlow = -1.0f;
 
         int p0 = 0, p1 = 0;
@@ -1122,6 +1241,7 @@ public:
         {
             components.motor.setPwm(0);
         }
+#endif
     }
 
     void updateCapture()
