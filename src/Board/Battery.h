@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include "../Config.h"
 
 #ifdef FEATURE_DUAL_BATTERY
 #include "I2CBus.h"
@@ -32,11 +33,16 @@ public:
     };
 #endif
 
-    void begin(uint8_t batteryPin = 34, float ema_alpha = 0.005f) {
+    void begin(int batteryPin = BATTERY_ADC_PIN, float ema_alpha = 0.005f) {
 #ifndef FEATURE_DUAL_BATTERY
-        pinMode(batteryPin, INPUT);
         battery_pin = batteryPin;
         alpha = ema_alpha;
+        if (battery_pin < 0) {
+            emaLevel = 0.0f;
+            emaInitialized = false;
+            return;
+        }
+        pinMode(battery_pin, INPUT);
         emaLevel = (float)getLevel();
         emaInitialized = true;
 #else
@@ -51,14 +57,16 @@ public:
 
 #ifndef FEATURE_DUAL_BATTERY
     float getPct() {
+        if (battery_pin < 0)
+            return -1.0f;
         float sample = (float)getLevel();
         emaLevel = (alpha * sample) + ((1.0f - alpha) * emaLevel);
         return pctFromVoltage(voltageFromLevel(emaLevel));
     }
 
-    int getRawLevel() { return getLevel(); }
+    int getRawLevel() { return battery_pin < 0 ? -1 : getLevel(); }
 
-    float getVoltage() { return voltageFromLevel((float)getLevel()); }
+    float getVoltage() { return battery_pin < 0 ? -1.0f : voltageFromLevel((float)getLevel()); }
 #else
     bool pollFromI2C(uint8_t addr = DEFAULT_I2C_ADDR) {
         PROFILE_SCOPE("battery.i2c");
@@ -140,7 +148,7 @@ private:
         return pct;
     }
 
-    uint8_t battery_pin = 34;
+    int battery_pin = 34;
 #else
     float battVoltage[BATTERY_COUNT];
     float dcVoltage = 0.0f;

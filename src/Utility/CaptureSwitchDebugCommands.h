@@ -12,7 +12,8 @@ private:
 
     void printHelp(Print& out) {
         out.println("Comandos switches:");
-        out.println("  switches       mostrar estado de switches de captura");
+        out.println("  switches       resumen de switches de captura");
+        out.println("  switches -v    detalle de pines y codigos");
         out.println("  sw             alias de switches");
         out.println("  switches help  mostrar esta ayuda");
     }
@@ -38,7 +39,8 @@ public:
             return true;
         }
 
-        if (args.length() > 0) {
+        bool verbose = args == "-v" || args == "verbose" || args == "--verbose";
+        if (args.length() > 0 && !verbose) {
             out.println("Comando switches desconocido. Usa: switches help");
             return true;
         }
@@ -48,7 +50,11 @@ public:
             return true;
         }
 
-        CaptureSwitches::printSnapshot(out, _switches->snapshot());
+        CaptureSwitchSnapshot snap = _switches->snapshot();
+        if (verbose)
+            CaptureSwitches::printSnapshot(out, snap);
+        else
+            CaptureSwitches::printSummary(out, snap);
         return true;
     }
 };

@@ -25,7 +25,7 @@ public:
         }
 
         LOG_LN("Iniciando BME280...");
-        if (!bme.begin(0x76))
+        if (!bme.begin(0x76) && !bme.begin(0x77))
         {
             LOG_LN("Fallo al inicializar BME280");
             isReady = false;

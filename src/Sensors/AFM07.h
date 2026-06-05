@@ -21,7 +21,7 @@ private:
     FlowData _data;
     unsigned long _lastSuccessMs = 0;
     static const uint16_t REG_INSTANT_FLOW = 0x0000;
-    static const uint8_t FACTOR_LECTURA = 10;
+    static constexpr float FLOW_DIVISOR = AFM07_FLOW_DIVISOR;
     static const uint32_t READ_INTERVAL_MS = 800;
     static const uint32_t ERROR_BACKOFF_MS = 5000;
     static const uint32_t STALE_DATA_MS = 15000;
@@ -40,7 +40,7 @@ private:
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
-                    float val = (float)rawData[0] / FACTOR_LECTURA;
+                    float val = (float)rawData[0] / FLOW_DIVISOR;
                     self->_data.flow = val;
                     self->_data.velocity = val;
                     self->_data.valid = true;

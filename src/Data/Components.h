@@ -3,11 +3,13 @@
 
 #include "../Board/Input.h"
 #include "../Effectors/Motor.h"
+#include "../Effectors/StatusLed.h"
 #include "../Board/RTCManager.h"
 #include "../Sensors/AFM07.h"
 #include "../Sensors/FS3000.h"
 #include "../Sensors/Plantower.h"
 #include "../Sensors/BME280.h"
+#include "../Sensors/NTC.h"
 #include "../Board/Battery.h"
 #ifdef FEATURE_MODEM
 #include "../Board/Modem.h"
@@ -22,6 +24,7 @@ typedef struct Components{
   Input input;        // Manejo entradas (encoder/botón)
 #endif
   MotorManager motor; // Control de motor
+  StatusLed statusLed; // Indicador NeoPixel / no-op si no esta habilitado
 
   #ifdef FEATURE_ANEMOMETER
     Anemometer anemometer; // Anemómetro ultrasónico
@@ -43,6 +46,9 @@ typedef struct Components{
   Plantower plantower; // Sensor Plantower
 #endif
   BME280 bme;          // Sensor BME280
+#ifdef FEATURE_NTC
+  NTC ntc;             // Termistor NTC
+#endif
   Battery battery;     // Monitoreo del nivel de batería
   RTCManager rtc;      // Manejo RTC
 
@@ -55,9 +61,14 @@ typedef struct Components{
 #endif
     //motor.begin();
    // motor.setPowerPct(100); // ENCENDER MOTORES AL MAXIMO
+    statusLed.begin();
+    statusLed.setPattern(StatusLedPattern::Boot);
     flowSensor.begin();
    // motor.setPowerPct(0); // APAGAR MOTORES
     bme.begin();
+#ifdef FEATURE_NTC
+    ntc.begin();
+#endif
     rtc.begin();
 #ifdef FEATURE_PLANTOWER
     plantower.begin();
@@ -80,6 +91,8 @@ typedef struct Components{
   }
 
   void poll() {
+    motor.updateRamp();
+    statusLed.poll();
     #ifdef FEATURE_DUAL_BATTERY
       //api.update();
       static unsigned long lastBatPoll = 0;
