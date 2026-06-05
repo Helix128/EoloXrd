@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EOLO Dron Setup</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="bar"><div><h1>EOLO Dron</h1><p>Si el panel no abre automaticamente, ingresar a <strong>http://eolo.setup</strong> o <strong>http://192.168.4.1</strong></p></div><div class="status" id="statusPills"></div></div></header>
+<main>
+<section class="panel">
+<h2>Configuracion de captura</h2>
+<form id="setupForm" class="grid">
+<div class="field"><label>Espera antes de capturar</label><input id="waitSeconds" name="waitSeconds" type="number" min="0" max="86400" step="1"></div>
+<div class="field"><label>Duracion</label><select id="durationMode" name="durationMode"><option value="finite">Finita</option><option value="infinite">Infinita</option></select></div>
+<div class="field" id="durationField"><label>Segundos de captura</label><input id="durationSeconds" name="durationSeconds" type="number" min="1" max="86400" step="1"></div>
+<div class="field"><label>Flujo objetivo L/min</label><input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1"></div>
+<div class="field"><span class="label">Presets espera</span><div class="chips"><button type="button" class="chip" data-wait="0">Instantanea</button><button type="button" class="chip" data-wait="300">5 min</button><button type="button" class="chip" data-wait="900">15 min</button></div></div>
+<div class="field"><span class="label">Presets duracion</span><div class="chips"><button type="button" class="chip" data-duration="300">5 min</button><button type="button" class="chip" data-duration="900">15 min</button><button type="button" class="chip" data-duration="infinite">Infinita</button></div></div>
+<div class="field"><span class="label">Estado</span><div id="calibrationText">Cargando...</div><div id="flowWarning" class="warn"></div></div>
+<div class="field"><span class="label">&nbsp;</span><button type="submit">Confirmar e iniciar</button></div>
+</form>
+</section>
+<section class="panel">
+<div class="bar"><h2>Registros CSV</h2><div class="actions"><button type="button" class="secondary" id="refreshLogs">Actualizar</button><button type="button" class="secondary" id="downloadAll">Descargar todos</button></div></div>
+<table><thead><tr><th>Archivo</th><th>Tamano</th><th></th></tr></thead><tbody id="logsBody"><tr><td colspan="3">Cargando...</td></tr></tbody></table>
+</section>
+<section class="panel">
+<h2>Preview</h2>
+<pre id="preview">Seleccione un CSV.</pre>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -41,15 +41,24 @@ Si la espera queda en `Off`, el equipo entra al setup Wi-Fi. Con espera distinta
 Cuando `WAIT_SW1` y `WAIT_SW0` estan en `0`, el Dron levanta un punto de acceso:
 
 ```text
-SSID: EOLO-Dron-Setup
-Password: EoloSetup2026
+SSID: eolo-setup
+Password: eolo-setup
 ```
 
 Conecte un telefono o notebook a esa red y abra:
 
 ```text
-http://192.168.4.1/
+http://eolo.setup
 ```
+
+o en su defecto:
+```text
+http://192.168.4.1 
+```
+
+
+
+OJO: ES IMPORTANTE QUE SEA "http" Y NO "https"!!
 
 Desde la pagina puede configurar:
 
