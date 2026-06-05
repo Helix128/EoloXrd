@@ -8,7 +8,7 @@ Esta carpeta contiene los manuales de operacion para los modelos EOLO vigentes. 
 
 | Modelo | Manual | Caracteristicas principales |
 | --- | --- | --- |
-| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron.md) | Sin pantalla, switches fisicos o setup Wi-Fi, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
+| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron.md) | Sin pantalla, switches fisicos o setup Wi-Fi headless, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
 | EOLO Standard | [Manual EOLO Standard](manual-eolo-standard.md) | Pantalla y encoder, modem, anemometro, doble bateria/DC, AFM07 y Plantower. |
 | EOLO Express | [Manual EOLO Express](manual-eolo-express.md) | Pantalla y encoder, AFM07, Plantower, bateria simple, sin modem ni anemometro. |
 
