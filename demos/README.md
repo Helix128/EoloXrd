@@ -19,6 +19,41 @@ Configurar Arduino IDE:
 - Para `AFM07`: instalar `ModbusMaster`.
 - `Anemometer` y `Plantower` usan solo librerias incluidas con el core ESP32 Arduino.
 
+## PlatformIO
+
+Las demos tambien se pueden compilar y subir desde la raiz del repo. El archivo
+`platformio.demos.ini` se genera automaticamente desde las carpetas `demos/*/*.ino`.
+Cada demo queda como un ambiente `demo_*`, por lo que en VSCode/PlatformIO aparece
+en Project Tasks con las tareas normales `Build`, `Upload` y `Monitor`.
+
+Comandos utiles:
+
+```bash
+./scripts/demo.py list
+./scripts/demo.py build AFM07 dron
+./scripts/demo.py upload AFM07 dron
+./scripts/demo.py monitor AFM07 dron
+```
+
+Equivalente directo con PlatformIO:
+
+```bash
+python3 scripts/generate_demo_envs.py
+pio run -e demo_afm07_dron
+pio run -e demo_afm07_dron -t upload
+pio device monitor -e demo_afm07_dron
+```
+
+Tambien hay un target custom por ambiente para ver informacion rapida:
+
+```bash
+pio run -e demo_afm07_dron -t demo_info
+```
+
+Para agregar una demo nueva, crear `demos/NuevaDemo/NuevaDemo.ino` y registrar
+modelos/dependencias en `scripts/demo_config.py` solo si necesita algo distinto
+al default.
+
 Modelo de pinout:
 
 - Cada sketch tiene arriba un bloque `#define EOLO_MODEL_*`.

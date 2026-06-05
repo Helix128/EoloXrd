@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <ModbusMaster.h>
 
+#if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
+    !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
 #define EOLO_MODEL_DRON
-// #define EOLO_MODEL_STANDARD
-// #define EOLO_MODEL_EXPRESS
-// #define EOLO_MODEL_EXPRESS_LEGACY
+#endif
 #include "../EoloDemoPinout.h"
 
 /*
