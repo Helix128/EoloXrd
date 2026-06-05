@@ -3,49 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EOLO Dron Setup</title>
+<title>EOLO · Setup</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div class="bar"><div><h1>EOLO Dron</h1><p>Si el panel no abre automaticamente, ingresar a <strong>http://eolo.setup</strong> o <strong>http://192.168.4.1</strong></p></div><div class="status" id="statusPills"></div></div></header>
+<header>
+  <div class="bar header-bar">
+    <div class="brand" id="brand">
+      <div class="logo-badge" aria-hidden="true">C+</div>
+      <div class="brand-text">
+        <h1>EOLO</h1>
+        <p class="muted small">Centro de Investigación en Tecnologías para la Sociedad (C+)</p>
+        <p class="muted small">Si el panel no abre automáticamente, abra <strong>http://eolo.setup</strong> o <strong>http://192.168.4.1</strong></p>
+      </div>
+    </div>
+    <div class="status" id="statusPills" aria-live="polite"></div>
+  </div>
+</header>
 <main>
-<section class="panel">
-<h2>Configuracion de captura</h2>
-<form id="setupForm" class="grid">
-<div class="field"><label>Espera antes de capturar</label><input id="waitSeconds" name="waitSeconds" type="number" min="0" max="86400" step="1"></div>
-<div class="field"><label>Duracion</label><select id="durationMode" name="durationMode"><option value="finite">Finita</option><option value="infinite">Infinita</option></select></div>
-<div class="field" id="durationField"><label>Segundos de captura</label><input id="durationSeconds" name="durationSeconds" type="number" min="1" max="86400" step="1"></div>
-<div class="field"><label>Flujo objetivo L/min</label><input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1"></div>
-<div class="field"><span class="label">Presets espera</span><div class="chips"><button type="button" class="chip" data-wait="0">Instantanea</button><button type="button" class="chip" data-wait="300">5 min</button><button type="button" class="chip" data-wait="900">15 min</button></div></div>
-<div class="field"><span class="label">Presets duracion</span><div class="chips"><button type="button" class="chip" data-duration="300">5 min</button><button type="button" class="chip" data-duration="900">15 min</button><button type="button" class="chip" data-duration="infinite">Infinita</button></div></div>
-<div class="field"><span class="label">Estado</span><div id="calibrationText">Cargando...</div><div id="flowWarning" class="warn"></div></div>
-<div class="field"><span class="label">&nbsp;</span><button type="submit">Confirmar e iniciar</button></div>
-</form>
-</section>
-<section class="panel">
-<div class="bar"><h2>Calibracion automatica</h2><div class="actions"><button type="button" class="secondary" id="calRefresh">Actualizar</button><button type="button" class="secondary" id="calAbort">Abortar</button><button type="button" class="secondary" id="calClear">Borrar</button></div></div>
-<form id="calForm" class="grid">
-<div class="field"><label>PWM inicial</label><input id="calPwmStart" name="pwmStart" type="number" min="0" max="2047" step="1" value="400"></div>
-<div class="field"><label>PWM final</label><input id="calPwmEnd" name="pwmEnd" type="number" min="1" max="2047" step="1" value="1900"></div>
-<div class="field"><label>Paso PWM</label><input id="calPwmStep" name="pwmStep" type="number" min="1" max="2047" step="1" value="80"></div>
-<div class="field"><label>Estabilizacion ms</label><input id="calSettleMs" name="settleMs" type="number" min="100" step="100" value="3000"></div>
-<div class="field"><label>Intervalo muestra ms</label><input id="calSampleMs" name="sampleIntervalMs" type="number" min="100" step="100" value="800"></div>
-<div class="field"><label>Muestras por punto</label><input id="calSamples" name="samplesPerPoint" type="number" min="1" max="50" step="1" value="5"></div>
-<div class="field"><label>Flujo maximo L/min</label><input id="calMaxFlow" name="maxTargetFlow" type="number" min="0.1" max="20" step="0.1" value="8.0"></div>
-<div class="field"><span class="label">&nbsp;</span><button type="submit">Iniciar calibracion</button></div>
-</form>
-<div id="calStatus" class="cal-status">Calibracion: sin datos</div>
-<pre id="calPoints">Sin puntos.</pre>
-</section>
-<section class="panel">
-<div class="bar"><h2>Registros CSV</h2><div class="actions"><button type="button" class="secondary" id="refreshLogs">Actualizar</button><button type="button" class="secondary" id="downloadAll">Descargar todos</button></div></div>
-<table><thead><tr><th>Archivo</th><th>Tamano</th><th></th></tr></thead><tbody id="logsBody"><tr><td colspan="3">Cargando...</td></tr></tbody></table>
-</section>
-<section class="panel">
-<h2>Preview</h2>
-<pre id="preview">Seleccione un CSV.</pre>
-</section>
+  <section class="panel">
+    <h2>Configuración de captura</h2>
+    <form id="setupForm" class="grid" aria-label="Configuración de captura">
+      <div class="field"><label for="waitSeconds">Espera antes de capturar (s)</label><input id="waitSeconds" name="waitSeconds" type="number" min="0" max="86400" step="1" required></div>
+      <div class="field"><label for="durationMode">Duración</label><select id="durationMode" name="durationMode"><option value="finite">Finita</option><option value="infinite">Infinita</option></select></div>
+      <div class="field" id="durationField"><label for="durationSeconds">Segundos de captura</label><input id="durationSeconds" name="durationSeconds" type="number" min="1" max="86400" step="1"></div>
+      <div class="field"><label for="targetFlow">Flujo objetivo (L/min)</label><input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1" required></div>
+
+      <div class="field"><span class="label">Presets espera</span><div class="chips"><button type="button" class="chip" data-wait="0">Instantánea</button><button type="button" class="chip" data-wait="300">5 min</button><button type="button" class="chip" data-wait="900">15 min</button></div></div>
+
+      <div class="field"><span class="label">Presets duración</span><div class="chips"><button type="button" class="chip" data-duration="300">5 min</button><button type="button" class="chip" data-duration="900">15 min</button><button type="button" class="chip" data-duration="infinite">Infinita</button></div></div>
+
+      <div class="field"><span class="label">Estado</span><div id="calibrationText">Cargando...</div><div id="flowWarning" class="warn" role="status"></div></div>
+
+      <div class="field"><span class="label">&nbsp;</span><button type="submit" id="confirmBtn">Confirmar e iniciar</button></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><h2>Calibración automática</h2><div class="actions"><button type="button" class="secondary" id="calRefresh">Actualizar</button><button type="button" class="secondary" id="calAbort">Abortar</button><button type="button" class="secondary" id="calClear">Borrar</button></div></div>
+    <form id="calForm" class="grid" aria-label="Configuración de calibración">
+      <div class="field"><label for="calPwmStart">PWM inicial</label><input id="calPwmStart" name="pwmStart" type="number" min="0" max="2047" step="1" value="400"></div>
+      <div class="field"><label for="calPwmEnd">PWM final</label><input id="calPwmEnd" name="pwmEnd" type="number" min="1" max="2047" step="1" value="1900"></div>
+      <div class="field"><label for="calPwmStep">Paso PWM</label><input id="calPwmStep" name="pwmStep" type="number" min="1" max="2047" step="1" value="80"></div>
+      <div class="field"><label for="calSettleMs">Estabilización (ms)</label><input id="calSettleMs" name="settleMs" type="number" min="100" step="100" value="3000"></div>
+      <div class="field"><label for="calSampleMs">Intervalo muestra (ms)</label><input id="calSampleMs" name="sampleIntervalMs" type="number" min="100" step="100" value="800"></div>
+      <div class="field"><label for="calSamples">Muestras por punto</label><input id="calSamples" name="samplesPerPoint" type="number" min="1" max="50" step="1" value="5"></div>
+      <div class="field"><label for="calMaxFlow">Flujo máximo (L/min)</label><input id="calMaxFlow" name="maxTargetFlow" type="number" min="0.1" max="20" step="0.1" value="8.0"></div>
+      <div class="field"><span class="label">&nbsp;</span><button type="submit">Iniciar calibración</button></div>
+    </form>
+    <div id="calStatus" class="cal-status">Calibración: sin datos</div>
+    <pre id="calPoints">Sin puntos.</pre>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><h2>Registros CSV</h2><div class="actions"><button type="button" class="secondary" id="refreshLogs">Actualizar</button><button type="button" class="secondary" id="downloadAll">Descargar todos</button></div></div>
+    <table><thead><tr><th>Archivo</th><th>Tamaño</th><th></th></tr></thead><tbody id="logsBody"><tr><td colspan="3">Cargando...</td></tr></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Preview</h2>
+    <pre id="preview">Seleccione un CSV.</pre>
+  </section>
 </main>
+
+<!-- Small lightweight script loader (inlined by build) -->
 <script src="app.js"></script>
 </body>
 </html>

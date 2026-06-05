@@ -9,6 +9,7 @@
 #include <SD.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <ArduinoJson.h>
 #include "CaptureSwitches.h"
 #include "HeadlessSetupTypes.h"
 #include "HeadlessSetupWebPage.h"
@@ -241,35 +242,37 @@ private:
   void handleStatus()
   {
     CaptureSwitchSnapshot snap = _switches.snapshot();
-    String body = "{";
-    body += "\"sdReady\":";
-    body += _ctx.isSdReady ? "true" : "false";
-    body += ",\"sdStatus\":\"";
-    body += sdStatusText(_ctx.sdStatus);
-    body += "\",\"rtc\":\"";
-    body += jsonEscape(_ctx.components.rtc.now().timestamp());
-    body += "\",\"defaults\":{\"waitSeconds\":";
-    body += String(_defaults.waitSeconds);
-    body += ",\"durationSeconds\":";
-    body += String(_defaults.durationSeconds);
-    body += ",\"targetFlow\":";
-    body += String(_defaults.targetFlow, 1);
-    body += "},\"calibration\":{\"loaded\":";
-    body += _ctx.calibration.isLoaded ? "true" : "false";
-    body += ",\"minFlow\":";
-    body += _ctx.calibration.isLoaded && _ctx.calibration.numPoints > 0 ? String(_ctx.calibration.flows[0], 2) : "0";
-    body += ",\"maxFlow\":";
-    body += _ctx.calibration.isLoaded && _ctx.calibration.numPoints > 0 ? String(_ctx.calibration.flows[_ctx.calibration.numPoints - 1], 2) : "0";
-    body += "},\"switches\":{\"waitCode\":";
-    body += String(snap.waitCode);
-    body += ",\"durationCode\":";
-    body += String(snap.durationCode);
-    body += ",\"wait\":\"";
-    body += CaptureSwitches::waitDescription(snap.waitCode);
-    body += "\",\"duration\":\"";
-    body += CaptureSwitches::durationDescription(snap.durationCode);
-    body += "\"}}";
-    _server.send(200, "application/json", body);
+    StaticJsonDocument<1024> doc;
+    doc["sdReady"] = _ctx.isSdReady;
+    doc["sdStatus"] = sdStatusText(_ctx.sdStatus);
+    doc["rtc"] = _ctx.components.rtc.now().timestamp();
+
+    JsonObject defaults = doc.createNestedObject("defaults");
+    defaults["waitSeconds"] = _defaults.waitSeconds;
+    defaults["durationSeconds"] = _defaults.durationSeconds;
+    defaults["targetFlow"] = _defaults.targetFlow;
+
+    JsonObject calibration = doc.createNestedObject("calibration");
+    calibration["loaded"] = _ctx.calibration.isLoaded;
+    if (_ctx.calibration.isLoaded && _ctx.calibration.numPoints > 0) {
+      calibration["minFlow"] = _ctx.calibration.flows[0];
+      calibration["maxFlow"] = _ctx.calibration.flows[_ctx.calibration.numPoints - 1];
+    } else {
+      calibration["minFlow"] = 0.0;
+      calibration["maxFlow"] = 0.0;
+    }
+
+    JsonObject switches = doc.createNestedObject("switches");
+    switches["waitCode"] = snap.waitCode;
+    switches["durationCode"] = snap.durationCode;
+    switches["wait"] = CaptureSwitches::waitDescription(snap.waitCode);
+    switches["duration"] = CaptureSwitches::durationDescription(snap.durationCode);
+
+    size_t needed = measureJson(doc) + 1;
+    String out;
+    out.reserve(needed);
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
   }
 
   void handleLogs()
@@ -287,8 +290,10 @@ private:
       return;
     }
 
-    String body = "{\"available\":true,\"files\":[";
-    bool first = true;
+    DynamicJsonDocument doc(4096);
+    doc["available"] = true;
+    JsonArray files = doc.createNestedArray("files");
+
     File file = dir.openNextFile();
     while (file)
     {
@@ -299,21 +304,20 @@ private:
 
       if (!file.isDirectory() && HeadlessSetup::isSafeLogBasename(name))
       {
-        if (!first)
-          body += ",";
-        first = false;
-        body += "{\"name\":\"";
-        body += jsonEscape(name);
-        body += "\",\"size\":";
-        body += String((uint32_t)file.size());
-        body += "}";
+        JsonObject obj = files.createNestedObject();
+        obj["name"] = name;
+        obj["size"] = (uint32_t)file.size();
       }
       file.close();
       file = dir.openNextFile();
     }
     dir.close();
-    body += "]}";
-    _server.send(200, "application/json", body);
+
+    size_t needed = measureJson(doc) + 1;
+    String out;
+    out.reserve(needed);
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
   }
 
   String safeLogPathFromRequest()
@@ -371,19 +375,20 @@ private:
 
     size_t start = count > 40 ? count % 40 : 0;
     size_t total = count > 40 ? 40 : count;
-    String body = "{\"header\":\"";
-    body += jsonEscape(header);
-    body += "\",\"rows\":[";
+
+    DynamicJsonDocument doc(4096);
+    doc["header"] = header;
+    JsonArray arr = doc.createNestedArray("rows");
     for (size_t i = 0; i < total; i++)
     {
-      if (i > 0)
-        body += ",";
-      body += "\"";
-      body += jsonEscape(rows[(start + i) % 40]);
-      body += "\"";
+      arr.add(rows[(start + i) % 40]);
     }
-    body += "]}";
-    _server.send(200, "application/json", body);
+
+    size_t needed = measureJson(doc) + 1;
+    String out;
+    out.reserve(needed);
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
   }
 
   void handleDownload()
@@ -431,7 +436,47 @@ private:
 
   void handleCalibrationStatus()
   {
-    _server.send(200, "application/json", _ctx.headlessCalibration.statusJson());
+    const HeadlessMotorCalibration &cal = _ctx.headlessCalibration;
+
+    // allocate document dynamically based on number of points to avoid large stack usage
+    size_t approx = 1024 + (size_t)cal.pointCount() * 96;
+    DynamicJsonDocument doc(approx);
+    doc["running"] = cal.isRunning();
+    doc["state"] = cal.stateText();
+    doc["currentPwm"] = cal.currentPwm();
+    doc["points"] = cal.pointCount();
+    doc["minFlow"] = cal.minFlow();
+    doc["maxFlow"] = cal.maxFlow();
+    doc["error"] = cal.errorText();
+
+    const HeadlessMotorCalibrationConfig &c = cal.config();
+    JsonObject cfg = doc.createNestedObject("config");
+    cfg["pwmStart"] = c.pwmStart;
+    cfg["pwmEnd"] = c.pwmEnd;
+    cfg["pwmStep"] = c.pwmStep;
+    cfg["settleMs"] = c.settleMs;
+    cfg["sampleIntervalMs"] = c.sampleIntervalMs;
+    cfg["samplesPerPoint"] = c.samplesPerPoint;
+    cfg["maxTargetFlow"] = c.maxTargetFlow;
+    cfg["minValidFlow"] = c.minValidFlow;
+    cfg["minFlowDelta"] = c.minFlowDelta;
+    cfg["maxFlowStddev"] = c.maxFlowStddev;
+
+    JsonArray data = doc.createNestedArray("data");
+    for (int i = 0; i < cal.pointCount(); i++)
+    {
+      const HeadlessMotorCalibrationPoint &p = cal.point(i);
+      JsonObject obj = data.createNestedObject();
+      obj["pwm"] = p.pwm;
+      obj["flow"] = p.flow;
+      obj["stddev"] = p.stddev;
+    }
+
+    size_t needed = measureJson(doc) + 1;
+    String out;
+    out.reserve(needed);
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
   }
 
   void handleCalibrationStart()
