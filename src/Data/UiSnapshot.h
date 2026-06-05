@@ -23,6 +23,9 @@ struct EnvironmentSnapshot
     float pressure = 0.0f;
     bool ntcValid = false;
     float ntcTemperature = -99.0f;
+    bool motorOverheat = false;
+    bool motorThermalSensorValid = false;
+    float motorThermalTemperature = -99.0f;
 };
 
 struct AirQualitySnapshot

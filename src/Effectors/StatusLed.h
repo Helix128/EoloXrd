@@ -19,6 +19,7 @@ enum class StatusLedPattern : uint8_t
   Waiting,
   Capturing,
   Busy,
+  MotorOverheat,
   Error,
   Finished
 };
@@ -182,6 +183,8 @@ private:
       return PatternProfile{Color{0, 42, 8}, Color{0, 7, 1}, 900, 0, 900, 1};
     case StatusLedPattern::Busy:
       return PatternProfile{Color{0, 28, 42}, Color{0, 0, 0}, 140, 0, 140, 1};
+    case StatusLedPattern::MotorOverheat:
+      return PatternProfile{Color{55, 10, 0}, Color{0, 0, 0}, 160, 120, 900, 3};
     case StatusLedPattern::Error:
       return PatternProfile{Color{55, 0, 0}, Color{0, 0, 0}, 220, 0, 220, 1};
     case StatusLedPattern::Finished:
@@ -206,6 +209,8 @@ private:
       return PatternProfile{Color{0, 24, 5}, Color{0, 0, 0}, 70, 0, 4000, 1};
     case StatusLedPattern::Busy:
       return PatternProfile{Color{0, 18, 28}, Color{0, 0, 0}, 50, 150, 2500, 2};
+    case StatusLedPattern::MotorOverheat:
+      return PatternProfile{Color{45, 8, 0}, Color{0, 0, 0}, 80, 160, 1200, 3};
     case StatusLedPattern::Error:
       return PatternProfile{Color{45, 0, 0}, Color{0, 0, 0}, 120, 120, 800, 3};
     case StatusLedPattern::Finished:

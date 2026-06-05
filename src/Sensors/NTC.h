@@ -79,6 +79,21 @@ public:
     return isfinite(temperature);
   }
 
+  static bool motorOverheatLatched(bool current,
+                                   bool valid,
+                                   float temperature,
+                                   float highThreshold = NTC_MOTOR_OVERHEAT_HIGH_C,
+                                   float lowThreshold = NTC_MOTOR_OVERHEAT_LOW_C)
+  {
+    if (!valid || !isfinite(temperature))
+      return current;
+    if (temperature >= highThreshold)
+      return true;
+    if (temperature <= lowThreshold)
+      return false;
+    return current;
+  }
+
 private:
   int _pin = NTC_PIN;
   NTCData _data;
