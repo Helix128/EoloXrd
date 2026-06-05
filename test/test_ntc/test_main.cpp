@@ -19,12 +19,40 @@ void test_extreme_adc_values_are_invalid()
     TEST_ASSERT_FALSE(NTC::computeTemperature(4095, temp, resistance));
 }
 
+void test_motor_overheat_latches_above_high_threshold()
+{
+    TEST_ASSERT_TRUE(NTC::motorOverheatLatched(false, true, 70.0f, 70.0f, 60.0f));
+    TEST_ASSERT_TRUE(NTC::motorOverheatLatched(false, true, 75.0f, 70.0f, 60.0f));
+}
+
+void test_motor_overheat_holds_between_thresholds()
+{
+    TEST_ASSERT_TRUE(NTC::motorOverheatLatched(true, true, 65.0f, 70.0f, 60.0f));
+    TEST_ASSERT_FALSE(NTC::motorOverheatLatched(false, true, 65.0f, 70.0f, 60.0f));
+}
+
+void test_motor_overheat_releases_below_low_threshold()
+{
+    TEST_ASSERT_FALSE(NTC::motorOverheatLatched(true, true, 60.0f, 70.0f, 60.0f));
+    TEST_ASSERT_FALSE(NTC::motorOverheatLatched(true, true, 55.0f, 70.0f, 60.0f));
+}
+
+void test_motor_overheat_invalid_read_keeps_current_state()
+{
+    TEST_ASSERT_TRUE(NTC::motorOverheatLatched(true, false, -99.0f, 70.0f, 60.0f));
+    TEST_ASSERT_FALSE(NTC::motorOverheatLatched(false, false, 75.0f, 70.0f, 60.0f));
+}
+
 void setup()
 {
     delay(1000);
     UNITY_BEGIN();
     RUN_TEST(test_midscale_is_about_25c);
     RUN_TEST(test_extreme_adc_values_are_invalid);
+    RUN_TEST(test_motor_overheat_latches_above_high_threshold);
+    RUN_TEST(test_motor_overheat_holds_between_thresholds);
+    RUN_TEST(test_motor_overheat_releases_below_low_threshold);
+    RUN_TEST(test_motor_overheat_invalid_read_keeps_current_state);
     UNITY_END();
 }
 

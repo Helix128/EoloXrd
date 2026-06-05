@@ -75,6 +75,10 @@ typedef struct Context
     bool isCapturing = false;
     bool isPaused = false;
     bool isEnd = false;
+    bool motorOverheatActive = false;
+    bool motorThermalSensorValid = false;
+    float motorThermalTemperature = -99.0f;
+    uint32_t lastMotorOverheatLogMs = 0;
 
     SDStatus sdStatus = SD_OK;
     bool sdInitAttempted = false;
@@ -615,12 +619,17 @@ public:
         uiSnapshot.environment.humidity = components.bme.humidity;
         uiSnapshot.environment.pressure = components.bme.pressure;
 #ifdef FEATURE_NTC
-        NTCData ntcData;
-        uiSnapshot.environment.ntcValid = components.ntc.getData(ntcData);
-        uiSnapshot.environment.ntcTemperature = uiSnapshot.environment.ntcValid ? ntcData.temperature : -99.0f;
+        uiSnapshot.environment.ntcValid = motorThermalSensorValid;
+        uiSnapshot.environment.ntcTemperature = motorThermalTemperature;
+        uiSnapshot.environment.motorOverheat = motorOverheatActive;
+        uiSnapshot.environment.motorThermalSensorValid = motorThermalSensorValid;
+        uiSnapshot.environment.motorThermalTemperature = motorThermalTemperature;
 #else
         uiSnapshot.environment.ntcValid = false;
         uiSnapshot.environment.ntcTemperature = -1.0f;
+        uiSnapshot.environment.motorOverheat = false;
+        uiSnapshot.environment.motorThermalSensorValid = false;
+        uiSnapshot.environment.motorThermalTemperature = -1.0f;
 #endif
 
         uiSnapshot.airQuality.enabled = session.usePlantower;
@@ -732,6 +741,9 @@ public:
                        previous.status.modemSignalCsq != uiSnapshot.status.modemSignalCsq ||
                        previous.status.displayOn != uiSnapshot.status.displayOn ||
                        previous.status.minute != uiSnapshot.status.minute ||
+                       previous.environment.motorOverheat != uiSnapshot.environment.motorOverheat ||
+                       previous.environment.motorThermalSensorValid != uiSnapshot.environment.motorThermalSensorValid ||
+                       fabsf(previous.environment.motorThermalTemperature - uiSnapshot.environment.motorThermalTemperature) > 0.1f ||
                        previous.power.batteryPct != uiSnapshot.power.batteryPct;
         if (changed)
             markUiDirty();
@@ -1043,6 +1055,7 @@ public:
         }
 #endif
 
+        updateMotorThermalProtection();
         updateCapture();
         bool statusChanged = updateUiSnapshot();
         bool changed = inputChanged || statusChanged || uiDirty;
@@ -1065,6 +1078,7 @@ public:
         isEnd = false;
         session.capturedVolume = 0.0;
         resetMotorFlowController();
+        updateMotorThermalProtection();
         LOG_LN("Iniciando captura...");
 #ifdef FEATURE_MODEM
         components.modemService.warmUp();
@@ -1135,6 +1149,84 @@ public:
 #endif
         session.elapsedTime = 0;
         LOG_LN("Estado de captura reiniciado.");
+    }
+
+    bool updateMotorThermalProtection()
+    {
+#ifdef FEATURE_NTC
+        bool previousActive = motorOverheatActive;
+        bool previousValid = motorThermalSensorValid;
+        float previousTemperature = motorThermalTemperature;
+
+        NTCData ntcData;
+        motorThermalSensorValid = components.ntc.getData(ntcData);
+        motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
+        motorOverheatActive = NTC::motorOverheatLatched(
+            motorOverheatActive,
+            motorThermalSensorValid,
+            motorThermalTemperature,
+            NTC_MOTOR_OVERHEAT_HIGH_C,
+            NTC_MOTOR_OVERHEAT_LOW_C);
+
+        uint32_t nowMs = millis();
+        if (motorOverheatActive)
+        {
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+        }
+
+        if (!previousActive && motorOverheatActive)
+        {
+            LOG_OUT("ERROR MOTOR OVERHEAT: NTC ");
+            if (motorThermalSensorValid)
+                LOG_OUT(motorThermalTemperature, 1);
+            else
+                LOG_OUT("INVALID");
+            LOG_OUT(" C >= ");
+            LOG_OUT(NTC_MOTOR_OVERHEAT_HIGH_C, 1);
+            LOG_OUT_LN(" C; motor OFF");
+            lastMotorOverheatLogMs = nowMs;
+        }
+        else if (previousActive && !motorOverheatActive)
+        {
+            resetMotorFlowController();
+            LOG_OUT("Motor thermal cooldown OK: NTC ");
+            LOG_OUT(motorThermalTemperature, 1);
+            LOG_OUT(" C <= ");
+            LOG_OUT(NTC_MOTOR_OVERHEAT_LOW_C, 1);
+            LOG_OUT_LN(" C; motor enabled");
+        }
+        else if (motorOverheatActive && nowMs - lastMotorOverheatLogMs >= NTC_MOTOR_OVERHEAT_LOG_INTERVAL_MS)
+        {
+            LOG_OUT("ERROR MOTOR OVERHEAT activo: ");
+            if (motorThermalSensorValid)
+            {
+                LOG_OUT("NTC ");
+                LOG_OUT(motorThermalTemperature, 1);
+                LOG_OUT(" C, cooldown <= ");
+                LOG_OUT(NTC_MOTOR_OVERHEAT_LOW_C, 1);
+                LOG_OUT_LN(" C; motor OFF");
+            }
+            else
+            {
+                LOG_OUT_LN("NTC invalido; motor OFF");
+            }
+            lastMotorOverheatLogMs = nowMs;
+        }
+
+        if (previousActive != motorOverheatActive ||
+            previousValid != motorThermalSensorValid ||
+            fabsf(previousTemperature - motorThermalTemperature) > 0.1f)
+        {
+            markUiDirty();
+        }
+        return motorOverheatActive;
+#else
+        motorOverheatActive = false;
+        motorThermalSensorValid = false;
+        motorThermalTemperature = -1.0f;
+        return false;
+#endif
     }
 
     void resetMotorFlowController()
@@ -1214,6 +1306,13 @@ public:
 
     void updateMotors()
     {
+        if (motorOverheatActive)
+        {
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+            return;
+        }
+
 #if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
         updateClosedLoopMotors();
 #else
@@ -1250,6 +1349,9 @@ public:
         Context &ctx = *this;
 
         if (!ctx.isCapturing || ctx.isPaused)
+            return;
+
+        if (ctx.updateMotorThermalProtection())
             return;
 
         unsigned long now = ctx.getUnixTime();

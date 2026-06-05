@@ -99,6 +99,12 @@ static void updateDroneStatusLed()
     return;
   }
 
+  if (droneState == DroneBootState::Capturing && ctx.motorOverheatActive)
+  {
+    setDroneLed(StatusLedPattern::MotorOverheat);
+    return;
+  }
+
   if (droneState == DroneBootState::Capturing &&
       (ctx.logActive || ctx.uploadPending || ctx.uploadActive))
   {
