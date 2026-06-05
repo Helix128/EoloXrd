@@ -1,5 +1,5 @@
-#ifndef DRONE_SETUP_SERVER_H
-#define DRONE_SETUP_SERVER_H
+#ifndef HEADLESS_SETUP_SERVER_H
+#define HEADLESS_SETUP_SERVER_H
 
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
 
@@ -10,21 +10,29 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include "CaptureSwitches.h"
-#include "DroneSetupTypes.h"
-#include "DroneSetupWebPage.h"
+#include "HeadlessSetupTypes.h"
+#include "HeadlessSetupWebPage.h"
 #include "../Data/Context.h"
 
-class DroneSetupServer
+#ifndef HEADLESS_SETUP_AP_SSID
+#define HEADLESS_SETUP_AP_SSID "eolo-dron"
+#endif
+
+#ifndef HEADLESS_SETUP_AP_PASSWORD
+#define HEADLESS_SETUP_AP_PASSWORD "eolo-dron"
+#endif
+
+class HeadlessSetupServer
 {
 public:
-  static constexpr const char *ApSsid = "eolo-dron";
-  static constexpr const char *ApPassword = "eolo-dron";
+  static constexpr const char *ApSsid = HEADLESS_SETUP_AP_SSID;
+  static constexpr const char *ApPassword = HEADLESS_SETUP_AP_PASSWORD;
   static constexpr const char *PortalHost = "eolo.setup";
   static constexpr const char *PortalUrl = "http://eolo.setup/";
   static constexpr const char *PortalIpUrl = "http://192.168.4.1/";
   static constexpr uint16_t DnsPort = 53;
 
-  explicit DroneSetupServer(Context &context, CaptureSwitches &switches)
+  explicit HeadlessSetupServer(Context &context, CaptureSwitches &switches)
       : _ctx(context), _switches(switches), _server(80)
   {
   }
@@ -55,7 +63,7 @@ public:
     _server.begin();
     _running = true;
 
-    LOG_OUT("Drone setup Wi-Fi activo: ");
+    LOG_OUT("Setup Wi-Fi headless activo: ");
     LOG_OUT(ApSsid);
     LOG_OUT(" / ");
     LOG_OUT_LN(ApPassword);
@@ -87,15 +95,15 @@ public:
   }
 
   bool confirmed() const { return _confirmed; }
-  const DroneSetupConfig &confirmedConfig() const { return _confirmedConfig; }
+  const HeadlessSetupConfig &confirmedConfig() const { return _confirmedConfig; }
 
 private:
   Context &_ctx;
   CaptureSwitches &_switches;
   WebServer _server;
   DNSServer _dnsServer;
-  DroneSetupConfig _defaults;
-  DroneSetupConfig _confirmedConfig;
+  HeadlessSetupConfig _defaults;
+  HeadlessSetupConfig _confirmedConfig;
   bool _running = false;
   bool _confirmed = false;
 
@@ -146,27 +154,27 @@ private:
   void loadDefaults()
   {
     Preferences prefs;
-    prefs.begin("eolo_drone_setup", true);
+    prefs.begin("eolo_headless", true);
     _defaults.waitSeconds = prefs.getUInt("wait", 0);
     _defaults.durationSeconds = prefs.getUInt("duration", 5UL * MINUTE);
     _defaults.targetFlow = prefs.getFloat("flow", DRONE_TARGET_FLOW_LPM);
     prefs.end();
 
-    if (!DroneSetup::validateConfig(_defaults))
-      _defaults = DroneSetupConfig();
+    if (!HeadlessSetup::validateConfig(_defaults))
+      _defaults = HeadlessSetupConfig();
   }
 
-  void saveDefaults(const DroneSetupConfig &config)
+  void saveDefaults(const HeadlessSetupConfig &config)
   {
     Preferences prefs;
-    prefs.begin("eolo_drone_setup", false);
+    prefs.begin("eolo_headless", false);
     prefs.putUInt("wait", config.waitSeconds);
     prefs.putUInt("duration", config.durationSeconds);
     prefs.putFloat("flow", config.targetFlow);
     prefs.end();
   }
 
-  bool parseConfirm(DroneSetupConfig &config)
+  bool parseConfirm(HeadlessSetupConfig &config)
   {
     if (!_server.hasArg("waitSeconds") || !_server.hasArg("targetFlow"))
       return false;
@@ -186,7 +194,7 @@ private:
       config.durationSeconds = _server.arg("durationSeconds").toInt();
     }
 
-    return DroneSetup::validateConfig(config);
+    return HeadlessSetup::validateConfig(config);
   }
 
   void redirectToPortal()
@@ -223,7 +231,7 @@ private:
   {
     _server.sendHeader("Cache-Control", "no-store");
     _server.sendHeader("Content-Encoding", "gzip");
-    _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kDroneSetupHtmlGzip), kDroneSetupHtmlGzipSize);
+    _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kHeadlessSetupHtmlGzip), kHeadlessSetupHtmlGzipSize);
   }
 
   void handleStatus()
@@ -285,7 +293,7 @@ private:
       if (slash >= 0)
         name = name.substring(slash + 1);
 
-      if (!file.isDirectory() && DroneSetup::isSafeLogBasename(name))
+      if (!file.isDirectory() && HeadlessSetup::isSafeLogBasename(name))
       {
         if (!first)
           body += ",";
@@ -307,7 +315,7 @@ private:
   String safeLogPathFromRequest()
   {
     String name = _server.arg("file");
-    if (!DroneSetup::isSafeLogBasename(name))
+    if (!HeadlessSetup::isSafeLogBasename(name))
       return "";
     return String(_ctx.logsDir) + "/" + name;
   }
@@ -404,7 +412,7 @@ private:
 
   void handleConfirm()
   {
-    DroneSetupConfig config;
+    HeadlessSetupConfig config;
     if (!parseConfirm(config))
     {
       _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_config\"}");

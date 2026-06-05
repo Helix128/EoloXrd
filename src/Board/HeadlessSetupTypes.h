@@ -1,19 +1,19 @@
-#ifndef DRONE_SETUP_TYPES_H
-#define DRONE_SETUP_TYPES_H
+#ifndef HEADLESS_SETUP_TYPES_H
+#define HEADLESS_SETUP_TYPES_H
 
 #include <Arduino.h>
 #include <stdint.h>
 #include "../Config.h"
 #include "../Data/Session.h"
 
-struct DroneSetupConfig
+struct HeadlessSetupConfig
 {
   uint32_t waitSeconds = 0;
   uint32_t durationSeconds = 5UL * MINUTE;
   float targetFlow = DRONE_TARGET_FLOW_LPM;
 };
 
-namespace DroneSetup
+namespace HeadlessSetup
 {
   constexpr float kMinFlowLpm = 0.0f;
   constexpr float kMaxFlowLpm = 8.0f;
@@ -25,7 +25,7 @@ namespace DroneSetup
     return (waitCode & 0x03) == 0;
   }
 
-  inline bool validateConfig(const DroneSetupConfig &config)
+  inline bool validateConfig(const HeadlessSetupConfig &config)
   {
     if (config.waitSeconds > kMaxWaitSeconds)
       return false;
@@ -42,7 +42,7 @@ namespace DroneSetup
     return true;
   }
 
-  inline void applyToSession(const DroneSetupConfig &config, Session &session, const DateTime &now)
+  inline void applyToSession(const HeadlessSetupConfig &config, Session &session, const DateTime &now)
   {
     session.usePlantower = false;
     session.targetFlow = config.targetFlow;
