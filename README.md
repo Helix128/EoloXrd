@@ -2,7 +2,7 @@
   <img src="docs/assets/eolo-logo.png" alt="EOLO" width="520">
 </p>
 
-# EOLO · Firmware y documentación técnica
+# EOLOXrd - Firmware de dispositivos de la serie EOLO
 
 Firmware PlatformIO/Arduino para **EOLO**, dispositivo desarrollado por el **Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo** (a.k.a C+) y sus variantes operativas.
 
