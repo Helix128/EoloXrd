@@ -162,12 +162,164 @@ private:
     return line;
   }
 
+  static bool readIntArg(const String &args, const char *name, int &value)
+  {
+    String key = String(name) + "=";
+    int pos = args.indexOf(key);
+    if (pos < 0)
+      return false;
+    int start = pos + key.length();
+    int end = args.indexOf(' ', start);
+    String raw = end < 0 ? args.substring(start) : args.substring(start, end);
+    value = raw.toInt();
+    return true;
+  }
+
+  static bool readFloatArg(const String &args, const char *name, float &value)
+  {
+    String key = String(name) + "=";
+    int pos = args.indexOf(key);
+    if (pos < 0)
+      return false;
+    int start = pos + key.length();
+    int end = args.indexOf(' ', start);
+    String raw = end < 0 ? args.substring(start) : args.substring(start, end);
+    value = raw.toFloat();
+    return true;
+  }
+
+  static HeadlessMotorCalibrationConfig parseCalibConfig(const String &args)
+  {
+    HeadlessMotorCalibrationConfig config;
+    int intValue = 0;
+    float floatValue = 0.0f;
+    if (readIntArg(args, "pwmStart", intValue)) config.pwmStart = intValue;
+    if (readIntArg(args, "pwmEnd", intValue)) config.pwmEnd = intValue;
+    if (readIntArg(args, "pwmStep", intValue)) config.pwmStep = intValue;
+    if (readIntArg(args, "settle", intValue)) config.settleMs = intValue;
+    if (readIntArg(args, "sample", intValue)) config.sampleIntervalMs = intValue;
+    if (readIntArg(args, "n", intValue)) config.samplesPerPoint = intValue;
+    if (readFloatArg(args, "maxFlow", floatValue)) config.maxTargetFlow = floatValue;
+    if (readFloatArg(args, "minFlow", floatValue)) config.minValidFlow = floatValue;
+    if (readFloatArg(args, "minDelta", floatValue)) config.minFlowDelta = floatValue;
+    if (readFloatArg(args, "maxStddev", floatValue)) config.maxFlowStddev = floatValue;
+    if (args.indexOf("scale=8") >= 0)
+    {
+      config.pwmStart = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmStart);
+      config.pwmEnd = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmEnd);
+      config.pwmStep = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmStep) - HeadlessMotorCalibration::pwm8ToRuntime(0);
+      if (config.pwmStep <= 0)
+        config.pwmStep = 1;
+    }
+    return config;
+  }
+
+  void printCalibrationStatus(Print &out) const
+  {
+    const HeadlessMotorCalibration &cal = _ctx->headlessCalibration;
+    out.printf("Calibracion: %s running=%s valid=%s pwm=%d puntos=%d rango=%.2f-%.2f L/min\n",
+               cal.stateText(), cal.isRunning() ? "si" : "no", cal.hasValidCalibration() ? "si" : "no",
+               cal.currentPwm(), cal.pointCount(), cal.minFlow(), cal.maxFlow());
+    if (strlen(cal.errorText()) > 0)
+      out.printf("Error: %s\n", cal.errorText());
+  }
+
+  void printCalibrationConfig(Print &out) const
+  {
+    const HeadlessMotorCalibrationConfig &c = _ctx->headlessCalibration.config();
+    out.printf("Config: pwmStart=%d pwmEnd=%d pwmStep=%d settle=%lu sample=%lu n=%u maxFlow=%.2f minFlow=%.2f minDelta=%.2f maxStddev=%.2f\n",
+               c.pwmStart, c.pwmEnd, c.pwmStep,
+               (unsigned long)c.settleMs, (unsigned long)c.sampleIntervalMs,
+               (unsigned int)c.samplesPerPoint, c.maxTargetFlow,
+               c.minValidFlow, c.minFlowDelta, c.maxFlowStddev);
+  }
+
+  void printCalibrationPoints(Print &out) const
+  {
+    const HeadlessMotorCalibration &cal = _ctx->headlessCalibration;
+    out.println("PWM | Flujo | Stddev | N");
+    for (int i = 0; i < cal.pointCount(); i++)
+    {
+      const HeadlessMotorCalibrationPoint &p = cal.point(i);
+      out.printf("%4d | %.2f | %.3f | %u\n", p.pwm, p.flow, p.stddev, (unsigned int)p.samples);
+    }
+  }
+
+  bool handleCalibrationCommand(const String &args, Print &out)
+  {
+    if (!args.startsWith("calib"))
+      return false;
+    if (_ctx == nullptr)
+    {
+      out.println("Contexto Dron no adjuntado.");
+      return true;
+    }
+
+    String sub = args.length() == 5 ? String("status") : args.substring(6);
+    sub.trim();
+    if (sub == "status")
+    {
+      printCalibrationStatus(out);
+      return true;
+    }
+    if (sub == "show")
+    {
+      printCalibrationStatus(out);
+      printCalibrationConfig(out);
+      printCalibrationPoints(out);
+      return true;
+    }
+    if (sub == "config")
+    {
+      printCalibrationConfig(out);
+      return true;
+    }
+    if (sub == "abort")
+    {
+      _ctx->headlessCalibration.abort(*_ctx);
+      printCalibrationStatus(out);
+      return true;
+    }
+    if (sub == "clear")
+    {
+      _ctx->headlessCalibration.clear(*_ctx);
+      printCalibrationStatus(out);
+      return true;
+    }
+    if (sub == "save")
+    {
+      out.println(_ctx->headlessCalibration.save(*_ctx) ? "Calibracion guardada." : "Calibracion invalida; no guardada.");
+      return true;
+    }
+    if (sub.startsWith("start"))
+    {
+      if (_ctx->isCapturing)
+      {
+        out.println("No se puede calibrar durante captura.");
+        return true;
+      }
+      HeadlessMotorCalibrationConfig config = parseCalibConfig(sub);
+      if (!_ctx->headlessCalibration.start(config))
+      {
+        out.println("No se pudo iniciar calibracion; parametros invalidos o ya en curso.");
+        return true;
+      }
+      printCalibrationStatus(out);
+      return true;
+    }
+
+    out.println("Uso: drone calib start|status|show|abort|save|clear");
+    return true;
+  }
+
   static void printHelp(Print &out)
   {
     out.println("Comandos Dron:");
     out.println("  drone              alias de drone status");
     out.println("  drone status       estado compacto");
     out.println("  drone status -v    estado con detalles raw");
+    out.println("  drone calib start [pwmStart=400 pwmEnd=1900 pwmStep=80 settle=3000 sample=800 n=5 maxFlow=8.0]");
+    out.println("  drone calib status|show|config|abort|save|clear");
     out.println("  drone help         ayuda");
   }
 
@@ -210,6 +362,9 @@ public:
       printHelp(out);
       return true;
     }
+
+    if (handleCalibrationCommand(args, out))
+      return true;
 
     bool verbose = false;
     if (args == "status -v" || args == "status verbose" || args == "status --verbose")

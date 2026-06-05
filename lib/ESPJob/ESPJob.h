@@ -326,7 +326,7 @@ private:
     }
 };
 
-JobSystemConfig globalConfig;
+inline JobSystemConfig globalConfig;
 
 class Job {
 public:

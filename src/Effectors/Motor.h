@@ -5,7 +5,11 @@
 #include <math.h>
 #include "../Config.h"
 
-#define PWM_RESOLUTION 11
+#if defined(FEATURE_MOTOR_PWM_8BIT)
+  #define PWM_RESOLUTION 8
+#else
+  #define PWM_RESOLUTION 11
+#endif
 #define MAX_PWM ((1 << PWM_RESOLUTION) - 1)
 
 class MotorManager
@@ -25,7 +29,7 @@ public:
   };
   static const int motorCount = sizeof(motors) / sizeof(motors[0]);
   static const int freq = 20000;
-  static const int resolution = 11;
+  static const int resolution = PWM_RESOLUTION;
   int pwmValues[MOTOR_PWM_PIN_COUNT];
   int targetPwmValues[MOTOR_PWM_PIN_COUNT];
   bool isReady = false;

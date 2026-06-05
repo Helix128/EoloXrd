@@ -229,6 +229,11 @@ static void updateDroneController()
 
   if (droneState == DroneBootState::Waiting)
   {
+    if (ctx.isHeadlessCalibrationRunning())
+    {
+      updateDroneStatusLed();
+      return;
+    }
     uint32_t now = ctx.getUnixTime();
     if (now >= ctx.session.startDate.unixtime())
     {
