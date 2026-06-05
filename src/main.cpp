@@ -29,8 +29,8 @@
 #include <esp_sleep.h>
 #include "Board/CaptureSwitches.h"
 #if defined(EOLO_TARGET_DRON)
-#include "Board/DroneSetupServer.h"
-#include "Board/DroneSetupTypes.h"
+#include "Board/HeadlessSetupServer.h"
+#include "Board/HeadlessSetupTypes.h"
 #endif
 #else
 // Librerías para display
@@ -56,7 +56,7 @@ Context ctx(u8g2); // Aquí se procesa toda la lógica
 Context ctx;
 CaptureSwitches captureSwitches;
 #if defined(EOLO_TARGET_DRON)
-DroneSetupServer droneSetupServer(ctx, captureSwitches);
+HeadlessSetupServer headlessSetupServer(ctx, captureSwitches);
 #endif
 #endif
 DebugConsole debugConsole;
@@ -127,10 +127,10 @@ static void updateDroneStatusLed()
   }
 }
 
-static void startDroneConfiguredCapture(const DroneSetupConfig &config)
+static void startDroneConfiguredCapture(const HeadlessSetupConfig &config)
 {
   DateTime now = ctx.components.rtc.now();
-  DroneSetup::applyToSession(config, ctx.session, now);
+  HeadlessSetup::applyToSession(config, ctx.session, now);
   ctx.clearSession();
   ctx.saveSession();
 
@@ -158,11 +158,11 @@ static void configureDroneCapture()
   CaptureSwitches::printSnapshot(stdOut, switchSnapshot);
   CaptureSwitchSelection selection = switchSnapshot.selection;
 
-  if (DroneSetup::shouldEnterWebSetup(selection.waitCode))
+  if (HeadlessSetup::shouldEnterWebSetup(selection.waitCode))
   {
     LOG_LN("Switches de espera en Off; entrando a setup web de EOLO Dron.");
     ctx.components.motor.setPowerPct(0);
-    droneSetupServer.begin();
+    headlessSetupServer.begin();
     droneState = DroneBootState::Setup;
     updateDroneStatusLed();
     return;
@@ -210,11 +210,11 @@ static void updateDroneController()
   if (droneState == DroneBootState::Setup)
   {
     ctx.components.motor.setPowerPct(0);
-    droneSetupServer.handleClient();
-    if (droneSetupServer.confirmed())
+    headlessSetupServer.handleClient();
+    if (headlessSetupServer.confirmed())
     {
-      DroneSetupConfig config = droneSetupServer.confirmedConfig();
-      droneSetupServer.stop();
+      HeadlessSetupConfig config = headlessSetupServer.confirmedConfig();
+      headlessSetupServer.stop();
       startDroneConfiguredCapture(config);
     }
     updateDroneStatusLed();

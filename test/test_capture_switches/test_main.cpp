@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "Board/CaptureSwitches.h"
-#include "Board/DroneSetupTypes.h"
+#include "Board/HeadlessSetupTypes.h"
 
 void test_wait_table()
 {
@@ -83,10 +83,10 @@ void test_decode_full_table()
 
 void test_web_setup_entry_uses_wait_off()
 {
-    TEST_ASSERT_TRUE(DroneSetup::shouldEnterWebSetup(0b00));
-    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b01));
-    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b10));
-    TEST_ASSERT_FALSE(DroneSetup::shouldEnterWebSetup(0b11));
+    TEST_ASSERT_TRUE(HeadlessSetup::shouldEnterWebSetup(0b00));
+    TEST_ASSERT_FALSE(HeadlessSetup::shouldEnterWebSetup(0b01));
+    TEST_ASSERT_FALSE(HeadlessSetup::shouldEnterWebSetup(0b10));
+    TEST_ASSERT_FALSE(HeadlessSetup::shouldEnterWebSetup(0b11));
 }
 
 void test_descriptions()

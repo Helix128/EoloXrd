@@ -10,7 +10,7 @@ except NameError:
 PROJECT_DIR = Path(env.subst("$PROJECT_DIR")) if env else Path(__file__).resolve().parents[1]
 WEB_DIR = PROJECT_DIR / "web-server"
 INDEX_PATH = WEB_DIR / "index.html"
-HEADER_PATH = PROJECT_DIR / "src" / "Board" / "DroneSetupWebPage.h"
+HEADER_PATH = PROJECT_DIR / "src" / "Board" / "HeadlessSetupWebPage.h"
 
 
 def read_source(name):
@@ -72,17 +72,17 @@ def gzip_html(html):
 
 def make_header(html):
     compressed = gzip_html(html)
-    return f"""#ifndef DRONE_SETUP_WEB_PAGE_H
-#define DRONE_SETUP_WEB_PAGE_H
+    return f"""#ifndef HEADLESS_SETUP_WEB_PAGE_H
+#define HEADLESS_SETUP_WEB_PAGE_H
 
 #include <Arduino.h>
 
-static constexpr const uint8_t kDroneSetupHtmlGzip[] PROGMEM = {{
+static constexpr const uint8_t kHeadlessSetupHtmlGzip[] PROGMEM = {{
 {format_bytes(compressed)}
 }};
 
-static constexpr const size_t kDroneSetupHtmlGzipSize = sizeof(kDroneSetupHtmlGzip);
-static constexpr const size_t kDroneSetupHtmlOriginalSize = {len(html.encode("utf-8"))};
+static constexpr const size_t kHeadlessSetupHtmlGzipSize = sizeof(kHeadlessSetupHtmlGzip);
+static constexpr const size_t kHeadlessSetupHtmlOriginalSize = {len(html.encode("utf-8"))};
 
 #endif
 """
