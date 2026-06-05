@@ -4,9 +4,9 @@
 
 # EOLO · Firmware y documentación técnica
 
-Firmware PlatformIO/Arduino para **EOLO**, dispositivo desarrollado por el **C+ Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo**, y sus variantes operativas.
+Firmware PlatformIO/Arduino para **EOLO**, dispositivo desarrollado por el **Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo** (a.k.a C+) y sus variantes operativas.
 
-Este repositorio contiene firmware, manuales, pinouts técnicos, demos de componentes y recursos de calibración para la familia EOLO.
+Este repositorio contiene firmware, manuales y definiciones de pinout para la familia EOLO.
 
 ## Familia EOLO
 
