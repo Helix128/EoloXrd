@@ -12,6 +12,10 @@ EOLO Dron es la version sin pantalla. La captura se configura con switches fisic
 
 Con switches fisicos, el flujo objetivo del Dron es **5.0 L/min**. En setup Wi-Fi headless puede configurarse entre **0.0 y 8.0 L/min** para la sesion actual. Este modelo no usa pantalla, modem, anemometro ni sensor Plantower.
 
+## Pinout técnico
+
+El pinout real usado por el firmware de EOLO Dron está documentado en [`../pinouts/eolo-dron.md`](../pinouts/eolo-dron.md).
+
 ## Switches
 
 Los switches se leen al encender. Cada grupo usa dos posiciones: `SW0` y `SW1`.

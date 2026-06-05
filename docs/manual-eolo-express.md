@@ -10,6 +10,10 @@ EOLO Express se opera desde pantalla con encoder y boton. Usa sensor de flujo AF
 4. Verifique que el AFM07 y el Plantower esten conectados.
 5. Encienda el equipo y espere el menu principal.
 
+## Pinout técnico
+
+El pinout real usado por el firmware de EOLO Express está documentado en [`../pinouts/eolo-express.md`](../pinouts/eolo-express.md).
+
 ## Controles e iconos
 
 - **Encoder:** gire para cambiar valores o moverse por menus.
