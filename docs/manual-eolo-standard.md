@@ -10,6 +10,10 @@ EOLO Standard se opera desde pantalla con encoder y boton. Permite programar ses
 4. Verifique que el sensor AFM07, Plantower y anemometro esten conectados.
 5. Encienda el equipo y espere el menu principal.
 
+## Pinout técnico
+
+El pinout real usado por el firmware de EOLO Standard está documentado en [`../pinouts/eolo-standard.md`](../pinouts/eolo-standard.md).
+
 ## Controles e iconos
 
 - **Encoder:** gire para cambiar valores o moverse por menus.

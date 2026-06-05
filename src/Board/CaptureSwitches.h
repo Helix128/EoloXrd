@@ -196,7 +196,7 @@ private:
 
   static void configureInput(int pin)
   {
-    // GPIO34-39, incluyendo los defaults 36/39 de duración, requieren pull-up/down externo.
+    // GPIO34-39 no tienen pull-up interno; se configuran como entrada simple.
     pinMode(pin, supportsInternalPullup(pin) ? INPUT_PULLUP : INPUT);
   }
 

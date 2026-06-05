@@ -160,7 +160,7 @@ static_assert(NTC_MOTOR_OVERHEAT_LOW_C < NTC_MOTOR_OVERHEAT_HIGH_C,
 #if defined(EOLO_TARGET_DRON) && \
     (DURATION_SW0_PIN >= 34 || DURATION_SW1_PIN >= 34) && \
     !defined(DRONE_SWITCHES_HAVE_EXTERNAL_PULLS)
-  #error "GPIO34-39 requieren pull-up/down externo para switches de dron"
+  #error "GPIO34-39 no tienen pull-up/down interno para switches de dron"
 #endif
 
 #define FONT_BOLD u8g2_font_helvB10_tf

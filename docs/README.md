@@ -6,11 +6,11 @@ Esta carpeta contiene los manuales de operacion para los modelos EOLO vigentes. 
 
 ## Elegir manual
 
-| Modelo | Manual | Caracteristicas principales |
-| --- | --- | --- |
-| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron.md) | Sin pantalla, switches fisicos o setup Wi-Fi headless, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
-| EOLO Standard | [Manual EOLO Standard](manual-eolo-standard.md) | Pantalla y encoder, modem, anemometro, doble bateria/DC, AFM07 y Plantower. |
-| EOLO Express | [Manual EOLO Express](manual-eolo-express.md) | Pantalla y encoder, AFM07, Plantower, bateria simple, sin modem ni anemometro. |
+| Modelo | Manual | Pinout técnico | Caracteristicas principales |
+| --- | --- | --- | --- |
+| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron.md) | [Pinout EOLO Dron](../pinouts/eolo-dron.md) | Sin pantalla, switches fisicos o setup Wi-Fi headless, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
+| EOLO Standard | [Manual EOLO Standard](manual-eolo-standard.md) | [Pinout EOLO Standard](../pinouts/eolo-standard.md) | Pantalla y encoder, modem, anemometro, doble bateria/DC, AFM07 y Plantower. |
+| EOLO Express | [Manual EOLO Express](manual-eolo-express.md) | [Pinout EOLO Express](../pinouts/eolo-express.md) | Pantalla y encoder, AFM07, Plantower, bateria simple, sin modem ni anemometro. |
 
 ## Diferencias rapidas
 
@@ -25,4 +25,8 @@ Esta carpeta contiene los manuales de operacion para los modelos EOLO vigentes. 
 | Modem | No | Si | No |
 | Energia | Bateria | Doble bateria o DC | Bateria simple |
 
-> EOLO Express Legacy no esta incluido en estos manuales.
+> EOLO Express Legacy no esta incluido en estos manuales. Su pinout técnico está disponible en [Pinout EOLO Express Legacy](../pinouts/eolo-express-legacy.md).
+
+## Pinouts técnicos
+
+La documentación de GPIO reales extraídos del firmware está centralizada en [`../pinouts/`](../pinouts/README.md).
