@@ -5,56 +5,28 @@
 #include "Components.h"
 #include "CalibrationManager.h"
 #include "UiSnapshot.h"
+#include "Logging/LogService.h"
+#include "SessionStore.h"
+#include "RTCNetworkSync.h"
+#include "CaptureController.h"
+#include "MotorCaptureControl.h"
+#include "UploadService.h"
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#include "HeadlessMotorCalibration.h"
+#endif
 #include "../Config.h"
 #include "../Board/I2CBus.h"
 #ifndef FEATURE_HEADLESS
 #include "../Drawing/SceneManager.h"
 #endif
 #include "ESPJob.h"
-#include <SD.h>
-#include <Preferences.h>
+#ifndef FEATURE_HEADLESS
+#include <U8g2lib.h>
+#endif
 #include <math.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "Profiler.h"
-
-enum SDStatus
-{
-    SD_OK,
-    SD_WRITING,
-    SD_MISSING,
-    SD_ERROR
-};
-
-namespace ApiId
-{
-    constexpr int WindSensor = 748;
-    constexpr int PlantowerSensor = 749;
-    constexpr int BmeSensor = 750;
-    constexpr int FlowSensor = 751;
-    constexpr int AmbientTemperatureSensor = 752;
-    constexpr int BatterySensor = 753;
-    constexpr int GpsSensor = 754;
-
-    constexpr int Temperature = 3;
-    constexpr int BatteryVoltage = 4;
-    constexpr int WindSpeed = 5;
-    constexpr int Humidity = 6;
-    constexpr int Pm1 = 7;
-    constexpr int Pm25 = 8;
-    constexpr int Pm10 = 9;
-    constexpr int Latitude = 11;
-    constexpr int Longitude = 12;
-    constexpr int Pressure = 13;
-    constexpr int SignalStrength = 15;
-    constexpr int WindDirection = 17;
-    constexpr int GpsSpeed = 45;
-    constexpr int Satellites = 46;
-    constexpr int TargetFlow = 48;
-    constexpr int CapturedVolume = 49;
-    constexpr int MeasuredFlow = 50;
-}
 
 typedef struct Context
 {
@@ -70,48 +42,35 @@ typedef struct Context
     Components components;
     Session session;
 
-    const int CAPTURE_INTERVAL = 10;
-
-    bool isCapturing = false;
-    bool isPaused = false;
-    bool isEnd = false;
-    bool motorOverheatActive = false;
-    bool motorThermalSensorValid = false;
-    float motorThermalTemperature = -99.0f;
-    uint32_t lastMotorOverheatLogMs = 0;
-
-    SDStatus sdStatus = SD_OK;
-    bool sdInitAttempted = false;
-    bool isSdReady = false;
-    bool sdMissingLogReported = false;
-    bool uploadPending = false;
-    bool uploadActive = false;
-    volatile bool logActive = false;
-    bool uiDirty = true;
-
-    const char *eoloDir = "/EOLO";
-    const char *logsDir = "/EOLO/logs";
-
     CalibrationManager calibration;
-
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    struct MotorFlowController
-    {
-        bool initialized = false;
-        int basePwm = 0;
-        int currentPwm = 0;
-        float integral = 0.0f;
-        float targetFlow = -1.0f;
-        uint32_t lastUpdateMs = 0;
-    } motorFlowController;
+    LogService logging;
+    SessionStore sessionStore;
+    RTCNetworkSync rtcSync;
+    CaptureController capture;
+    MotorCaptureControl motorCapture;
+    UploadService uploader;
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+    HeadlessMotorCalibration headlessCalibration;
 #endif
 
-    Preferences preferences;
+    static constexpr int CAPTURE_INTERVAL = CaptureController::CAPTURE_INTERVAL;
+    bool &isCapturing = capture.isCapturing;
+    bool &isPaused = capture.isPaused;
+    bool &isEnd = capture.isEnd;
+    bool &motorOverheatActive = motorCapture.motorOverheatActive;
+    bool &motorThermalSensorValid = motorCapture.motorThermalSensorValid;
+    float &motorThermalTemperature = motorCapture.motorThermalTemperature;
+    SDStatus &sdStatus = logging.sdStatus;
+    bool &isSdReady = logging.isSdReady;
+    const char *&eoloDir = logging.eoloDir;
+    const char *&logsDir = logging.logsDir;
+    bool &uploadPending = logging.uploadPending;
+    bool &uploadActive = uploader.uploadActive;
+    volatile bool &logActive = logging.logActive;
+    bool uiDirty = true;
+
     UiSnapshot uiSnapshot;
-    QueueHandle_t logQueue = nullptr;
-    TaskHandle_t logTaskHandle = nullptr;
     TaskHandle_t bootTaskHandle = nullptr;
-    TaskHandle_t rtcSyncTaskHandle = nullptr;
     bool bootInitComplete = false;
     bool bootInitRunning = false;
 
@@ -125,20 +84,7 @@ typedef struct Context
     uint32_t bootPhaseStartMs = 0;
     const char *rtcAdjustReturnScene = "inicio";
 
-    enum class RTCNetworkSyncStatus : uint8_t
-    {
-        Idle,
-        Running,
-        Success,
-        Failed
-    };
-
-    volatile RTCNetworkSyncStatus rtcNetworkSyncStatus = RTCNetworkSyncStatus::Idle;
-
-    struct LogJob
-    {
-        uint32_t queuedAt;
-    };
+    using RTCNetworkSyncStatus = ::RTCNetworkSyncStatus;
 
 public:
 #ifndef FEATURE_HEADLESS
@@ -228,92 +174,9 @@ public:
             0);
     }
 
-    bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl)
-    {
-#ifdef FEATURE_MODEM
-        if (url == nullptr || url[0] == '\0')
-            url = RTCManager::DefaultTimeServerUrl;
-
-        LOG_F("Encolando sincronizacion RTC desde %s...\n", url);
-        ModemJobId id = components.modemService.enqueueHttpGet(url, "rtc-timesync", rtcTimeSyncCallback, this);
-        if (id == 0)
-        {
-            LOG_F("No se pudo encolar sincronizacion RTC (%s)\n", components.modemService.lastErrorText());
-            return false;
-        }
-        return true;
-#else
-        (void)url;
-        return false;
-#endif
-    }
-
-#ifdef FEATURE_MODEM
-    static void rtcTimeSyncCallback(const ModemJobResult &result, void *context)
-    {
-        Context *self = static_cast<Context *>(context);
-        if (self == nullptr) return;
-
-        bool ok = result.status == ModemJobStatus::Succeeded &&
-                  self->components.rtc.applyTimeServerResponse(result.responsePreview, RTCManager::DefaultTimeServerUrl);
-
-        self->rtcNetworkSyncStatus = ok ? RTCNetworkSyncStatus::Success : RTCNetworkSyncStatus::Failed;
-        if (!ok)
-        {
-            LOG_F("Sincronizacion RTC fallida (%s)\n", result.errorText);
-        }
-        self->markUiDirty();
-    }
-#endif
-
-    static void rtcNetworkSyncWorker(void *arg)
-    {
-        Context *self = static_cast<Context *>(arg);
-        bool queued = self->syncRTCFromTimeServer();
-        if (!queued)
-            self->rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
-        self->markUiDirty();
-        self->rtcSyncTaskHandle = nullptr;
-        vTaskDelete(nullptr);
-    }
-
-    bool startRTCNetworkSync()
-    {
-#ifdef FEATURE_MODEM
-        if (rtcSyncTaskHandle != nullptr || rtcNetworkSyncStatus == RTCNetworkSyncStatus::Running)
-            return false;
-
-        rtcNetworkSyncStatus = RTCNetworkSyncStatus::Running;
-        markUiDirty();
-        BaseType_t created = xTaskCreatePinnedToCore(
-            rtcNetworkSyncWorker,
-            "EoloRTCSync",
-            8192,
-            this,
-            1,
-            &rtcSyncTaskHandle,
-            0);
-
-        if (created != pdPASS)
-        {
-            rtcSyncTaskHandle = nullptr;
-            rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
-            markUiDirty();
-            return false;
-        }
-
-        return true;
-#else
-        rtcNetworkSyncStatus = RTCNetworkSyncStatus::Failed;
-        markUiDirty();
-        return false;
-#endif
-    }
-
-    RTCNetworkSyncStatus getRTCNetworkSyncStatus() const
-    {
-        return rtcNetworkSyncStatus;
-    }
+    bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl) { return rtcSync.syncFromTimeServer(*this, url); }
+    bool startRTCNetworkSync() { return rtcSync.start(*this); }
+    RTCNetworkSyncStatus getRTCNetworkSyncStatus() const { return rtcSync.getStatus(); }
 
     void initDisplay()
     {
@@ -363,226 +226,12 @@ public:
 #endif
     }
 
-    /* TODO - cambiar SD.h por SdFat.h para que el tiempo de los logs esté bien
-    static void dateTime(uint16_t *date, uint16_t *time)
-    {
-        DateTime now = Context::instance->components.rtc.now();
-        *date = FAT_DATE(now.year(), now.month(), now.day());
-        *time = FAT_TIME(now.hour(), now.minute(), now.second());
-    }
-    */
-
-    bool initSD()
-    {
-        if (sdInitAttempted)
-            return isSdReady;
-        sdInitAttempted = true;
-
-        if (isSdReady)
-            return true;
-        // SdFile::dateTimeCallback(dateTime);
-
-        if (!SD.begin(SD_CS_PIN))
-        {
-            LOG_LN("Fallo al inicializar SD");
-            sdStatus = SD_ERROR;
-            isSdReady = false;
-            return false;
-        }
-
-        sdcard_type_t sdType = SD.cardType();
-        if (sdType == CARD_NONE)
-        {
-            LOG_LN("No se detectó tarjeta SD");
-            sdStatus = SD_MISSING;
-            isSdReady = false;
-            return false;
-        }
-        isSdReady = true;
-        sdStatus = SD_OK;
-        sdMissingLogReported = false;
-
-        LOG_OUT("Tipo de tarjeta SD: ");
-        switch (sdType)
-        {
-        case CARD_MMC:
-            LOG_OUT_LN("MMC");
-            break;
-        case CARD_SD:
-            LOG_OUT_LN("SDSC");
-            break;
-        case CARD_SDHC:
-            LOG_OUT_LN("SDHC");
-            break;
-        case CARD_UNKNOWN:
-        default:
-            LOG_OUT_LN("Desconocido");
-            break;
-        }
-
-        uint64_t sdCardSize = SD.cardSize();
-        LOG_OUT("Tamaño de la tarjeta SD: ");
-        LOG_OUT(sdCardSize / (1024 * 1024));
-        LOG_OUT_LN(" MB");
-
-        uint64_t totalBytes = SD.totalBytes();
-        uint64_t usedBytes = SD.usedBytes();
-        LOG_OUT("Espacio total: ");
-        LOG_OUT(totalBytes / (1024 * 1024));
-        LOG_OUT_LN(" MB");
-        LOG_OUT("Espacio usado: ");
-        LOG_OUT(usedBytes / (1024 * 1024));
-        LOG_OUT(" MB (");
-        LOG_OUT(totalBytes > 0 ? (usedBytes * 100) / totalBytes : 0);
-        LOG_OUT_LN("%)");
-
-        if (!SD.exists(eoloDir))
-        {
-            sdStatus = SD_WRITING;
-            if (!SD.mkdir(eoloDir))
-            {
-                LOG_LN("No se pudo crear directorio /EOLO en SD");
-                markSdFailed();
-                return false;
-            }
-            LOG_LN("Directorio /EOLO creado en SD");
-            sdStatus = SD_OK;
-        }
-        else
-        {
-            LOG_LN("Directorio /EOLO ya existe en SD");
-        }
-
-        if (!SD.exists(logsDir))
-        {
-            sdStatus = SD_WRITING;
-            if (!SD.mkdir(logsDir))
-            {
-                LOG_LN("No se pudo crear directorio /EOLO/logs en SD");
-                markSdFailed();
-                return false;
-            }
-            LOG_LN("Directorio /EOLO/logs creado en SD");
-            sdStatus = SD_OK;
-        }
-        else
-        {
-            LOG_LN("Directorio /EOLO/logs ya existe en SD");
-        }
-
-        LOG_LN("SD inicializada");
-        sdStatus = SD_OK;
-        return true;
-    }
-
-    void markSdFailed()
-    {
-        sdStatus = SD_ERROR;
-        isSdReady = false;
-    }
-
-    void saveSession()
-    {
-        LOG_LN("Guardando sesión en Flash...");
-        preferences.begin("eolo_session", false);
-
-        preferences.putULong("startDate", session.startDate.unixtime());
-        preferences.putUInt("duration", session.duration);
-        preferences.putULong("elapsedTime", session.elapsedTime);
-        preferences.putFloat("targetFlow", session.targetFlow);
-        preferences.putFloat("capturedVol", session.capturedVolume);
-        preferences.putBool("usePlantower", session.usePlantower);
-
-        preferences.end();
-
-        LOG_LN("Sesión guardada en Flash:");
-        LOG_OUT(" startDate: ");
-        LOG_OUT_LN(session.startDate.timestamp());
-        LOG_OUT(" duration: ");
-        LOG_OUT_LN(session.duration);
-        LOG_OUT(" elapsedTime: ");
-        LOG_OUT_LN(session.elapsedTime);
-        LOG_OUT(" targetFlow: ");
-        LOG_OUT_LN(session.targetFlow);
-        LOG_OUT(" capturedVolume: ");
-        LOG_OUT_LN(session.capturedVolume);
-        LOG_OUT(" usePlantower: ");
-        LOG_LN(session.usePlantower);
-    }
-
-    bool loadSession()
-    {
-        preferences.begin("eolo_session", false);
-
-        if (!preferences.isKey("startDate"))
-        {
-            preferences.end();
-            LOG_LN("No se encontró sesión guardada en Flash");
-            return false;
-        }
-
-        uint32_t startUnix = preferences.getULong("startDate", 0);
-        uint32_t durationVal = preferences.getUInt("duration", 0);
-        unsigned long elapsedTime = preferences.getULong("elapsedTime", 0);
-        float targetFlowVal = preferences.getFloat("targetFlow", 5.0f);
-        float capturedVolumeVal = preferences.getFloat("capturedVol", 0.0f);
-        bool usePlantowerVal = preferences.getBool("usePlantower", true);
-
-        preferences.end();
-
-        DateTime loadedStart = DateTime(startUnix);
-        session.startDate = loadedStart;
-        session.duration = durationVal;
-        session.elapsedTime = 0;
-
-        if (session.startDate < components.rtc.now())
-        {
-            session.startDate = components.rtc.now();
-            session.duration = durationVal - elapsedTime;
-            session.elapsedTime = 0;
-
-            LOG_OUT("Tiempo transcurrido restaurado: ");
-            LOG_OUT(elapsedTime);
-            LOG_OUT_LN("s");
-        }
-
-        session.targetFlow = targetFlowVal;
-        session.capturedVolume = capturedVolumeVal;
-        session.usePlantower = usePlantowerVal;
-
-        LOG_LN("Sesión cargada desde Flash:");
-        LOG_OUT(" startDate: ");
-        LOG_OUT_LN(session.startDate.timestamp());
-        LOG_OUT(" duration: ");
-        LOG_OUT_LN(session.duration);
-        LOG_OUT(" elapsedTime: ");
-        LOG_OUT_LN(elapsedTime);
-        LOG_OUT(" targetFlow: ");
-        LOG_OUT_LN(session.targetFlow);
-        LOG_OUT(" capturedVolume: ");
-        LOG_OUT_LN(capturedVolumeVal);
-        LOG_OUT(" usePlantower: ");
-        LOG_OUT_LN(session.usePlantower);
-
-        saveSession();
-        return true;
-    }
-
-    bool canLoadSession()
-    {
-        preferences.begin("eolo_session", false);
-        bool hasSession = preferences.isKey("startDate");
-        preferences.end();
-        return hasSession;
-    }
-
-    void clearSession()
-    {
-        preferences.begin("eolo_session", false);
-        preferences.clear();
-        preferences.end();
-        LOG_LN("Sesión eliminada de Flash");
-    }
+    bool initSD() { return logging.initSD(*this); }
+    void markSdFailed() { logging.markSdFailed(); }
+    void saveSession() { sessionStore.save(session); }
+    bool loadSession() { return sessionStore.load(session, components.rtc); }
+    bool canLoadSession() { return sessionStore.canLoad(); }
+    void clearSession() { sessionStore.clear(); }
 
     void markUiDirty()
     {
@@ -750,285 +399,12 @@ public:
         return changed;
     }
 
-    static void logTaskWorker(void *arg)
-    {
-        Context *self = static_cast<Context *>(arg);
-        LogJob job;
-        while (true)
-        {
-            if (xQueueReceive(self->logQueue, &job, portMAX_DELAY) == pdTRUE)
-            {
-                (void)job;
-                self->logActive = true;
-                self->processCaptureSample();
-                self->logActive = false;
-                self->uploadPending = self->logQueue != nullptr && uxQueueMessagesWaiting(self->logQueue) > 0;
-                self->markUiDirty();
-            }
-        }
-    }
-
-    void startLogTask()
-    {
-        if (logQueue == nullptr)
-            logQueue = xQueueCreate(4, sizeof(LogJob));
-        if (logTaskHandle == nullptr && logQueue != nullptr)
-            xTaskCreatePinnedToCore(logTaskWorker, "EoloLogTask", 8192, this, 1, &logTaskHandle, 0);
-    }
-
-    void enqueueLogData()
-    {
-        if (logQueue == nullptr)
-            startLogTask();
-
-        LogJob job = {millis()};
-        if (logQueue != nullptr && xQueueSend(logQueue, &job, 0) == pdTRUE)
-        {
-            uploadPending = true;
-            markUiDirty();
-            return;
-        }
-
-        LOG_LN("Cola de log llena o no disponible; se omite log para no bloquear UI");
-    }
-
-    bool logsIdle() const
-    {
-        return !logActive && (logQueue == nullptr || uxQueueMessagesWaiting(logQueue) == 0);
-    }
-
-    void processCaptureSample()
-    {
-        saveSession();
-        logData();
-#ifdef FEATURE_MODEM
-        uploadData();
-#endif
-    }
-
-    bool logData()
-    {
-        PROFILE_SCOPE("context.log");
-
-        if (!isSdReady)
-        {
-            if (!sdMissingLogReported)
-            {
-                LOG_LN("SD no disponible; se omite log local para esta sesión");
-                sdMissingLogReported = true;
-            }
-            return false;
-        }
-
-        LOG_LN("Iniciando log de datos en SD...");
-        sdStatus = SD_WRITING;
-
-        String dateStr = session.startDate.timestamp();
-        dateStr.replace(":", "_");
-        dateStr.replace("-", "_");
-
-        String filename = String(logsDir) + "/log_" + dateStr + ".csv";
-        bool fileExists = SD.exists(filename.c_str());
-
-        if (!fileExists)
-        {
-            File file = SD.open(filename.c_str(), FILE_WRITE);
-            if (!file)
-            {
-                markSdFailed();
-                LOG_LN("No se pudo abrir el archivo para escribir/crear");
-                return false;
-            }
-
-#ifdef FEATURE_ANEMOMETER
-            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,ntc_temperature,battery_pct");
-#else
-            file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,ntc_temperature,battery_pct");
-#endif
-            file.close();
-
-            LOG_LN("Archivo de log creado: " + filename);
-        }
-
-        LOG_LN(fileExists ? "Archivo de log ya existe: " + filename : "Archivo de log listo: " + filename);
-
-        File file = SD.open(filename.c_str(), FILE_APPEND);
-        if (!file)
-        {
-            markSdFailed();
-            LOG_LN("No se pudo abrir el archivo para escribir");
-            return false;
-        }
-
-        // time
-        file.print(components.rtc.now().timestamp());
-        file.print(",");
-
-        // flow
-        FlowData flowData;
-        if (!components.flowSensor.getData(flowData) || !flowData.valid)
-        {
-            flowData.flow = -1.0;
-        }
-        file.print(flowData.flow);
-        file.print(",");
-
-        // flow_target
-        file.print(session.targetFlow);
-        file.print(",");
-
-        // temperature
-        file.print(components.bme.temperature);
-        file.print(",");
-
-        // humidity
-        file.print(components.bme.humidity);
-        file.print(",");
-
-        // pressure
-        file.print(components.bme.pressure);
-        file.print(",");
-
-        float pm1 = 0.0f;
-        float pm25 = 0.0f;
-        float pm10 = 0.0f;
-#ifdef FEATURE_PLANTOWER
-        PlantowerData ptowerData;
-        (void)components.plantower.getData(ptowerData);
-        pm1 = ptowerData.pm1_0;
-        pm25 = ptowerData.pm2_5;
-        pm10 = ptowerData.pm10_0;
-#endif
-
-        // pm1
-        file.print(pm1);
-        file.print(",");
-
-        // pm25
-        file.print(pm25);
-        file.print(",");
-
-        // pm10
-        file.print(pm10);
-        file.print(",");
-
-#ifdef FEATURE_ANEMOMETER
-
-        AnemometerData anemoData;
-        if (!components.anemometer.getData(anemoData) || !anemoData.valid)
-        {
-            LOG_LN("Error al leer anemómetro para log");
-        }
-        // wind_speed
-        file.print(anemoData.speed);
-        file.print(",");
-
-        // wind_direction
-        file.print(anemoData.direction);
-        file.print(",");
-
-#endif
-
-        float ntcTemperature = -1.0f;
-#ifdef FEATURE_NTC
-        NTCData ntcData;
-        if (components.ntc.getData(ntcData))
-        {
-            ntcTemperature = ntcData.temperature;
-        }
-#endif
-
-        // ntc_temperature
-        file.print(ntcTemperature);
-        file.print(",");
-
-        // battery_pct
-        file.print(components.battery.getPct());
-        file.println();
-
-        LOG_LN("Datos registrados en SD: ");
-        LOG_OUT(" Time: ");
-        LOG_OUT_LN(components.rtc.now().timestamp());
-        LOG_OUT(" Flow: ");
-        LOG_OUT_LN(flowData.flow);
-        LOG_OUT(" Flow_target: ");
-        LOG_OUT_LN(session.targetFlow);
-        LOG_OUT(" Temp: ");
-        LOG_OUT_LN(components.bme.temperature);
-        LOG_OUT(" Hum: ");
-        LOG_OUT_LN(components.bme.humidity);
-        LOG_OUT(" Pres: ");
-        LOG_OUT_LN(components.bme.pressure);
-        LOG_OUT(" PM1: ");
-        LOG_OUT_LN(pm1);
-        LOG_OUT(" PM2.5: ");
-        LOG_OUT_LN(pm25);
-        LOG_OUT(" PM10: ");
-        LOG_OUT_LN(pm10);
-        LOG_OUT(" NTC: ");
-        LOG_OUT_LN(ntcTemperature);
-        LOG_OUT(" Battery: ");
-        LOG_OUT_LN(components.battery.getPct());
-        file.close();
-
-        LOG_LN("Archivo de log escrito!");
-        sdStatus = SD_OK;
-        LOG_LN("Log completado con éxito.");
-        return true;
-    }
-
-    void uploadData()
-    {
-#ifdef FEATURE_MODEM
-        PROFILE_SCOPE("context.upload");
-        uploadActive = true;
-        markUiDirty();
-        components.api.begin();
-#ifdef FEATURE_ANEMOMETER
-        AnemometerData anemoData;
-        (void)components.anemometer.getData(anemoData);
-        components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, anemoData.speed);
-        components.api.addData(ApiId::WindSensor, ApiId::WindDirection, anemoData.direction);
-#else
-        components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, -1);
-        components.api.addData(ApiId::WindSensor, ApiId::WindDirection, -1);
-#endif
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Temperature, -69);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Humidity, -420);
-#ifdef FEATURE_PLANTOWER
-        PlantowerData ptowerData;
-        (void)components.plantower.getData(ptowerData);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, ptowerData.pm1_0);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, ptowerData.pm2_5);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, ptowerData.pm10_0);
-#else
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, -1);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, -1);
-        components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, -1);
-#endif
-        components.api.addData(ApiId::BmeSensor, ApiId::Temperature, components.bme.temperature);
-        components.api.addData(ApiId::BmeSensor, ApiId::Humidity, components.bme.humidity);
-        components.api.addData(ApiId::BmeSensor, ApiId::Pressure, components.bme.pressure);
-        components.api.addData(ApiId::FlowSensor, ApiId::TargetFlow, session.targetFlow);
-        components.api.addData(ApiId::FlowSensor, ApiId::CapturedVolume, session.capturedVolume);
-        FlowData flowData;
-        if (!components.flowSensor.getData(flowData) || !flowData.valid)
-        {
-            flowData.flow = -1.0;
-        }
-        components.api.addData(ApiId::FlowSensor, ApiId::MeasuredFlow, flowData.flow);
-        components.api.addData(ApiId::AmbientTemperatureSensor, ApiId::Temperature, components.bme.temperature);
-        components.api.addData(ApiId::BatterySensor, ApiId::BatteryVoltage, components.battery.getVoltage());
-        components.api.addData(ApiId::GpsSensor, ApiId::Latitude, -1);
-        components.api.addData(ApiId::GpsSensor, ApiId::Longitude, -1);
-        components.api.addData(ApiId::GpsSensor, ApiId::SignalStrength, -1);
-        components.api.addData(ApiId::GpsSensor, ApiId::GpsSpeed, -1);
-        components.api.addData(ApiId::GpsSensor, ApiId::Satellites, -1);
-        components.api.send();
-        uploadActive = false;
-        markUiDirty();
-#endif
-    }
+    void startLogTask() { logging.startLogTask(*this); }
+    void enqueueLogData() { logging.enqueueLogData(*this); }
+    bool logsIdle() const { return logging.logsIdle(); }
+    void processCaptureSample() { logging.processCaptureSample(*this); }
+    bool logData() { return logging.logData(*this); }
+    void uploadData() { uploader.uploadData(*this); }
 
     bool update()
     {
@@ -1056,6 +432,9 @@ public:
 #endif
 
         updateMotorThermalProtection();
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+        headlessCalibration.update(*this);
+#endif
         updateCapture();
         bool statusChanged = updateUiSnapshot();
         bool changed = inputChanged || statusChanged || uiDirty;
@@ -1070,354 +449,36 @@ public:
         return components.rtc.now().unixtime();
     }
 
-    void beginCapture()
-    {
-        session.elapsedTime = 0;
-        isCapturing = true;
-        isPaused = false;
-        isEnd = false;
-        session.capturedVolume = 0.0;
-        resetMotorFlowController();
-        updateMotorThermalProtection();
-        LOG_LN("Iniciando captura...");
-#ifdef FEATURE_MODEM
-        components.modemService.warmUp();
-#endif
-#ifndef FEATURE_HEADLESS
-        SceneManager::setScene("captura", *this);
-        enableDisplay();
-#endif
-    }
-
-    unsigned long int pauseTime = 0;
-    void pauseCapture()
-    {
-#ifndef FEATURE_HEADLESS
-        components.input.resetCounter();
-#endif
-        if (!isCapturing || isPaused)
-            return;
-        LOG_LN("Pausando captura...");
-        isPaused = true;
-        pauseTime = getUnixTime();
-    }
-
-    void resumeCapture()
-    {
-#ifndef FEATURE_HEADLESS
-        components.input.resetCounter();
-#endif
-        if (!isCapturing || !isPaused)
-            return;
-        LOG_LN("Resumiendo captura...");
-        isPaused = false;
-        unsigned long now = getUnixTime();
-        unsigned long pauseDelta = now - pauseTime;
-        session.duration += pauseDelta;
-    }
-
-    void endCapture()
-    {
-        isCapturing = false;
-        isEnd = true;
-
-        LOG_LN("Captura finalizada.");
-        resetMotorFlowController();
-        components.motor.setPowerPct(0);
-#ifdef FEATURE_MODEM
-        components.modemService.shutdownWhenIdle();
-#endif
-#ifndef FEATURE_HEADLESS
-        components.input.resetCounter();
-        SceneManager::setScene("end", *this);
-        enableDisplay();
-#endif
-    }
-
-    void resetCapture()
-    {
-        isCapturing = false;
-        isPaused = false;
-        session = Session();
-        resetMotorFlowController();
-        components.motor.setPowerPct(0);
-#ifdef FEATURE_MODEM
-        components.modemService.shutdownWhenIdle();
-#endif
-#ifndef FEATURE_HEADLESS
-        components.input.resetCounter();
-#endif
-        session.elapsedTime = 0;
-        LOG_LN("Estado de captura reiniciado.");
-    }
-
-    bool updateMotorThermalProtection()
-    {
-#ifdef FEATURE_NTC
-        bool previousActive = motorOverheatActive;
-        bool previousValid = motorThermalSensorValid;
-        float previousTemperature = motorThermalTemperature;
-
-        NTCData ntcData;
-        motorThermalSensorValid = components.ntc.getData(ntcData);
-        motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
-        motorOverheatActive = NTC::motorOverheatLatched(
-            motorOverheatActive,
-            motorThermalSensorValid,
-            motorThermalTemperature,
-            NTC_MOTOR_OVERHEAT_HIGH_C,
-            NTC_MOTOR_OVERHEAT_LOW_C);
-
-        uint32_t nowMs = millis();
-        if (motorOverheatActive)
-        {
-            components.motor.setPwmImmediate(0);
-            resetMotorFlowController();
-        }
-
-        if (!previousActive && motorOverheatActive)
-        {
-            LOG_OUT("ERROR MOTOR OVERHEAT: NTC ");
-            if (motorThermalSensorValid)
-                LOG_OUT(motorThermalTemperature, 1);
-            else
-                LOG_OUT("INVALID");
-            LOG_OUT(" C >= ");
-            LOG_OUT(NTC_MOTOR_OVERHEAT_HIGH_C, 1);
-            LOG_OUT_LN(" C; motor OFF");
-            lastMotorOverheatLogMs = nowMs;
-        }
-        else if (previousActive && !motorOverheatActive)
-        {
-            resetMotorFlowController();
-            LOG_OUT("Motor thermal cooldown OK: NTC ");
-            LOG_OUT(motorThermalTemperature, 1);
-            LOG_OUT(" C <= ");
-            LOG_OUT(NTC_MOTOR_OVERHEAT_LOW_C, 1);
-            LOG_OUT_LN(" C; motor enabled");
-        }
-        else if (motorOverheatActive && nowMs - lastMotorOverheatLogMs >= NTC_MOTOR_OVERHEAT_LOG_INTERVAL_MS)
-        {
-            LOG_OUT("ERROR MOTOR OVERHEAT activo: ");
-            if (motorThermalSensorValid)
-            {
-                LOG_OUT("NTC ");
-                LOG_OUT(motorThermalTemperature, 1);
-                LOG_OUT(" C, cooldown <= ");
-                LOG_OUT(NTC_MOTOR_OVERHEAT_LOW_C, 1);
-                LOG_OUT_LN(" C; motor OFF");
-            }
-            else
-            {
-                LOG_OUT_LN("NTC invalido; motor OFF");
-            }
-            lastMotorOverheatLogMs = nowMs;
-        }
-
-        if (previousActive != motorOverheatActive ||
-            previousValid != motorThermalSensorValid ||
-            fabsf(previousTemperature - motorThermalTemperature) > 0.1f)
-        {
-            markUiDirty();
-        }
-        return motorOverheatActive;
+    bool isHeadlessCalibrationRunning() const {
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+        return headlessCalibration.isRunning();
 #else
-        motorOverheatActive = false;
-        motorThermalSensorValid = false;
-        motorThermalTemperature = -1.0f;
         return false;
 #endif
     }
 
-    void resetMotorFlowController()
-    {
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-        motorFlowController = MotorFlowController();
-#endif
-    }
-
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    void updateClosedLoopMotors()
-    {
-        unsigned long nowMs = millis();
-        if (motorFlowController.initialized &&
-            nowMs - motorFlowController.lastUpdateMs < MOTOR_FLOW_CONTROL_INTERVAL_MS)
-            return;
-
-        int p0 = 0, p1 = 0;
-        if (!calibration.getMotorPwms(session.targetFlow, p0, p1))
-        {
-            resetMotorFlowController();
-            components.motor.setPwm(0);
-            return;
-        }
-
-        if (!motorFlowController.initialized || fabsf(motorFlowController.targetFlow - session.targetFlow) > 0.001f)
-        {
-            motorFlowController.initialized = true;
-            motorFlowController.basePwm = p0;
-            motorFlowController.currentPwm = p0;
-            motorFlowController.integral = 0.0f;
-            motorFlowController.targetFlow = session.targetFlow;
-            motorFlowController.lastUpdateMs = nowMs;
-            components.motor.setMotorPwm(0, p0);
-            LOG_OUT("Control flujo closed-loop: objetivo ");
-            LOG_OUT(session.targetFlow, 2);
-            LOG_OUT(" L/min -> PWM base ");
-            LOG_OUT_LN(p0);
-            return;
-        }
-
-        FlowData flowData;
-        if (!components.flowSensor.getData(flowData) || !flowData.valid)
-        {
-            components.motor.setMotorPwm(0, motorFlowController.currentPwm);
-            return;
-        }
-
-        float dtSeconds = (nowMs - motorFlowController.lastUpdateMs) / 1000.0f;
-        motorFlowController.lastUpdateMs = nowMs;
-        motorFlowController.basePwm = p0;
-        motorFlowController.currentPwm = MotorManager::nextClosedLoopPwm(
-            motorFlowController.basePwm,
-            motorFlowController.currentPwm,
-            session.targetFlow,
-            flowData.flow,
-            dtSeconds,
-            motorFlowController.integral,
-            MOTOR_FLOW_DEADBAND_LPM,
-            MOTOR_FLOW_KP,
-            MOTOR_FLOW_KI,
-            MOTOR_FLOW_INTEGRAL_LIMIT,
-            MOTOR_FLOW_MAX_STEP_PWM);
-
-        LOG_OUT("Control flujo closed-loop: medido ");
-        LOG_OUT(flowData.flow, 2);
-        LOG_OUT(" L/min, PWM ");
-        LOG_OUT(motorFlowController.currentPwm);
-        LOG_OUT(" base ");
-        LOG_OUT(motorFlowController.basePwm);
-        LOG_OUT(" integral ");
-        LOG_OUT_LN(motorFlowController.integral, 3);
-
-        components.motor.setMotorPwm(0, motorFlowController.currentPwm);
-    }
-#endif
-
-    void updateMotors()
-    {
-        if (motorOverheatActive)
-        {
-            components.motor.setPwmImmediate(0);
-            resetMotorFlowController();
-            return;
-        }
-
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-        updateClosedLoopMotors();
-#else
-        static float lastTargetFlow = -1.0f;
-
-        int p0 = 0, p1 = 0;
-        if (calibration.getMotorPwms(session.targetFlow, p0, p1))
-        {
-            if (lastTargetFlow != session.targetFlow)
-            {
-                LOG_OUT("Flujo objetivo: ");
-                LOG_OUT(session.targetFlow, 2);
-                LOG_OUT(" L/min -> PWM[");
-                LOG_OUT(p0);
-                LOG_OUT(", ");
-                LOG_OUT(p1);
-                LOG_OUT_LN("]");
-                lastTargetFlow = session.targetFlow;
-            }
-
-            components.motor.setMotorPwm(0, p0);
-            components.motor.setMotorPwm(1, p1);
-        }
-        else
-        {
-            components.motor.setPwm(0);
-        }
-#endif
-    }
-
-    void updateCapture()
-    {
-        // LOG_LN("Actualizando estado de captura...");
-        Context &ctx = *this;
-
-        if (!ctx.isCapturing || ctx.isPaused)
-            return;
-
-        if (ctx.updateMotorThermalProtection())
-            return;
-
-        unsigned long now = ctx.getUnixTime();
-        bool infiniteDuration = ctx.session.duration == DRONE_DURATION_INFINITE;
-        if (now >= ctx.session.startDate.unixtime())
-        {
-            ctx.session.elapsedTime = now - ctx.session.startDate.unixtime();
-        }
-        else
-        {
-            ctx.session.elapsedTime = 0;
-        }
-
-        if (!infiniteDuration)
-        {
-            DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
-            if (now >= endTime.unixtime())
-            {
-                LOG_LN("Duración de captura alcanzada.");
-                LOG_OUT("Tiempo transcurrido: ");
-                LOG_OUT_LN(ctx.session.elapsedTime);
-
-                LOG_OUT("Duración establecida: ");
-                LOG_OUT_LN(ctx.session.duration);
-
-                processCaptureSample();
-                endCapture();
-                return;
-            }
-        }
-
-#if !BAREBONES
-        // LOG_LN("Actualizando motores...");
-        updateMotors();
-#else
-        ctx.components.flowSensor.flow = ctx.session.targetFlow + millis() % 2;
-#endif
-        if (now - ctx.session.lastLog >= ctx.CAPTURE_INTERVAL)
-        {
-            ctx.session.lastLog = now;
-            LOG_LN("Leyendo datos de sensores...");
-            LOG_LN("Leyendo flujo...");
-            ;
-
-#if !BAREBONES
-            LOG_LN("Leyendo BME280...");
-            ctx.components.bme.readData();
-            FlowData flowData;
-            if (ctx.components.flowSensor.getData(flowData))
-            {
-                ctx.session.capturedVolume += (flowData.flow / 60.0f) * (ctx.CAPTURE_INTERVAL);
-            }
-            else
-            {
-                LOG_LN("Error al leer sensor de flujo para volumen capturado");
-            }
-#endif
-#if true
-
-#endif
-            LOG_LN("Registrando datos...");
-            enqueueLogData();
-        }
-    }
+    void beginCapture() { capture.begin(*this); }
+    void pauseCapture() { capture.pause(*this); }
+    void resumeCapture() { capture.resume(*this); }
+    void endCapture() { capture.end(*this); }
+    void resetCapture() { capture.reset(*this); }
+    bool updateMotorThermalProtection() { return motorCapture.updateThermalProtection(*this); }
+    void resetMotorFlowController() { motorCapture.resetFlowController(); }
+    void updateMotors() { motorCapture.updateMotors(*this); }
+    void updateCapture() { capture.update(*this); }
 
 } Context;
 
 inline Context *Context::instance = nullptr;
+
+#include "SessionStoreImpl.h"
+#include "Logging/LogServiceImpl.h"
+#include "RTCNetworkSyncImpl.h"
+#include "UploadServiceImpl.h"
+#include "MotorCaptureControlImpl.h"
+#include "CaptureControllerImpl.h"
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#include "HeadlessMotorCalibrationImpl.h"
+#endif
+
 #endif
