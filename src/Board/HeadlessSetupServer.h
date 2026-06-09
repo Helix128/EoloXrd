@@ -112,34 +112,6 @@ private:
   bool _running = false;
   bool _confirmed = false;
 
-  static String jsonEscape(const String &value)
-  {
-    String out;
-    out.reserve(value.length() + 8);
-    for (size_t i = 0; i < value.length(); i++)
-    {
-      char c = value.charAt(i);
-      if (c == '"' || c == '\\')
-      {
-        out += '\\';
-        out += c;
-      }
-      else if (c == '\n')
-      {
-        out += "\\n";
-      }
-      else if (c == '\r')
-      {
-        out += "\\r";
-      }
-      else
-      {
-        out += c;
-      }
-    }
-    return out;
-  }
-
   static const char *sdStatusText(SDStatus status)
   {
     switch (status)
@@ -187,13 +159,9 @@ private:
     config.waitSeconds = _server.arg("waitSeconds").toInt();
     config.targetFlow = _server.arg("targetFlow").toFloat();
 
-    String durationMode = _server.arg("durationMode");
-    if (durationMode == "infinite")
-    {
+    if (_server.hasArg("durationMode") && _server.arg("durationMode") == "infinite") {
       config.durationSeconds = DRONE_DURATION_INFINITE;
-    }
-    else
-    {
+    } else {
       if (!_server.hasArg("durationSeconds"))
         return false;
       config.durationSeconds = _server.arg("durationSeconds").toInt();
@@ -269,10 +237,14 @@ private:
     switches["duration"] = CaptureSwitches::durationDescription(snap.durationCode);
 
     size_t needed = measureJson(doc) + 1;
-    String out;
-    out.reserve(needed);
-    serializeJson(doc, out);
-    _server.send(200, "application/json", out);
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
   }
 
   void handleLogs()
@@ -297,15 +269,15 @@ private:
     File file = dir.openNextFile();
     while (file)
     {
-      String name = String(file.name());
-      int slash = name.lastIndexOf('/');
-      if (slash >= 0)
-        name = name.substring(slash + 1);
+      const char *rawName = file.name();
+      const char *base = rawName;
+      const char *slash = strrchr(rawName, '/');
+      if (slash) base = slash + 1;
 
-      if (!file.isDirectory() && HeadlessSetup::isSafeLogBasename(name))
+      if (!file.isDirectory() && HeadlessSetup::isSafeLogBasename(base))
       {
         JsonObject obj = files.createNestedObject();
-        obj["name"] = name;
+        obj["name"] = base;
         obj["size"] = (uint32_t)file.size();
       }
       file.close();
@@ -314,18 +286,26 @@ private:
     dir.close();
 
     size_t needed = measureJson(doc) + 1;
-    String out;
-    out.reserve(needed);
-    serializeJson(doc, out);
-    _server.send(200, "application/json", out);
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
   }
 
-  String safeLogPathFromRequest()
+  // Fill provided buffer 'out' with the safe log path. Returns true on success.
+  bool safeLogPathFromRequest(char *out, size_t outLen)
   {
+    // Note: WebServer::arg returns a String; fetch minimally and use c_str().
     String name = _server.arg("file");
-    if (!HeadlessSetup::isSafeLogBasename(name))
-      return "";
-    return String(_ctx.logsDir) + "/" + name;
+    if (!HeadlessSetup::isSafeLogBasename(name.c_str()))
+      return false;
+    // compose path: logsDir + '/' + name
+    int ret = snprintf(out, outLen, "%s/%s", _ctx.logsDir, name.c_str());
+    return ret > 0 && (size_t)ret < outLen;
   }
 
   void handlePreview()
@@ -336,59 +316,76 @@ private:
       return;
     }
 
-    String path = safeLogPathFromRequest();
-    if (path.isEmpty() || !SD.exists(path.c_str()))
+    char pathBuf[256];
+    if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)) || !SD.exists(pathBuf))
     {
       _server.send(404, "application/json", "{\"error\":\"file_not_found\"}");
       return;
     }
 
-    File file = SD.open(path.c_str(), FILE_READ);
+    File file = SD.open(pathBuf, FILE_READ);
     if (!file)
     {
       _server.send(500, "application/json", "{\"error\":\"open_failed\"}");
       return;
     }
 
-    String header = file.readStringUntil('\n');
-    header.trim();
+    char headerBuf[256];
+    size_t hlen = file.readBytesUntil('\n', headerBuf, sizeof(headerBuf) - 1);
+    headerBuf[hlen] = '\0';
+    // trim CR
+    if (hlen > 0 && headerBuf[hlen - 1] == '\r') headerBuf[hlen - 1] = '\0';
 
     const uint32_t size = file.size();
     if (size > 4096)
     {
       file.seek(size - 4096);
-      file.readStringUntil('\n');
+      // discard until next line
+      file.readBytesUntil('\n', headerBuf, sizeof(headerBuf) - 1);
     }
 
-    String rows[40];
+    // collect last up to 40 rows
+    const size_t ROWS = 40;
+    const size_t ROW_MAX = 256;
+    static char rows[ROWS][ROW_MAX];
     size_t count = 0;
     while (file.available())
     {
-      String row = file.readStringUntil('\n');
-      row.trim();
-      if (row.length() == 0 || row == header)
-        continue;
-      rows[count % 40] = row;
-      count++;
+      size_t rlen = file.readBytesUntil('\n', rows[count % ROWS], ROW_MAX - 1);
+      rows[count % ROWS][rlen] = '\0';
+      // trim CR
+      if (rlen > 0 && rows[count % ROWS][rlen - 1] == '\r') rows[count % ROWS][rlen - 1] = '\0';
+      if (rlen == 0 || strcmp(rows[count % ROWS], headerBuf) == 0)
+      {
+        // ignore
+      }
+      else
+      {
+        count++;
+      }
     }
     file.close();
 
-    size_t start = count > 40 ? count % 40 : 0;
-    size_t total = count > 40 ? 40 : count;
+    size_t start = count > ROWS ? count % ROWS : 0;
+    size_t total = count > ROWS ? ROWS : count;
 
     DynamicJsonDocument doc(4096);
-    doc["header"] = header;
+    doc["header"] = headerBuf;
     JsonArray arr = doc.createNestedArray("rows");
     for (size_t i = 0; i < total; i++)
     {
-      arr.add(rows[(start + i) % 40]);
+      arr.add(rows[(start + i) % ROWS]);
     }
 
     size_t needed = measureJson(doc) + 1;
-    String out;
-    out.reserve(needed);
-    serializeJson(doc, out);
-    _server.send(200, "application/json", out);
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
   }
 
   void handleDownload()
@@ -400,21 +397,23 @@ private:
     }
 
     String name = _server.arg("file");
-    String path = safeLogPathFromRequest();
-    if (path.isEmpty() || !SD.exists(path.c_str()))
+    char pathBuf[256];
+    if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)) || !SD.exists(pathBuf))
     {
       _server.send(404, "text/plain", "Archivo no encontrado");
       return;
     }
 
-    File file = SD.open(path.c_str(), FILE_READ);
+    File file = SD.open(pathBuf, FILE_READ);
     if (!file)
     {
       _server.send(500, "text/plain", "No se pudo abrir el archivo");
       return;
     }
 
-    _server.sendHeader("Content-Disposition", "attachment; filename=\"" + name + "\"");
+    char disp[320];
+    snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", name.c_str());
+    _server.sendHeader("Content-Disposition", disp);
     _server.streamFile(file, "text/csv");
     file.close();
   }
@@ -473,10 +472,14 @@ private:
     }
 
     size_t needed = measureJson(doc) + 1;
-    String out;
-    out.reserve(needed);
-    serializeJson(doc, out);
-    _server.send(200, "application/json", out);
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
   }
 
   void handleCalibrationStart()
