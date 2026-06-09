@@ -53,17 +53,29 @@ namespace HeadlessSetup
     session.capturedVolume = 0.0f;
   }
 
-  inline bool isSafeLogBasename(const String &name)
+  inline bool isSafeLogBasename(const char *name)
   {
-    if (!name.startsWith("log_") || !name.endsWith(".csv"))
+    if (name == nullptr)
+      return false;
+    // must start with log_ and end with .csv
+    const char *p = name;
+    if (strncmp(p, "log_", 4) != 0)
+      return false;
+    size_t len = strlen(p);
+    if (len < 5) // at least log_.csv
+      return false;
+    if (len < 4 + 4) // log_ + .csv
+      return false;
+    if (len < 8 || strcmp(p + len - 4, ".csv") != 0)
       return false;
 
-    if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.indexOf("..") >= 0)
+    // disallow slashes or backrefs
+    if (strstr(p, "/") != nullptr || strstr(p, "\\") != nullptr || strstr(p, "..") != nullptr)
       return false;
 
-    for (size_t i = 0; i < name.length(); i++)
+    for (size_t i = 0; i < len; i++)
     {
-      char c = name.charAt(i);
+      char c = p[i];
       bool ok = (c >= 'A' && c <= 'Z') ||
                 (c >= 'a' && c <= 'z') ||
                 (c >= '0' && c <= '9') ||
@@ -73,6 +85,11 @@ namespace HeadlessSetup
     }
 
     return true;
+  }
+
+  inline bool isSafeLogBasename(const String &name)
+  {
+    return isSafeLogBasename(name.c_str());
   }
 }
 
