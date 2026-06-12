@@ -471,4 +471,16 @@ public:
 
 inline Context *Context::instance = nullptr;
 
+#define CONTEXT_CLASS_DEFINED
+
+// Re-include the headers to trigger compilation of their inline implementations
+#include "Logging/LogService.h"
+#include "CaptureController.h"
+#include "RTCNetworkSync.h"
+#include "MotorCaptureControl.h"
+#include "UploadService.h"
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#include "HeadlessMotorCalibration.h"
+#endif
+
 #endif
