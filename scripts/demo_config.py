@@ -44,6 +44,10 @@ DEMO_CONFIG = {
             "adafruit/RTClib@^2.1.4",
         ],
     },
+    "DynamicMotorCalibration": {
+        "models": ["dron"],
+        "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],
+    },
 }
 
 

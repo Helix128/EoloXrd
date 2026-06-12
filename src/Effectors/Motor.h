@@ -5,11 +5,7 @@
 #include <math.h>
 #include "../Config.h"
 
-#if defined(FEATURE_MOTOR_PWM_8BIT)
-  #define PWM_RESOLUTION 8
-#else
-  #define PWM_RESOLUTION 11
-#endif
+#define PWM_RESOLUTION MOTOR_PWM_RESOLUTION_BITS
 #define MAX_PWM ((1 << PWM_RESOLUTION) - 1)
 
 class MotorManager
