@@ -57,12 +57,16 @@ public:
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
     _server.on("/api/logs", HTTP_GET, [this]() { handleLogs(); });
     _server.on("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
-    _server.on("/api/calibration/status", HTTP_GET, [this]() { handleCalibrationStatus(); });
-    _server.on("/api/calibration/start", HTTP_POST, [this]() { handleCalibrationStart(); });
-    _server.on("/api/calibration/abort", HTTP_POST, [this]() { handleCalibrationAbort(); });
-    _server.on("/api/calibration/clear", HTTP_POST, [this]() { handleCalibrationClear(); });
     _server.on("/download", HTTP_GET, [this]() { handleDownload(); });
+    _server.on("/api/logs/delete", HTTP_POST, [this]() { handleLogDelete(); });
     _server.on("/api/confirm", HTTP_POST, [this]() { handleConfirm(); });
+    _server.on("/api/presets", HTTP_GET, [this]() { handlePresets(); });
+    _server.on("/api/presets/load", HTTP_GET, [this]() { handlePresetLoad(); });
+    _server.on("/api/presets/save", HTTP_POST, [this]() { handlePresetSave(); });
+    _server.on("/api/presets/delete", HTTP_POST, [this]() { handlePresetDelete(); });
+    _server.on("/favicon.ico", HTTP_GET, [this]() {
+      _server.send(204, "image/x-icon", "");
+    });
     registerCaptivePortalEndpoints();
     _server.onNotFound([this]() { handleNotFound(); });
     _server.begin();
@@ -131,10 +135,22 @@ private:
   void loadDefaults()
   {
     Preferences prefs;
-    prefs.begin("eolo_headless", true);
+    prefs.begin("eolo_headless", false);
     _defaults.waitSeconds = prefs.getUInt("wait", 0);
     _defaults.durationSeconds = prefs.getUInt("duration", 5UL * MINUTE);
-    _defaults.targetFlow = prefs.getFloat("flow", DRONE_TARGET_FLOW_LPM);
+    _defaults.targetFlow = prefs.isKey("flow") ? prefs.getFloat("flow") : DRONE_TARGET_FLOW_LPM;
+    _defaults.flowSectionCount = prefs.getUChar("flowSecCount", 0);
+    if (_defaults.flowSectionCount > MaxFlowSections)
+      _defaults.flowSectionCount = 0;
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    {
+      char durKey[12];
+      char flowKey[12];
+      snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
+      snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
+      _defaults.flowSections[i].durationSeconds = prefs.getUInt(durKey, 0);
+      _defaults.flowSections[i].targetFlow = prefs.isKey(flowKey) ? prefs.getFloat(flowKey) : DRONE_TARGET_FLOW_LPM;
+    }
     prefs.end();
 
     if (!HeadlessSetup::validateConfig(_defaults))
@@ -148,14 +164,58 @@ private:
     prefs.putUInt("wait", config.waitSeconds);
     prefs.putUInt("duration", config.durationSeconds);
     prefs.putFloat("flow", config.targetFlow);
+    prefs.putUChar("flowSecCount", config.flowSectionCount);
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    {
+      char durKey[12];
+      char flowKey[12];
+      snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
+      snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
+      prefs.putUInt(durKey, i < config.flowSectionCount ? config.flowSections[i].durationSeconds : 0);
+      prefs.putFloat(flowKey, i < config.flowSectionCount ? config.flowSections[i].targetFlow : DRONE_TARGET_FLOW_LPM);
+    }
     prefs.end();
   }
 
-  bool parseConfirm(HeadlessSetupConfig &config)
+  bool parseFlowSchedule(HeadlessSetupConfig &config)
+  {
+    config.flowSectionCount = 0;
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+      config.flowSections[i] = FlowSection();
+
+    if (!_server.hasArg("flowSchedule"))
+      return true;
+
+    String raw = _server.arg("flowSchedule");
+    if (raw.length() == 0 || raw == "[]")
+      return true;
+
+    DynamicJsonDocument doc(1024);
+    DeserializationError err = deserializeJson(doc, raw);
+    if (err || !doc.is<JsonArray>())
+      return false;
+
+    JsonArray arr = doc.as<JsonArray>();
+    if (arr.size() > MaxFlowSections)
+      return false;
+
+    uint8_t index = 0;
+    for (JsonVariant item : arr)
+    {
+      config.flowSections[index].durationSeconds = item["durationSeconds"] | 0;
+      config.flowSections[index].targetFlow = item["targetFlow"] | NAN;
+      index++;
+    }
+    config.flowSectionCount = index;
+    return true;
+  }
+
+  bool parseConfigFromRequest(HeadlessSetupConfig &config)
   {
     if (!_server.hasArg("waitSeconds") || !_server.hasArg("targetFlow"))
       return false;
 
+    config = HeadlessSetupConfig();
     config.waitSeconds = _server.arg("waitSeconds").toInt();
     config.targetFlow = _server.arg("targetFlow").toFloat();
 
@@ -167,13 +227,16 @@ private:
       config.durationSeconds = _server.arg("durationSeconds").toInt();
     }
 
+    if (!parseFlowSchedule(config))
+      return false;
+
     return HeadlessSetup::validateConfig(config);
   }
 
   void redirectToPortal()
   {
     _server.sendHeader("Location", PortalUrl, true);
-    _server.send(302, "text/plain", "");
+    _server.send(302, "text/plain", "Redirecting...");
   }
 
   void registerCaptivePortalEndpoints()
@@ -197,7 +260,21 @@ private:
       return;
     }
 
-    redirectToPortal();
+    // Suppress browser background request noise and redirect loops
+    if (_server.uri() == "/favicon.ico" || _server.uri().endsWith(".png") || _server.uri().endsWith(".jpg"))
+    {
+      _server.send(404, "text/plain", "Not Found");
+      return;
+    }
+
+    String host = _server.hostHeader();
+    if (host.length() > 0 && !host.equals("192.168.4.1") && !host.equals("eolo.setup"))
+    {
+      redirectToPortal();
+      return;
+    }
+
+    _server.send(404, "text/plain", "Not Found");
   }
 
   void handleRoot()
@@ -210,7 +287,7 @@ private:
   void handleStatus()
   {
     CaptureSwitchSnapshot snap = _switches.snapshot();
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<1536> doc;
     doc["sdReady"] = _ctx.isSdReady;
     doc["sdStatus"] = sdStatusText(_ctx.sdStatus);
     doc["rtc"] = _ctx.components.rtc.now().timestamp();
@@ -219,15 +296,13 @@ private:
     defaults["waitSeconds"] = _defaults.waitSeconds;
     defaults["durationSeconds"] = _defaults.durationSeconds;
     defaults["targetFlow"] = _defaults.targetFlow;
-
-    JsonObject calibration = doc.createNestedObject("calibration");
-    calibration["loaded"] = _ctx.calibration.isLoaded;
-    if (_ctx.calibration.isLoaded && _ctx.calibration.numPoints > 0) {
-      calibration["minFlow"] = _ctx.calibration.flows[0];
-      calibration["maxFlow"] = _ctx.calibration.flows[_ctx.calibration.numPoints - 1];
-    } else {
-      calibration["minFlow"] = 0.0;
-      calibration["maxFlow"] = 0.0;
+    defaults["flowSectionCount"] = _defaults.flowSectionCount;
+    JsonArray sections = defaults.createNestedArray("flowSections");
+    for (uint8_t i = 0; i < _defaults.flowSectionCount; i++)
+    {
+      JsonObject section = sections.createNestedObject();
+      section["durationSeconds"] = _defaults.flowSections[i].durationSeconds;
+      section["targetFlow"] = _defaults.flowSections[i].targetFlow;
     }
 
     JsonObject switches = doc.createNestedObject("switches");
@@ -262,10 +337,11 @@ private:
       return;
     }
 
-    DynamicJsonDocument doc(4096);
-    doc["available"] = true;
-    JsonArray files = doc.createNestedArray("files");
+    _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    _server.send(200, "application/json", "");
+    _server.sendContent("{\"available\":true,\"files\":[");
 
+    bool first = true;
     File file = dir.openNextFile();
     while (file)
     {
@@ -276,24 +352,23 @@ private:
 
       if (!file.isDirectory() && HeadlessSetup::isSafeLogBasename(base))
       {
-        JsonObject obj = files.createNestedObject();
-        obj["name"] = base;
-        obj["size"] = (uint32_t)file.size();
+        if (!first)
+        {
+          _server.sendContent(",");
+        }
+        first = false;
+
+        char fileJson[256];
+        snprintf(fileJson, sizeof(fileJson), "{\"name\":\"%s\",\"size\":%u}", base, (uint32_t)file.size());
+        _server.sendContent(fileJson);
       }
       file.close();
       file = dir.openNextFile();
     }
     dir.close();
 
-    size_t needed = measureJson(doc) + 1;
-    char *buf = (char *)malloc(needed);
-    if (buf) {
-      serializeJson(doc, buf, needed);
-      _server.send(200, "application/json", buf);
-      free(buf);
-    } else {
-      _server.send(503, "application/json", "{\"error\":\"memory\"}");
-    }
+    _server.sendContent("]}");
+    _server.sendContent(""); // end chunked stream
   }
 
   // Fill provided buffer 'out' with the safe log path. Returns true on success.
@@ -340,8 +415,11 @@ private:
     if (size > 4096)
     {
       file.seek(size - 4096);
-      // discard until next line
-      file.readBytesUntil('\n', headerBuf, sizeof(headerBuf) - 1);
+      // discard until next line, safely reading without overwriting headerBuf
+      while (file.available() && file.read() != '\n')
+      {
+        // just consume
+      }
     }
 
     // collect last up to 40 rows
@@ -369,23 +447,26 @@ private:
     size_t start = count > ROWS ? count % ROWS : 0;
     size_t total = count > ROWS ? ROWS : count;
 
-    DynamicJsonDocument doc(4096);
-    doc["header"] = headerBuf;
-    JsonArray arr = doc.createNestedArray("rows");
+    // Stream the preview output to save heap memory
+    _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    _server.send(200, "application/json", "");
+    _server.sendContent("{\"header\":\"");
+    _server.sendContent(headerBuf);
+    _server.sendContent("\",\"rows\":[");
+
     for (size_t i = 0; i < total; i++)
     {
-      arr.add(rows[(start + i) % ROWS]);
+      if (i > 0)
+      {
+        _server.sendContent(",");
+      }
+      _server.sendContent("\"");
+      _server.sendContent(rows[(start + i) % ROWS]);
+      _server.sendContent("\"");
     }
 
-    size_t needed = measureJson(doc) + 1;
-    char *buf = (char *)malloc(needed);
-    if (buf) {
-      serializeJson(doc, buf, needed);
-      _server.send(200, "application/json", buf);
-      free(buf);
-    } else {
-      _server.send(503, "application/json", "{\"error\":\"memory\"}");
-    }
+    _server.sendContent("]}");
+    _server.sendContent(""); // end chunked stream
   }
 
   void handleDownload()
@@ -418,58 +499,145 @@ private:
     file.close();
   }
 
-  bool parseCalibrationConfig(HeadlessMotorCalibrationConfig &config)
+  void handleLogDelete()
   {
-    if (_server.hasArg("pwmStart")) config.pwmStart = _server.arg("pwmStart").toInt();
-    if (_server.hasArg("pwmEnd")) config.pwmEnd = _server.arg("pwmEnd").toInt();
-    if (_server.hasArg("pwmStep")) config.pwmStep = _server.arg("pwmStep").toInt();
-    if (_server.hasArg("settleMs")) config.settleMs = _server.arg("settleMs").toInt();
-    if (_server.hasArg("sampleIntervalMs")) config.sampleIntervalMs = _server.arg("sampleIntervalMs").toInt();
-    if (_server.hasArg("samplesPerPoint")) config.samplesPerPoint = _server.arg("samplesPerPoint").toInt();
-    if (_server.hasArg("maxTargetFlow")) config.maxTargetFlow = _server.arg("maxTargetFlow").toFloat();
-    if (_server.hasArg("minValidFlow")) config.minValidFlow = _server.arg("minValidFlow").toFloat();
-    if (_server.hasArg("minFlowDelta")) config.minFlowDelta = _server.arg("minFlowDelta").toFloat();
-    if (_server.hasArg("maxFlowStddev")) config.maxFlowStddev = _server.arg("maxFlowStddev").toFloat();
-    return HeadlessMotorCalibration::validateConfig(config);
+    if (!_ctx.isSdReady)
+    {
+      _server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_unavailable\"}");
+      return;
+    }
+
+    char pathBuf[256];
+    if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)))
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_name\"}");
+      return;
+    }
+
+    if (!SD.exists(pathBuf))
+    {
+      _server.send(404, "application/json", "{\"ok\":false,\"error\":\"file_not_found\"}");
+      return;
+    }
+
+    if (SD.remove(pathBuf))
+    {
+      _server.send(200, "application/json", "{\"ok\":true}");
+    }
+    else
+    {
+      _server.send(500, "application/json", "{\"ok\":false,\"error\":\"delete_failed\"}");
+    }
   }
 
-  void handleCalibrationStatus()
+  void addConfigJson(JsonObject obj, const HeadlessSetupConfig &config)
   {
-    const HeadlessMotorCalibration &cal = _ctx.headlessCalibration;
-
-    // allocate document dynamically based on number of points to avoid large stack usage
-    size_t approx = 1024 + (size_t)cal.pointCount() * 96;
-    DynamicJsonDocument doc(approx);
-    doc["running"] = cal.isRunning();
-    doc["state"] = cal.stateText();
-    doc["currentPwm"] = cal.currentPwm();
-    doc["points"] = cal.pointCount();
-    doc["minFlow"] = cal.minFlow();
-    doc["maxFlow"] = cal.maxFlow();
-    doc["error"] = cal.errorText();
-
-    const HeadlessMotorCalibrationConfig &c = cal.config();
-    JsonObject cfg = doc.createNestedObject("config");
-    cfg["pwmStart"] = c.pwmStart;
-    cfg["pwmEnd"] = c.pwmEnd;
-    cfg["pwmStep"] = c.pwmStep;
-    cfg["settleMs"] = c.settleMs;
-    cfg["sampleIntervalMs"] = c.sampleIntervalMs;
-    cfg["samplesPerPoint"] = c.samplesPerPoint;
-    cfg["maxTargetFlow"] = c.maxTargetFlow;
-    cfg["minValidFlow"] = c.minValidFlow;
-    cfg["minFlowDelta"] = c.minFlowDelta;
-    cfg["maxFlowStddev"] = c.maxFlowStddev;
-
-    JsonArray data = doc.createNestedArray("data");
-    for (int i = 0; i < cal.pointCount(); i++)
+    obj["waitSeconds"] = config.waitSeconds;
+    obj["durationSeconds"] = config.durationSeconds;
+    obj["targetFlow"] = config.targetFlow;
+    obj["flowSectionCount"] = config.flowSectionCount;
+    JsonArray sections = obj.createNestedArray("flowSections");
+    for (uint8_t i = 0; i < config.flowSectionCount; i++)
     {
-      const HeadlessMotorCalibrationPoint &p = cal.point(i);
-      JsonObject obj = data.createNestedObject();
-      obj["pwm"] = p.pwm;
-      obj["flow"] = p.flow;
-      obj["stddev"] = p.stddev;
+      JsonObject section = sections.createNestedObject();
+      section["durationSeconds"] = config.flowSections[i].durationSeconds;
+      section["targetFlow"] = config.flowSections[i].targetFlow;
     }
+  }
+
+  String presetKey(const char *prefix, uint8_t index, int section = -1)
+  {
+    if (section >= 0)
+      return String(prefix) + String(index) + "_" + String(section);
+    return String(prefix) + String(index);
+  }
+
+  void loadPresetSlot(Preferences &prefs, uint8_t slot, HeadlessSetupPreset &preset)
+  {
+    String name = prefs.isKey(presetKey("name", slot).c_str()) ? prefs.getString(presetKey("name", slot).c_str()) : "";
+    strlcpy(preset.name, name.c_str(), sizeof(preset.name));
+    preset.config.waitSeconds = prefs.getUInt(presetKey("wait", slot).c_str(), 0);
+    preset.config.durationSeconds = prefs.getUInt(presetKey("duration", slot).c_str(), 5UL * MINUTE);
+    preset.config.targetFlow = prefs.isKey(presetKey("flow", slot).c_str()) ? prefs.getFloat(presetKey("flow", slot).c_str()) : DRONE_TARGET_FLOW_LPM;
+    preset.config.flowSectionCount = prefs.getUChar(presetKey("secCount", slot).c_str(), 0);
+    if (preset.config.flowSectionCount > MaxFlowSections)
+      preset.config.flowSectionCount = 0;
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    {
+      preset.config.flowSections[i].durationSeconds = prefs.getUInt(presetKey("secDur", slot, i).c_str(), 0);
+      preset.config.flowSections[i].targetFlow = prefs.isKey(presetKey("secFlow", slot, i).c_str()) ? prefs.getFloat(presetKey("secFlow", slot, i).c_str()) : DRONE_TARGET_FLOW_LPM;
+    }
+  }
+
+  void savePresetSlot(Preferences &prefs, uint8_t slot, const HeadlessSetupPreset &preset)
+  {
+    prefs.putString(presetKey("name", slot).c_str(), preset.name);
+    prefs.putUInt(presetKey("wait", slot).c_str(), preset.config.waitSeconds);
+    prefs.putUInt(presetKey("duration", slot).c_str(), preset.config.durationSeconds);
+    prefs.putFloat(presetKey("flow", slot).c_str(), preset.config.targetFlow);
+    prefs.putUChar(presetKey("secCount", slot).c_str(), preset.config.flowSectionCount);
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    {
+      prefs.putUInt(presetKey("secDur", slot, i).c_str(), i < preset.config.flowSectionCount ? preset.config.flowSections[i].durationSeconds : 0);
+      prefs.putFloat(presetKey("secFlow", slot, i).c_str(), i < preset.config.flowSectionCount ? preset.config.flowSections[i].targetFlow : DRONE_TARGET_FLOW_LPM);
+    }
+  }
+
+  int findPresetSlot(Preferences &prefs, const char *name)
+  {
+    for (uint8_t i = 0; i < HeadlessSetup::kMaxPresets; i++)
+    {
+      String stored = prefs.isKey(presetKey("name", i).c_str()) ? prefs.getString(presetKey("name", i).c_str()) : "";
+      if (stored == name)
+        return i;
+    }
+    return -1;
+  }
+
+  int firstEmptyPresetSlot(Preferences &prefs)
+  {
+    for (uint8_t i = 0; i < HeadlessSetup::kMaxPresets; i++)
+    {
+      String stored = prefs.isKey(presetKey("name", i).c_str()) ? prefs.getString(presetKey("name", i).c_str()) : "";
+      if (stored.length() == 0)
+        return i;
+    }
+    return -1;
+  }
+
+  void clearPresetSlot(Preferences &prefs, uint8_t slot)
+  {
+    prefs.remove(presetKey("name", slot).c_str());
+    prefs.remove(presetKey("wait", slot).c_str());
+    prefs.remove(presetKey("duration", slot).c_str());
+    prefs.remove(presetKey("flow", slot).c_str());
+    prefs.remove(presetKey("secCount", slot).c_str());
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    {
+      prefs.remove(presetKey("secDur", slot, i).c_str());
+      prefs.remove(presetKey("secFlow", slot, i).c_str());
+    }
+  }
+
+  void handlePresets()
+  {
+    DynamicJsonDocument doc(2048);
+    JsonArray presets = doc.createNestedArray("presets");
+    Preferences prefs;
+    prefs.begin("eolo_presets", true);
+    for (uint8_t i = 0; i < HeadlessSetup::kMaxPresets; i++)
+    {
+      HeadlessSetupPreset preset;
+      loadPresetSlot(prefs, i, preset);
+      if (!HeadlessSetup::isSafePresetName(preset.name) || !HeadlessSetup::validateConfig(preset.config))
+        continue;
+      JsonObject obj = presets.createNestedObject();
+      obj["name"] = preset.name;
+      obj["durationSeconds"] = preset.config.durationSeconds;
+      obj["targetFlow"] = preset.config.targetFlow;
+      obj["flowSectionCount"] = preset.config.flowSectionCount;
+    }
+    prefs.end();
 
     size_t needed = measureJson(doc) + 1;
     char *buf = (char *)malloc(needed);
@@ -482,51 +650,113 @@ private:
     }
   }
 
-  void handleCalibrationStart()
+  void handlePresetLoad()
   {
-    if (_ctx.isCapturing)
+    String name = _server.arg("name");
+    if (!HeadlessSetup::isSafePresetName(name.c_str()))
     {
-      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"capturing\"}");
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_name\"}");
       return;
     }
 
-    HeadlessMotorCalibrationConfig config;
-    if (!parseCalibrationConfig(config))
+    Preferences prefs;
+    prefs.begin("eolo_presets", true);
+    int slot = findPresetSlot(prefs, name.c_str());
+    if (slot < 0)
+    {
+      prefs.end();
+      _server.send(404, "application/json", "{\"ok\":false,\"error\":\"not_found\"}");
+      return;
+    }
+
+    HeadlessSetupPreset preset;
+    loadPresetSlot(prefs, slot, preset);
+    prefs.end();
+
+    if (!HeadlessSetup::validateConfig(preset.config))
+    {
+      _server.send(500, "application/json", "{\"ok\":false,\"error\":\"stored_invalid\"}");
+      return;
+    }
+
+    DynamicJsonDocument doc(1536);
+    doc["ok"] = true;
+    doc["name"] = preset.name;
+    JsonObject config = doc.createNestedObject("config");
+    addConfigJson(config, preset.config);
+
+    size_t needed = measureJson(doc) + 1;
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
+  }
+
+  void handlePresetSave()
+  {
+    String name = _server.arg("name");
+    if (!HeadlessSetup::isSafePresetName(name.c_str()))
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_name\"}");
+      return;
+    }
+
+    HeadlessSetupPreset preset;
+    strlcpy(preset.name, name.c_str(), sizeof(preset.name));
+    if (!parseConfigFromRequest(preset.config))
     {
       _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_config\"}");
       return;
     }
 
-    if (!_ctx.headlessCalibration.start(config))
+    Preferences prefs;
+    prefs.begin("eolo_presets", false);
+    int slot = findPresetSlot(prefs, preset.name);
+    if (slot < 0)
+      slot = firstEmptyPresetSlot(prefs);
+    if (slot < 0)
     {
-      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"busy\"}");
+      prefs.end();
+      _server.send(507, "application/json", "{\"ok\":false,\"error\":\"preset_limit\"}");
       return;
     }
+
+    savePresetSlot(prefs, slot, preset);
+    prefs.end();
     _server.send(200, "application/json", "{\"ok\":true}");
   }
 
-  void handleCalibrationAbort()
+  void handlePresetDelete()
   {
-    _ctx.headlessCalibration.abort(_ctx);
-    _server.send(200, "application/json", "{\"ok\":true}");
-  }
+    String name = _server.arg("name");
+    if (!HeadlessSetup::isSafePresetName(name.c_str()))
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_name\"}");
+      return;
+    }
 
-  void handleCalibrationClear()
-  {
-    _ctx.headlessCalibration.clear(_ctx);
+    Preferences prefs;
+    prefs.begin("eolo_presets", false);
+    int slot = findPresetSlot(prefs, name.c_str());
+    if (slot < 0)
+    {
+      prefs.end();
+      _server.send(404, "application/json", "{\"ok\":false,\"error\":\"not_found\"}");
+      return;
+    }
+    clearPresetSlot(prefs, slot);
+    prefs.end();
     _server.send(200, "application/json", "{\"ok\":true}");
   }
 
   void handleConfirm()
   {
-    if (_ctx.headlessCalibration.isRunning())
-    {
-      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"calibration_running\"}");
-      return;
-    }
-
     HeadlessSetupConfig config;
-    if (!parseConfirm(config))
+    if (!parseConfigFromRequest(config))
     {
       _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_config\"}");
       return;

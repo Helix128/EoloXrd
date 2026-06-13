@@ -39,10 +39,18 @@ def minify_html(html):
     return html.strip()
 
 
+import base64
+
 def build_html():
     html = INDEX_PATH.read_text(encoding="utf-8")
     css = minify_css(read_source("style.css"))
     js = minify_js(read_source("app.js"))
+    
+    logo_path = PROJECT_DIR / "logo_cmas_mini.png"
+    if logo_path.exists():
+        logo_base64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
+        html = html.replace('logo_cmas_mini.png', f'data:image/png;base64,{logo_base64}')
+
     html = re.sub(
         r'<link\s+rel=["\']stylesheet["\']\s+href=["\']style\.css["\']\s*/?>',
         lambda _: f"<style>{css}</style>",
