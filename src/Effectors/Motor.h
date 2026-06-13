@@ -111,7 +111,7 @@ private:
       return;
 
     pwm = constrainPwm(pwm);
-    if (pwmValues[motorIdx] != pwm)
+    if (pwmValues[motorIdx] != pwm && EoloDebug::verboseLogsEnabled())
     {
       LOG_LN("Motor " + String(motorIdx) + " a " + String(pwm));
     }

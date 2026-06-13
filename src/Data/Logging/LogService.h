@@ -228,7 +228,8 @@ inline bool LogService::logData(Context &ctx)
         return false;
     }
 
-    LOG_LN("Iniciando log de datos en SD...");
+    if (EoloDebug::verboseLogsEnabled())
+        LOG_LN("Iniciando log de datos en SD...");
     sdStatus = SD_WRITING;
 
     String dateStr = ctx.session.startDate.timestamp();
@@ -326,34 +327,40 @@ inline bool LogService::logData(Context &ctx)
     file.print(ctx.components.battery.getPct());
     file.println();
 
-    LOG_LN("Datos registrados en SD: ");
-    LOG_OUT(" Time: ");
-    LOG_OUT_LN(ctx.components.rtc.now().timestamp());
-    LOG_OUT(" Flow: ");
-    LOG_OUT_LN(flowData.flow);
-    LOG_OUT(" Flow_target: ");
-    LOG_OUT_LN(ctx.session.targetFlow);
-    LOG_OUT(" Temp: ");
-    LOG_OUT_LN(ctx.components.bme.temperature);
-    LOG_OUT(" Hum: ");
-    LOG_OUT_LN(ctx.components.bme.humidity);
-    LOG_OUT(" Pres: ");
-    LOG_OUT_LN(ctx.components.bme.pressure);
-    LOG_OUT(" PM1: ");
-    LOG_OUT_LN(pm1);
-    LOG_OUT(" PM2.5: ");
-    LOG_OUT_LN(pm25);
-    LOG_OUT(" PM10: ");
-    LOG_OUT_LN(pm10);
-    LOG_OUT(" NTC: ");
-    LOG_OUT_LN(ntcTemperature);
-    LOG_OUT(" Battery: ");
-    LOG_OUT_LN(ctx.components.battery.getPct());
+    if (EoloDebug::verboseLogsEnabled())
+    {
+        LOG_LN("Datos registrados en SD: ");
+        LOG_OUT(" Time: ");
+        LOG_OUT_LN(ctx.components.rtc.now().timestamp());
+        LOG_OUT(" Flow: ");
+        LOG_OUT_LN(flowData.flow);
+        LOG_OUT(" Flow_target: ");
+        LOG_OUT_LN(ctx.session.targetFlow);
+        LOG_OUT(" Temp: ");
+        LOG_OUT_LN(ctx.components.bme.temperature);
+        LOG_OUT(" Hum: ");
+        LOG_OUT_LN(ctx.components.bme.humidity);
+        LOG_OUT(" Pres: ");
+        LOG_OUT_LN(ctx.components.bme.pressure);
+        LOG_OUT(" PM1: ");
+        LOG_OUT_LN(pm1);
+        LOG_OUT(" PM2.5: ");
+        LOG_OUT_LN(pm25);
+        LOG_OUT(" PM10: ");
+        LOG_OUT_LN(pm10);
+        LOG_OUT(" NTC: ");
+        LOG_OUT_LN(ntcTemperature);
+        LOG_OUT(" Battery: ");
+        LOG_OUT_LN(ctx.components.battery.getPct());
+    }
     file.close();
 
-    LOG_LN("Archivo de log escrito!");
+    if (EoloDebug::verboseLogsEnabled())
+    {
+        LOG_LN("Archivo de log escrito!");
+        LOG_LN("Log completado con éxito.");
+    }
     sdStatus = SD_OK;
-    LOG_LN("Log completado con éxito.");
     return true;
 }
 

@@ -136,9 +136,9 @@ private:
         prevButtonPressed = buttonPressed;
         buttonPressed = rawButton;
         lastButtonMs = currentMs;
-#if PROFILE_VERBOSE
-        LOG_F("Botón cambiado a: %d\n", buttonPressed);
-#endif
+        if (EoloDebug::verboseLogsEnabled()) {
+          LOG_F("Botón cambiado a: %d\n", buttonPressed);
+        }
       }
     }
     if(rawCounter!=prevRawCounter){
@@ -160,9 +160,9 @@ private:
         prevRawCounter = rawCounter;
         
         lastEncoderMs = currentMs;
-#if PROFILE_VERBOSE
-        LOG_F("Encoder cambiado a: %d\n", encoderDelta);
-#endif
+        if (EoloDebug::verboseLogsEnabled()) {
+          LOG_F("Encoder cambiado a: %d\n", encoderDelta);
+        }
       }
     }
   }
@@ -184,24 +184,24 @@ private:
       
       if (rawCounter != prevCounter)
       {
-#if PROFILE_VERBOSE
-        LOG_F("Encoder: Contador cambio a %d\n", rawCounter);
-#endif
+        if (EoloDebug::verboseLogsEnabled()) {
+          LOG_F("Encoder: Contador cambio a %d\n", rawCounter);
+        }
         hasChanged = true;
       }
       if(rawDirection != prevDirection)
       { 
         
-#if PROFILE_VERBOSE
-        LOG_F("Encoder: Dirección cambio a %d\n", rawDirection);
-#endif
+        if (EoloDebug::verboseLogsEnabled()) {
+          LOG_F("Encoder: Dirección cambio a %d\n", rawDirection);
+        }
         hasChanged = true;
       }
       if (rawButton != prevButton)
       {
-#if PROFILE_VERBOSE
-        LOG_F("Encoder: Boton pulsado? %d\n", rawButton);
-#endif
+        if (EoloDebug::verboseLogsEnabled()) {
+          LOG_F("Encoder: Boton pulsado? %d\n", rawButton);
+        }
         hasChanged = true;
       }
     }
@@ -233,17 +233,23 @@ class Input{
             if (command == 'd') {
                 encoderDelta++;
                 hasChanged = true;
-                LOG_LN("Encoder derecha");
+                if (EoloDebug::verboseLogsEnabled()) {
+                    LOG_LN("Encoder derecha");
+                }
             }
             else if (command == 'a') {
                 encoderDelta--;
                 hasChanged = true;
-                LOG_LN("Encoder izquierda");
+                if (EoloDebug::verboseLogsEnabled()) {
+                    LOG_LN("Encoder izquierda");
+                }
             } 
             else if (command == 's') {
                 buttonPressed = true;
                 hasChanged = true;
-                LOG_LN("Botón pulsado");
+                if (EoloDebug::verboseLogsEnabled()) {
+                    LOG_LN("Botón pulsado");
+                }
             }
         }
     }

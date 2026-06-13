@@ -143,9 +143,9 @@ public:
             xSemaphoreGive(_mutex);
         }
         else{
-#ifdef PLANTOWER_VERBOSE
-            LOG_F("Error: no se pudo obtener el mutex para leer datos del Plantower\n");
-#endif
+            if (EoloDebug::verboseLogsEnabled()) {
+                LOG_F("Error: no se pudo obtener el mutex para leer datos del Plantower\n");
+            }
         }
         return success;
     }
