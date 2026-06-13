@@ -43,10 +43,10 @@ private:
                     self->_data.direction = (int)buffer[1];
                     self->_data.valid = true;
                     self->_lastSuccessMs = now;
-#if PROFILE_VERBOSE
-                    LOG_F("Anemometro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
-                          rawSpeed, self->_data.speed, self->_data.windKph, self->_data.direction);
-#endif
+                    if (EoloDebug::verboseLogsEnabled()) {
+                        LOG_F("Anemometro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
+                              rawSpeed, self->_data.speed, self->_data.windKph, self->_data.direction);
+                    }
                 } else {
                     self->_data.valid = self->_lastSuccessMs > 0 && (now - self->_lastSuccessMs) <= STALE_DATA_MS;
                 }

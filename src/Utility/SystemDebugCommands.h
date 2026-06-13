@@ -4,13 +4,13 @@
 #include <Arduino.h>
 #include <stdlib.h>
 #include "DebugCommandRouter.h"
+#include "DebugFlags.h"
 #include "Profiler.h"
 #include "RS485Monitor.h"
 #include "../Board/RTCManager.h"
 
 class SystemDebugCommands : public ConsoleCommandHandler {
 private:
-    bool _verboseAlerts = PROFILE_VERBOSE;
     bool _modemCommandsAvailable;
     RTCManager* _rtc = nullptr;
 
@@ -19,7 +19,7 @@ private:
         out.println("  h/?/help          ayuda");
         out.println("  p/profile         resumen del profiler");
         out.println("  r/reset           reiniciar el profiler y las estadísticas de RS485");
-        out.println("  v/verbose         alternar alertas verbosas del profiler/RS485");
+        out.println("  v/verbose [on|off|status|toggle]  alternar logs verbosos y alertas");
         out.println("  time              mostrar hora RTC");
         out.println("  time set YYYY-MM-DD HH:MM:SS");
         out.println("  time epoch <unix_utc> <offset_seconds>");
@@ -126,6 +126,29 @@ private:
         out.println("Comando time desconocido. Usa: time, time set ... o time epoch ...");
     }
 
+    void handleVerboseCommand(const String& args, Print& out) {
+        bool enabled = EoloDebug::verboseLogsEnabled();
+
+        if (args.length() == 0 || args == "toggle") {
+            enabled = !enabled;
+        } else if (args == "on" || args == "1" || args == "yes") {
+            enabled = true;
+        } else if (args == "off" || args == "0" || args == "no") {
+            enabled = false;
+        } else if (args == "status") {
+            out.printf("Verbose %s\n", enabled ? "activado" : "desactivado");
+            return;
+        } else {
+            out.println("Uso: verbose [on|off|status]");
+            return;
+        }
+
+        EoloDebug::setVerboseLogsEnabled(enabled);
+        ProfilerRegistry::getInstance().setVerboseAlerts(enabled);
+        RS485Monitor::getInstance().setVerboseAlerts(enabled);
+        out.printf("Verbose %s\n", enabled ? "activado" : "desactivado");
+    }
+
 public:
     SystemDebugCommands(bool modemCommandsAvailable) : _modemCommandsAvailable(modemCommandsAvailable) {}
 
@@ -151,11 +174,14 @@ public:
             return true;
         }
 
-        if (line == "v" || line == "verbose") {
-            _verboseAlerts = !_verboseAlerts;
-            ProfilerRegistry::getInstance().setVerboseAlerts(_verboseAlerts);
-            RS485Monitor::getInstance().setVerboseAlerts(_verboseAlerts);
-            out.printf("Alertas verbosas %s\n", _verboseAlerts ? "activadas" : "desactivadas");
+        if (line == "v" || line == "verbose" || line.startsWith("v ") || line.startsWith("verbose ")) {
+            String args = String("");
+            int space = line.indexOf(' ');
+            if (space >= 0) {
+                args = line.substring(space + 1);
+                args.trim();
+            }
+            handleVerboseCommand(args, out);
             return true;
         }
 

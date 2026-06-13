@@ -226,10 +226,10 @@ private:
                 lastFailureLogMs = nowMs;
             }
         } else {
-#if PROFILE_VERBOSE
+        if (EoloDebug::verboseLogsEnabled()) {
             LOG_F("RS485 OK: ID %d, Reg 0x%04X, Count %d\n", 
                   request->slaveId, request->startReg, request->count);
-#endif
+        }
         }
         if (success) {
             _consecutiveFailures = 0;

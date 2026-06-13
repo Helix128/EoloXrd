@@ -174,11 +174,16 @@ inline void CaptureController::update(Context &ctx)
     if (now - ctx.session.lastLog >= CAPTURE_INTERVAL)
     {
         ctx.session.lastLog = now;
-        LOG_LN("Leyendo datos de sensores...");
-        LOG_LN("Leyendo flujo...");
+        if (EoloDebug::verboseLogsEnabled())
+        {
+            LOG_LN("Leyendo datos de sensores...");
+            LOG_LN("Leyendo flujo...");
+#if !BAREBONES
+            LOG_LN("Leyendo BME280...");
+#endif
+        }
 
 #if !BAREBONES
-        LOG_LN("Leyendo BME280...");
         ctx.components.bme.readData();
         FlowData flowData;
         if (ctx.components.flowSensor.getData(flowData))
@@ -190,7 +195,10 @@ inline void CaptureController::update(Context &ctx)
             LOG_LN("Error al leer sensor de flujo para volumen capturado");
         }
 #endif
-        LOG_LN("Registrando datos...");
+        if (EoloDebug::verboseLogsEnabled())
+        {
+            LOG_LN("Registrando datos...");
+        }
         ctx.enqueueLogData();
     }
 }

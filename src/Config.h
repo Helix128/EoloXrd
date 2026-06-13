@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "Board/Pinout.h"
 #include "Utility/SerialOutput.h"
+#include "Utility/DebugFlags.h"
 
 // CONFIGURACIONES GENERALES DEL PROGRAMA
 
@@ -207,10 +208,6 @@ static_assert(NTC_MOTOR_OVERHEAT_LOW_C < NTC_MOTOR_OVERHEAT_HIGH_C,
 
 #if defined(FEATURE_FLOW_CALIBRATION) && defined(FEATURE_FLOW_PID)
   #error "Conflicto! define solo un modo de flujo (FEATURE_FLOW_CALIBRATION o FEATURE_FLOW_PID)"
-#endif
-
-#if defined(FEATURE_FLOW_PID) && !defined(FEATURE_FLOW_AFM07) && !defined(FEATURE_FLOW_FS3000)
-  #error "FEATURE_FLOW_PID requiere sensor de flujo"
 #endif
 
 // FEATURE_FLOW_CALIBRATION: curva fija PWM->flujo para equipos estacionarios.

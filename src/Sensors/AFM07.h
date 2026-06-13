@@ -44,9 +44,9 @@ private:
                     self->_data.stale = false;
                     self->_data.ageMs = 0;
                     self->_lastSuccessMs = now;
-#if PROFILE_VERBOSE
-                    LOG_F("AFM07: raw=%d, flow=%.2f L/min \n", rawData[0], self->_data.flow);
-#endif
+                    if (EoloDebug::verboseLogsEnabled()) {
+                        LOG_F("AFM07: raw=%d, flow=%.2f L/min \n", rawData[0], self->_data.flow);
+                    }
                 } else {
                     uint32_t ageMs = self->_lastSuccessMs > 0 ? now - self->_lastSuccessMs : STALE_DATA_MS + 1;
                     self->_data.ageMs = ageMs;

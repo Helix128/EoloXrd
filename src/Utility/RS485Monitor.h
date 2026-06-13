@@ -44,7 +44,7 @@ class RS485Monitor {
 private:
     RS485Stats _stats;
     SemaphoreHandle_t _statsMutex;
-    bool _verboseAlerts = PROFILE_VERBOSE;
+    bool _verboseAlerts = false;
     const uint32_t QUEUE_WARNING_THRESHOLD = 3;
     const uint32_t LOOP_JITTER_THRESHOLD_MS = 5; // Alerta si jitter > 5ms
     const uint32_t ALERT_INTERVAL_MS = 10000;
@@ -52,6 +52,7 @@ private:
     RS485Monitor() {
         _statsMutex = xSemaphoreCreateMutex();
         _stats.lastReportTime = millis();
+        _verboseAlerts = EoloDebug::verboseLogsEnabled();
     }
 
 public:
