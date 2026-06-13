@@ -7,13 +7,14 @@
 #include "Profiler.h"
 #include <Preferences.h>
 #include <math.h>
+#include <Eolo/Core/Calibration/CalibrationModel.h>
 
 class CalibrationManager
 {
 public:
-    static const int MAX_POINTS = 200;
-    static const int MIN_POINTS = 6;
-    static constexpr float MIN_FLOW_RANGE = 0.25f;
+    static const int MAX_POINTS = CalibrationModel::MaxPoints;
+    static const int MIN_POINTS = CalibrationModel::MinPoints;
+    static constexpr float MIN_FLOW_RANGE = CalibrationModel::MinFlowRange;
 
     int numPoints = 0;
     int pwm0[MAX_POINTS];   // PWM del motor 0 en cada punto
@@ -25,94 +26,17 @@ public:
 
     void sortByFlow()
     {
-        for (int i = 0; i < numPoints - 1; i++)
-        {
-            for (int j = 0; j < numPoints - i - 1; j++)
-            {
-                if (flows[j] > flows[j + 1])
-                {
-                    float tf = flows[j];
-                    flows[j] = flows[j + 1];
-                    flows[j + 1] = tf;
-
-                    int tp0 = pwm0[j];
-                    pwm0[j] = pwm0[j + 1];
-                    pwm0[j + 1] = tp0;
-
-                    int tp1 = pwm1[j];
-                    pwm1[j] = pwm1[j + 1];
-                    pwm1[j + 1] = tp1;
-                }
-            }
-        }
+        CalibrationModel::sortByFlow(numPoints, pwm0, pwm1, flows);
     }
 
     bool validate() const
     {
-        if (numPoints < MIN_POINTS)
-            return false;
-
-        float first = flows[0];
-        float last = flows[numPoints - 1];
-        if ((last - first) < MIN_FLOW_RANGE)
-            return false;
-
-        for (int i = 1; i < numPoints; i++)
-        {
-            if (flows[i] < flows[i - 1])
-                return false;
-        }
-        return true;
+        return CalibrationModel::validate(numPoints, flows);
     }
 
     bool getMotorPwms(float targetFlow, int &outPwm0, int &outPwm1) const
     {
-        if (!isLoaded || numPoints < 2)
-        {
-            outPwm0 = 0;
-            outPwm1 = 0;
-            return false;
-        }
-
-        if (targetFlow <= flows[0])
-        {
-            outPwm0 = pwm0[0];
-            outPwm1 = pwm1[0];
-            return true;
-        }
-
-        if (targetFlow >= flows[numPoints - 1])
-        {
-            outPwm0 = pwm0[numPoints - 1];
-            outPwm1 = pwm1[numPoints - 1];
-            return true;
-        }
-
-        for (int i = 0; i < numPoints - 1; i++)
-        {
-            float f0 = flows[i];
-            float f1 = flows[i + 1];
-
-            if (targetFlow >= f0 && targetFlow <= f1)
-            {
-                float denom = f1 - f0;
-                if (fabs(denom) < 1e-6f)
-                {
-                    outPwm0 = (pwm0[i] + pwm0[i + 1]) / 2;
-                    outPwm1 = (pwm1[i] + pwm1[i + 1]) / 2;
-                    return true;
-                }
-
-                float t = (targetFlow - f0) / denom;
-                outPwm0 = pwm0[i] + static_cast<int>(t * (pwm0[i + 1] - pwm0[i]));
-                outPwm1 = pwm1[i] + static_cast<int>(t * (pwm1[i + 1] - pwm1[i]));
-                return true;
-            }
-        }
-
-        outPwm0 = pwm0[numPoints - 1];
-        outPwm1 = pwm1[numPoints - 1];
-        return true;
+        return CalibrationModel::getMotorPwms(isLoaded, numPoints, pwm0, pwm1, flows, targetFlow, outPwm0, outPwm1);
     }
 
     void save()

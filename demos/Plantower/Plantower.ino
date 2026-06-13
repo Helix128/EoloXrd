@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Eolo/Types/PlantowerData.h>
 
 #if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
     !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
@@ -23,12 +24,6 @@ static const uint32_t SERIAL_BAUD = 115200;
 static const uint32_t PLANTOWER_BAUD = 9600;
 
 HardwareSerial plantowerSerial(2);
-
-struct PlantowerData {
-  uint16_t pm1_0;
-  uint16_t pm2_5;
-  uint16_t pm10_0;
-};
 
 class PlantowerParser {
 public:

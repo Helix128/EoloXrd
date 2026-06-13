@@ -3,6 +3,7 @@
 
 #include <SparkFun_FS3000_Arduino_Library.h>
 #include "../Config.h"
+#include <Eolo/Types/FlowData.h>
 class FS3K
 {
 public:
@@ -104,6 +105,9 @@ public:
         output.flow = flow;
         output.velocity = velocity;
         output.valid = isReady && flow >= 0.0f;
+        output.fresh = output.valid;
+        output.stale = false;
+        output.ageMs = 0;
         return output.valid;
     }
 

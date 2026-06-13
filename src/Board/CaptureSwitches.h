@@ -4,54 +4,13 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include "../Config.h"
-
-struct CaptureSwitchSelection
-{
-  uint8_t waitCode = 0;
-  uint8_t durationCode = 0;
-  uint32_t waitSeconds = 0;
-  uint32_t durationSeconds = 0;
-  bool waitEnabled = false;
-  bool durationEnabled = false;
-  bool instantStart = false;
-  bool infiniteDuration = false;
-  bool shouldStart = false;
-};
-
-struct CaptureSwitchPinState
-{
-  const char* name = "";
-  int pin = -1;
-  int level = HIGH;
-  uint8_t bit = 0;
-};
-
-struct CaptureSwitchSnapshot
-{
-  CaptureSwitchPinState waitSw0;
-  CaptureSwitchPinState waitSw1;
-  CaptureSwitchPinState durationSw0;
-  CaptureSwitchPinState durationSw1;
-  uint8_t waitCode = 0;
-  uint8_t durationCode = 0;
-  CaptureSwitchSelection selection;
-};
+#include <Eolo/Core/Input/CaptureSwitchLogic.h>
 
 class CaptureSwitches
 {
 public:
-  static constexpr uint32_t kWaitSeconds[4] = {
-      0,
-      5UL * MINUTE,
-      15UL * MINUTE,
-      0
-  };
-  static constexpr uint32_t kDurationSeconds[4] = {
-      0,
-      5UL * MINUTE,
-      15UL * MINUTE,
-      DRONE_DURATION_INFINITE
-  };
+  static constexpr const uint32_t *kWaitSeconds = CaptureSwitchLogic::kWaitSeconds;
+  static constexpr const uint32_t *kDurationSeconds = CaptureSwitchLogic::kDurationSeconds;
 
   CaptureSwitches(int waitSw0 = WAIT_SW0_PIN,
                   int waitSw1 = WAIT_SW1_PIN,
@@ -93,64 +52,22 @@ public:
 
   static CaptureSwitchSelection decode(uint8_t waitCode, uint8_t durationCode)
   {
-    CaptureSwitchSelection selection;
-    selection.waitCode = waitCode & 0x03;
-    selection.durationCode = durationCode & 0x03;
-
-    selection.waitSeconds = kWaitSeconds[selection.waitCode];
-    selection.durationSeconds = kDurationSeconds[selection.durationCode];
-    selection.waitEnabled = selection.waitCode != 0;
-    selection.durationEnabled = selection.durationCode != 0;
-    selection.instantStart = selection.waitCode == 0b11;
-    selection.infiniteDuration = selection.durationCode == 0b11;
-
-    selection.shouldStart = selection.waitEnabled && selection.durationEnabled;
-    return selection;
+    return CaptureSwitchLogic::decode(waitCode, durationCode);
   }
 
   static const char* waitDescription(uint8_t waitCode)
   {
-    switch (waitCode & 0x03)
-    {
-    case 0b00:
-      return "off";
-    case 0b01:
-      return "5 min";
-    case 0b10:
-      return "15 min";
-    case 0b11:
-      return "instantanea";
-    default:
-      return "desconocida";
-    }
+    return CaptureSwitchLogic::waitDescription(waitCode);
   }
 
   static const char* durationDescription(uint8_t durationCode)
   {
-    switch (durationCode & 0x03)
-    {
-    case 0b00:
-      return "off";
-    case 0b01:
-      return "5 min";
-    case 0b10:
-      return "15 min";
-    case 0b11:
-      return "infinita";
-    default:
-      return "desconocida";
-    }
+    return CaptureSwitchLogic::durationDescription(durationCode);
   }
 
   static const char* modeDescription(const CaptureSwitchSelection& selection)
   {
-    if (!selection.waitEnabled)
-      return "setup Wi-Fi";
-    if (!selection.durationEnabled)
-      return "idle";
-    if (selection.instantStart)
-      return "captura instantanea";
-    return "captura programada";
+    return CaptureSwitchLogic::modeDescription(selection);
   }
 
   static void printSummary(Print& out, const CaptureSwitchSnapshot& snap)

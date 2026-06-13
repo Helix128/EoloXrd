@@ -2,27 +2,38 @@
 #define EOLO_MOTOR_CAPTURE_CONTROL_H
 
 #include <Arduino.h>
+#include <math.h>
 #include "../Config.h"
+#include "../Effectors/Motor.h"
+#include <Eolo/Core/Flow/FlowMotorController.h>
 
 struct Context;
 
 class MotorCaptureControl
 {
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    struct MotorFlowController
-    {
-        bool initialized = false;
-        int basePwm = 0;
-        int currentPwm = 0;
-        float integral = 0.0f;
-        float targetFlow = -1.0f;
-        uint32_t lastUpdateMs = 0;
-    } motorFlowController;
+#if defined(FEATURE_FLOW_PID)
+    FlowMotorController pid;
+
+    FlowPidConfig pidCfg = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS
+    };
+    bool pidTestRunning = false;
+    float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
 
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    void updateClosedLoopMotors(Context &ctx);
+#if defined(FEATURE_FLOW_PID)
+    void updatePidMotors(Context &ctx);
 #endif
 
 public:
@@ -30,9 +41,22 @@ public:
     bool motorThermalSensorValid = false;
     float motorThermalTemperature = -99.0f;
 
+    static bool validatePidConfig(const FlowPidConfig &config)
+    {
+        return FlowMotorController::validateConfig(config, MAX_PWM);
+    };
     bool updateThermalProtection(Context &ctx);
     void resetFlowController();
     void updateMotors(Context &ctx);
+
+#if defined(FEATURE_FLOW_PID)
+    const FlowPidConfig &getPidConfig() const { return pidCfg; }
+    void setPidConfig(const FlowPidConfig &config) { if (validatePidConfig(config)) pidCfg = config; }
+    bool isPidTestRunning() const { return pidTestRunning; }
+    void startPidTest(float targetFlow) { pidTestTargetFlow = targetFlow; pidTestRunning = true; resetFlowController(); }
+    void stopPidTest(Context &ctx);
+    FlowPidStatus getPidStatus() const;
+#endif
 };
 
 #endif // EOLO_MOTOR_CAPTURE_CONTROL_H
@@ -42,7 +66,6 @@ public:
 #define EOLO_MOTOR_CAPTURE_CONTROL_IMPL_DONE
 
 #include "Context.h"
-#include <math.h>
 
 inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
 {
@@ -124,76 +147,97 @@ inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
 
 inline void MotorCaptureControl::resetFlowController()
 {
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    motorFlowController = MotorFlowController();
+#if defined(FEATURE_FLOW_PID)
+    pid.reset();
 #endif
 }
 
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-inline void MotorCaptureControl::updateClosedLoopMotors(Context &ctx)
+#if defined(FEATURE_FLOW_PID)
+inline void MotorCaptureControl::stopPidTest(Context &ctx)
 {
-    unsigned long nowMs = millis();
-    if (motorFlowController.initialized &&
-        nowMs - motorFlowController.lastUpdateMs < MOTOR_FLOW_CONTROL_INTERVAL_MS)
-        return;
+    pidTestRunning = false;
+    resetFlowController();
+    ctx.components.motor.setPwmImmediate(0);
+}
 
-    int p0 = 0, p1 = 0;
-    if (!ctx.calibration.getMotorPwms(ctx.session.targetFlow, p0, p1))
-    {
-        resetFlowController();
-        ctx.components.motor.setPwm(0);
-        return;
-    }
+inline FlowPidStatus MotorCaptureControl::getPidStatus() const
+{
+    return pid.status(true, pidTestRunning, pidTestTargetFlow);
+}
 
-    if (!motorFlowController.initialized || fabsf(motorFlowController.targetFlow - ctx.session.targetFlow) > 0.001f)
-    {
-        motorFlowController.initialized = true;
-        motorFlowController.basePwm = p0;
-        motorFlowController.currentPwm = p0;
-        motorFlowController.integral = 0.0f;
-        motorFlowController.targetFlow = ctx.session.targetFlow;
-        motorFlowController.lastUpdateMs = nowMs;
-        ctx.components.motor.setMotorPwm(0, p0);
-        LOG_OUT("Control flujo closed-loop: objetivo ");
-        LOG_OUT(ctx.session.targetFlow, 2);
-        LOG_OUT(" L/min -> PWM base ");
-        LOG_OUT_LN(p0);
-        return;
-    }
+inline void MotorCaptureControl::updatePidMotors(Context &ctx)
+{
+    uint32_t nowMs = millis();
+    float targetFlow = pidTestRunning ? pidTestTargetFlow : ctx.session.targetFlow;
+    int currentPwm = ctx.components.motor.getMotorPwm(0);
 
     FlowData flowData;
-    if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+    bool flowReadValid = ctx.components.flowSensor.getData(flowData) && flowData.valid;
+    bool flowFresh = flowReadValid && flowData.fresh && !flowData.stale && flowData.ageMs <= pidCfg.sensorStaleMs;
+    if (!flowFresh)
     {
-        ctx.components.motor.setMotorPwm(0, motorFlowController.currentPwm);
+        resetFlowController();
+        ctx.components.motor.setPwmImmediate(0);
+        static uint32_t lastSensorFaultLogMs = 0;
+        if (nowMs - lastSensorFaultLogMs >= 5000)
+        {
+            LOG_OUT("PID flujo sensor no fresco: valid=");
+            LOG_OUT(flowReadValid ? "si" : "no");
+            LOG_OUT(" ageMs=");
+            LOG_OUT_LN(flowData.ageMs);
+            lastSensorFaultLogMs = nowMs;
+        }
         return;
     }
 
-    float dtSeconds = (nowMs - motorFlowController.lastUpdateMs) / 1000.0f;
-    motorFlowController.lastUpdateMs = nowMs;
-    motorFlowController.basePwm = p0;
-    motorFlowController.currentPwm = MotorManager::nextClosedLoopPwm(
-        motorFlowController.basePwm,
-        motorFlowController.currentPwm,
-        ctx.session.targetFlow,
-        flowData.flow,
-        dtSeconds,
-        motorFlowController.integral,
-        MOTOR_FLOW_DEADBAND_LPM,
-        MOTOR_FLOW_KP,
-        MOTOR_FLOW_KI,
-        MOTOR_FLOW_INTEGRAL_LIMIT,
-        MOTOR_FLOW_MAX_STEP_PWM);
+    FlowMotorInput input;
+    input.nowMs = nowMs;
+    input.currentPwm = currentPwm;
+    input.targetFlow = targetFlow;
+    input.measuredFlow = flowFresh ? flowData.flow : -1.0f;
+    input.flowValid = flowReadValid;
+    input.flowFresh = flowFresh;
+    input.flowStale = flowReadValid && !flowFresh;
+    input.flowAgeMs = flowData.ageMs;
+    input.maxPwm = MAX_PWM;
 
-    LOG_OUT("Control flujo closed-loop: medido ");
-    LOG_OUT(flowData.flow, 2);
-    LOG_OUT(" L/min, PWM ");
-    LOG_OUT(motorFlowController.currentPwm);
-    LOG_OUT(" base ");
-    LOG_OUT(motorFlowController.basePwm);
-    LOG_OUT(" integral ");
-    LOG_OUT_LN(motorFlowController.integral, 3);
+    FlowMotorOutput output = pid.update(input, pidCfg);
+    if (!output.updated)
+        return;
 
-    ctx.components.motor.setMotorPwm(0, motorFlowController.currentPwm);
+    if (output.fault != FLOW_PID_FAULT_NONE)
+    {
+        ctx.components.motor.setPwmImmediate(0);
+        return;
+    }
+
+    ctx.components.motor.setMotorPwm(0, output.pwm);
+    for (int i = 1; i < MotorManager::motorCount; i++)
+        ctx.components.motor.setMotorPwm(i, 0);
+
+    static uint32_t lastPidLogMs = 0;
+    if (nowMs - lastPidLogMs >= 1000)
+    {
+        LOG_OUT("PID flujo: medido ");
+        LOG_OUT(flowData.flow, 2);
+        LOG_OUT(" filtrado ");
+        LOG_OUT(output.smartStatus.fastFlow, 2);
+        LOG_OUT(" L/min PWM ");
+        LOG_OUT(output.pwm);
+        LOG_OUT(" P/I/D ");
+        LOG_OUT(output.smartStatus.pTerm, 1);
+        LOG_OUT("/");
+        LOG_OUT(output.smartStatus.iTerm, 1);
+        LOG_OUT("/");
+        LOG_OUT(output.smartStatus.dTerm, 1);
+        LOG_OUT(" modo ");
+        LOG_OUT(static_cast<int>(output.smartStatus.mode));
+        LOG_OUT(" gain ");
+        LOG_OUT(output.smartStatus.estimatedGain, 5);
+        LOG_OUT(" conf ");
+        LOG_OUT_LN(output.smartStatus.confidence, 2);
+        lastPidLogMs = nowMs;
+    }
 }
 #endif
 
@@ -206,9 +250,9 @@ inline void MotorCaptureControl::updateMotors(Context &ctx)
         return;
     }
 
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-    updateClosedLoopMotors(ctx);
-#else
+#if defined(FEATURE_FLOW_PID)
+    updatePidMotors(ctx);
+#elif defined(FEATURE_FLOW_CALIBRATION)
     static float lastTargetFlow = -1.0f;
 
     int p0 = 0, p1 = 0;
@@ -233,6 +277,8 @@ inline void MotorCaptureControl::updateMotors(Context &ctx)
     {
         ctx.components.motor.setPwm(0);
     }
+#else
+    ctx.components.motor.setPwm(0);
 #endif
 }
 

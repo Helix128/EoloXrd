@@ -1,6 +1,12 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "Sensors/NTC.h"
+#include <Eolo/Core/Sensors/NtcThermistor.h>
+
+void test_ntc_core_math_compiles_without_sensor_adapter()
+{
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, NTC::rawToVoltage(2048), NtcThermistor::rawToVoltage(2048));
+}
 
 void test_midscale_is_about_25c()
 {
@@ -47,6 +53,7 @@ void setup()
 {
     delay(1000);
     UNITY_BEGIN();
+    RUN_TEST(test_ntc_core_math_compiles_without_sensor_adapter);
     RUN_TEST(test_midscale_is_about_25c);
     RUN_TEST(test_extreme_adc_values_are_invalid);
     RUN_TEST(test_motor_overheat_latches_above_high_threshold);

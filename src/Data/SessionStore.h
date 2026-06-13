@@ -30,6 +30,8 @@ inline void SessionStore::save(const Session &session)
     preferences.putFloat("targetFlow", session.targetFlow);
     preferences.putFloat("capturedVol", session.capturedVolume);
     preferences.putBool("usePlantower", session.usePlantower);
+    preferences.putUChar("flowSecCount", session.flowSectionCount);
+    preferences.putBytes("flowSections", session.flowSections, sizeof(session.flowSections));
 
     preferences.end();
 
@@ -65,6 +67,15 @@ inline bool SessionStore::load(Session &session, RTCManager &rtc)
     float targetFlowVal = preferences.getFloat("targetFlow", 5.0f);
     float capturedVolumeVal = preferences.getFloat("capturedVol", 0.0f);
     bool usePlantowerVal = preferences.getBool("usePlantower", true);
+    uint8_t flowSectionCountVal = preferences.getUChar("flowSecCount", 0);
+    FlowSection flowSectionsVal[MaxFlowSections];
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+      flowSectionsVal[i] = FlowSection();
+    if (flowSectionCountVal > MaxFlowSections)
+      flowSectionCountVal = 0;
+    size_t sectionBytes = preferences.getBytes("flowSections", flowSectionsVal, sizeof(flowSectionsVal));
+    if (sectionBytes != sizeof(flowSectionsVal))
+      flowSectionCountVal = 0;
 
     preferences.end();
 
@@ -86,6 +97,9 @@ inline bool SessionStore::load(Session &session, RTCManager &rtc)
     session.targetFlow = targetFlowVal;
     session.capturedVolume = capturedVolumeVal;
     session.usePlantower = usePlantowerVal;
+    session.flowSectionCount = flowSectionCountVal;
+    for (uint8_t i = 0; i < MaxFlowSections; i++)
+      session.flowSections[i] = i < flowSectionCountVal ? flowSectionsVal[i] : FlowSection();
 
     LOG_LN("Sesión cargada desde Flash:");
     LOG_OUT(" startDate: ");

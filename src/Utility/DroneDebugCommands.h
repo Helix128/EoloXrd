@@ -188,66 +188,71 @@ private:
     return true;
   }
 
-  static HeadlessMotorCalibrationConfig parseCalibConfig(const String &args)
+  static FlowPidConfig parsePidConfig(const String &args, const FlowPidConfig &current)
   {
-    HeadlessMotorCalibrationConfig config;
+    FlowPidConfig config = current;
     int intValue = 0;
     float floatValue = 0.0f;
-    if (readIntArg(args, "pwmStart", intValue)) config.pwmStart = intValue;
-    if (readIntArg(args, "pwmEnd", intValue)) config.pwmEnd = intValue;
-    if (readIntArg(args, "pwmStep", intValue)) config.pwmStep = intValue;
-    if (readIntArg(args, "settle", intValue)) config.settleMs = intValue;
-    if (readIntArg(args, "sample", intValue)) config.sampleIntervalMs = intValue;
-    if (readIntArg(args, "n", intValue)) config.samplesPerPoint = intValue;
-    if (readFloatArg(args, "maxFlow", floatValue)) config.maxTargetFlow = floatValue;
-    if (readFloatArg(args, "minFlow", floatValue)) config.minValidFlow = floatValue;
-    if (readFloatArg(args, "minDelta", floatValue)) config.minFlowDelta = floatValue;
-    if (readFloatArg(args, "maxStddev", floatValue)) config.maxFlowStddev = floatValue;
-    if (args.indexOf("scale=8") >= 0)
-    {
-      config.pwmStart = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmStart);
-      config.pwmEnd = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmEnd);
-      config.pwmStep = HeadlessMotorCalibration::pwm8ToRuntime(config.pwmStep) - HeadlessMotorCalibration::pwm8ToRuntime(0);
-      if (config.pwmStep <= 0)
-        config.pwmStep = 1;
-    }
+    if (readIntArg(args, "interval", intValue)) config.intervalMs = intValue;
+    if (readIntArg(args, "maxStep", intValue)) config.maxStep = intValue;
+    if (readIntArg(args, "maxDt", intValue)) config.maxDtMs = intValue;
+    if (readIntArg(args, "stale", intValue)) config.sensorStaleMs = intValue;
+    if (readFloatArg(args, "deadband", floatValue)) config.deadband = floatValue;
+    if (readFloatArg(args, "kp", floatValue)) config.kp = floatValue;
+    if (readFloatArg(args, "ki", floatValue)) config.ki = floatValue;
+    if (readFloatArg(args, "kd", floatValue)) config.kd = floatValue;
+    if (readFloatArg(args, "ilim", floatValue)) config.integralLimit = floatValue;
+    if (readFloatArg(args, "alpha", floatValue)) config.filterAlpha = floatValue;
+    if (readFloatArg(args, "minActive", floatValue)) config.minActive = floatValue;
     return config;
   }
 
-  void printCalibrationStatus(Print &out) const
+  static const char *pidModeText(SmartFlowMode mode)
   {
-    const HeadlessMotorCalibration &cal = _ctx->headlessCalibration;
-    out.printf("Calibracion: %s running=%s valid=%s pwm=%d puntos=%d rango=%.2f-%.2f L/min\n",
-               cal.stateText(), cal.isRunning() ? "si" : "no", cal.hasValidCalibration() ? "si" : "no",
-               cal.currentPwm(), cal.pointCount(), cal.minFlow(), cal.maxFlow());
-    if (strlen(cal.errorText()) > 0)
-      out.printf("Error: %s\n", cal.errorText());
-  }
-
-  void printCalibrationConfig(Print &out) const
-  {
-    const HeadlessMotorCalibrationConfig &c = _ctx->headlessCalibration.config();
-    out.printf("Config: pwmStart=%d pwmEnd=%d pwmStep=%d settle=%lu sample=%lu n=%u maxFlow=%.2f minFlow=%.2f minDelta=%.2f maxStddev=%.2f\n",
-               c.pwmStart, c.pwmEnd, c.pwmStep,
-               (unsigned long)c.settleMs, (unsigned long)c.sampleIntervalMs,
-               (unsigned int)c.samplesPerPoint, c.maxTargetFlow,
-               c.minValidFlow, c.minFlowDelta, c.maxFlowStddev);
-  }
-
-  void printCalibrationPoints(Print &out) const
-  {
-    const HeadlessMotorCalibration &cal = _ctx->headlessCalibration;
-    out.println("PWM | Flujo | Stddev | N");
-    for (int i = 0; i < cal.pointCount(); i++)
+    switch (mode)
     {
-      const HeadlessMotorCalibrationPoint &p = cal.point(i);
-      out.printf("%4d | %.2f | %.3f | %u\n", p.pwm, p.flow, p.stddev, (unsigned int)p.samples);
+    case SMART_FLOW_INTERPOLATE: return "INTERPOLATE";
+    case SMART_FLOW_GAIN_PREDICT: return "GAIN_PREDICT";
+    case SMART_FLOW_MIN_ACTIVE_BOOST: return "BOOST";
+    case SMART_FLOW_PID_ONLY:
+    default: return "PID";
     }
   }
 
-  bool handleCalibrationCommand(const String &args, Print &out)
+  static const char *pidFaultText(FlowPidFault fault)
   {
-    if (!args.startsWith("calib"))
+    switch (fault)
+    {
+    case FLOW_PID_FAULT_SENSOR_INVALID: return "SENSOR_INVALID";
+    case FLOW_PID_FAULT_SENSOR_STALE: return "SENSOR_STALE";
+    case FLOW_PID_FAULT_TIMING: return "TIMING";
+    case FLOW_PID_FAULT_NONE:
+    default: return "NONE";
+    }
+  }
+
+  void printPidStatus(Print &out) const
+  {
+    FlowPidStatus s = _ctx->motorCapture.getPidStatus();
+    out.printf("PID flujo: running=%s test=%s fault=%s timing=%s mode=%s model=%s conf=%.2f gain=%.5f target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d dt=%.3f P/I/D=%.1f/%.1f/%.1f integral=%.3f limited=%s\n",
+               s.running ? "si" : "no", _ctx->motorCapture.isPidTestRunning() ? "si" : "no",
+               pidFaultText(s.fault), s.timingOk ? "ok" : "bad",
+               pidModeText(s.mode), s.modelValid ? "ok" : "learning", s.confidence, s.estimatedGain,
+               s.targetFlow, s.measuredFlow, s.filteredFlow, s.error, s.pwm, s.dtSeconds,
+               s.pTerm, s.iTerm, s.dTerm, s.integral, s.outputLimited ? "si" : "no");
+  }
+
+  void printPidConfig(Print &out) const
+  {
+    const FlowPidConfig &c = _ctx->motorCapture.getPidConfig();
+    out.printf("PID config: interval=%lu deadband=%.2f kp=%.2f ki=%.2f kd=%.2f ilim=%.2f maxStep=%d alpha=%.2f minActive=%.2f maxDt=%lu stale=%lu\n",
+               (unsigned long)c.intervalMs, c.deadband, c.kp, c.ki, c.kd, c.integralLimit,
+               c.maxStep, c.filterAlpha, c.minActive, (unsigned long)c.maxDtMs, (unsigned long)c.sensorStaleMs);
+  }
+
+  bool handlePidCommand(const String &args, Print &out)
+  {
+    if (!args.startsWith("pid"))
       return false;
     if (_ctx == nullptr)
     {
@@ -255,60 +260,46 @@ private:
       return true;
     }
 
-    String sub = args.length() == 5 ? String("status") : args.substring(6);
+    String sub = args.length() == 3 ? String("status") : args.substring(4);
     sub.trim();
     if (sub == "status")
     {
-      printCalibrationStatus(out);
-      return true;
-    }
-    if (sub == "show")
-    {
-      printCalibrationStatus(out);
-      printCalibrationConfig(out);
-      printCalibrationPoints(out);
+      printPidStatus(out);
       return true;
     }
     if (sub == "config")
     {
-      printCalibrationConfig(out);
+      printPidConfig(out);
       return true;
     }
-    if (sub == "abort")
+    if (sub.startsWith("set"))
     {
-      _ctx->headlessCalibration.abort(*_ctx);
-      printCalibrationStatus(out);
-      return true;
-    }
-    if (sub == "clear")
-    {
-      _ctx->headlessCalibration.clear(*_ctx);
-      printCalibrationStatus(out);
-      return true;
-    }
-    if (sub == "save")
-    {
-      out.println(_ctx->headlessCalibration.save(*_ctx) ? "Calibracion guardada." : "Calibracion invalida; no guardada.");
-      return true;
-    }
-    if (sub.startsWith("start"))
-    {
-      if (_ctx->isCapturing)
+      FlowPidConfig config = parsePidConfig(sub, _ctx->motorCapture.getPidConfig());
+      if (!MotorCaptureControl::validatePidConfig(config))
       {
-        out.println("No se puede calibrar durante captura.");
+        out.println("Config PID invalida.");
         return true;
       }
-      HeadlessMotorCalibrationConfig config = parseCalibConfig(sub);
-      if (!_ctx->headlessCalibration.start(config))
-      {
-        out.println("No se pudo iniciar calibracion; parametros invalidos o ya en curso.");
-        return true;
-      }
-      printCalibrationStatus(out);
+      _ctx->motorCapture.setPidConfig(config);
+      printPidConfig(out);
+      return true;
+    }
+    if (sub.startsWith("test"))
+    {
+      float target = _ctx->session.targetFlow;
+      readFloatArg(sub, "target", target);
+      _ctx->motorCapture.startPidTest(target);
+      printPidStatus(out);
+      return true;
+    }
+    if (sub == "stop")
+    {
+      _ctx->motorCapture.stopPidTest(*_ctx);
+      printPidStatus(out);
       return true;
     }
 
-    out.println("Uso: drone calib start|status|show|abort|save|clear");
+    out.println("Uso: drone pid status|config|set|test|stop");
     return true;
   }
 
@@ -318,8 +309,9 @@ private:
     out.println("  drone              alias de drone status");
     out.println("  drone status       estado compacto");
     out.println("  drone status -v    estado con detalles raw");
-    out.println("  drone calib start [pwmStart=400 pwmEnd=1900 pwmStep=80 settle=3000 sample=800 n=5 maxFlow=8.0]");
-    out.println("  drone calib status|show|config|abort|save|clear");
+    out.println("  drone pid status|config");
+    out.println("  drone pid set [interval=1000 deadband=0.08 kp=80 ki=8 kd=6 ilim=30 maxStep=32 alpha=0.30 minActive=0.20 maxDt=1000 stale=1200]");
+    out.println("  drone pid test [target=5.0]|stop");
     out.println("  drone help         ayuda");
   }
 
@@ -363,7 +355,7 @@ public:
       return true;
     }
 
-    if (handleCalibrationCommand(args, out))
+    if (handlePidCommand(args, out))
       return true;
 
     bool verbose = false;
@@ -425,10 +417,12 @@ public:
                _ctx->components.motor.getPowerPct(),
                _ctx->components.motor.getMotorPwm(0),
                _ctx->components.motor.getMotorTargetPwm(0),
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP
-               "closed-loop PI"
-#else
+#if defined(FEATURE_FLOW_PID)
+               "PID flujo"
+#elif defined(FEATURE_FLOW_CALIBRATION)
                "calibracion fija"
+#else
+               "manual"
 #endif
                );
 
