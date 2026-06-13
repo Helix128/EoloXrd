@@ -6,16 +6,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include <Eolo/Types/LogTypes.h>
 
 struct Context;
-
-enum SDStatus
-{
-    SD_OK,
-    SD_WRITING,
-    SD_MISSING,
-    SD_ERROR
-};
 
 class LogService
 {

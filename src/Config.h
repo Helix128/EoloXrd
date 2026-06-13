@@ -90,7 +90,7 @@
 #endif
 
 #ifndef AFM07_FLOW_DIVISOR
-  #define AFM07_FLOW_DIVISOR 10.0f
+  #define AFM07_FLOW_DIVISOR 100.0f
 #endif
 
 #ifndef NTC_MOTOR_OVERHEAT_HIGH_C
@@ -128,43 +128,48 @@ static_assert(NTC_MOTOR_OVERHEAT_LOW_C < NTC_MOTOR_OVERHEAT_HIGH_C,
   #error "MOTOR_PWM_RESOLUTION_BITS debe estar entre 1 y 15"
 #endif
 
-#define MOTOR_FLOW_CONTROL_FIXED 1
-#define MOTOR_FLOW_CONTROL_CLOSED_LOOP 2
-
-#ifndef MOTOR_FLOW_CONTROL_MODE
-  #define MOTOR_FLOW_CONTROL_MODE MOTOR_FLOW_CONTROL_FIXED
+#ifndef FLOW_PID_INTERVAL_MS
+  #define FLOW_PID_INTERVAL_MS 100
 #endif
 
-#if MOTOR_FLOW_CONTROL_MODE != MOTOR_FLOW_CONTROL_FIXED && MOTOR_FLOW_CONTROL_MODE != MOTOR_FLOW_CONTROL_CLOSED_LOOP
-  #error "MOTOR_FLOW_CONTROL_MODE debe ser MOTOR_FLOW_CONTROL_FIXED o MOTOR_FLOW_CONTROL_CLOSED_LOOP"
+#ifndef FLOW_PID_DEADBAND
+  #define FLOW_PID_DEADBAND 0.08f
 #endif
 
-#if MOTOR_FLOW_CONTROL_MODE == MOTOR_FLOW_CONTROL_CLOSED_LOOP && !defined(FEATURE_FLOW_AFM07) && !defined(FEATURE_FLOW_FS3000)
-  #error "MOTOR_FLOW_CONTROL_CLOSED_LOOP requiere sensor de flujo"
+#ifndef FLOW_PID_KP
+  #define FLOW_PID_KP 80.0f
 #endif
 
-#ifndef MOTOR_FLOW_CONTROL_INTERVAL_MS
-  #define MOTOR_FLOW_CONTROL_INTERVAL_MS 1000
+#ifndef FLOW_PID_KI
+  #define FLOW_PID_KI 8.0f
 #endif
 
-#ifndef MOTOR_FLOW_DEADBAND_LPM
-  #define MOTOR_FLOW_DEADBAND_LPM 0.08f
+#ifndef FLOW_PID_KD
+  #define FLOW_PID_KD 6.0f
 #endif
 
-#ifndef MOTOR_FLOW_KP
-  #define MOTOR_FLOW_KP 80.0f
+#ifndef FLOW_PID_INTEGRAL_LIMIT
+  #define FLOW_PID_INTEGRAL_LIMIT 30.0f
 #endif
 
-#ifndef MOTOR_FLOW_KI
-  #define MOTOR_FLOW_KI 8.0f
+#ifndef FLOW_PID_MAX_STEP
+  #define FLOW_PID_MAX_STEP 32
 #endif
 
-#ifndef MOTOR_FLOW_INTEGRAL_LIMIT
-  #define MOTOR_FLOW_INTEGRAL_LIMIT 30.0f
+#ifndef FLOW_PID_FILTER_ALPHA
+  #define FLOW_PID_FILTER_ALPHA 0.30f
 #endif
 
-#ifndef MOTOR_FLOW_MAX_STEP_PWM
-  #define MOTOR_FLOW_MAX_STEP_PWM 32
+#ifndef FLOW_PID_MIN_ACTIVE
+  #define FLOW_PID_MIN_ACTIVE 0.20f
+#endif
+
+#ifndef FLOW_PID_MAX_DT_MS
+  #define FLOW_PID_MAX_DT_MS 1000
+#endif
+
+#ifndef FLOW_PID_SENSOR_STALE_MS
+  #define FLOW_PID_SENSOR_STALE_MS 1200
 #endif
 
 #define DRONE_DURATION_INFINITE UINT32_MAX
@@ -198,6 +203,20 @@ static_assert(NTC_MOTOR_OVERHEAT_LOW_C < NTC_MOTOR_OVERHEAT_HIGH_C,
 // Validación de combinaciones inválidas de feature flags
 #if defined(FEATURE_FLOW_AFM07) && defined(FEATURE_FLOW_FS3000)
   #error "Conflicto! define solo un sensor de flujo (FEATURE_FLOW_AFM07 o FEATURE_FLOW_FS3000)"
+#endif
+
+#if defined(FEATURE_FLOW_CALIBRATION) && defined(FEATURE_FLOW_PID)
+  #error "Conflicto! define solo un modo de flujo (FEATURE_FLOW_CALIBRATION o FEATURE_FLOW_PID)"
+#endif
+
+#if defined(FEATURE_FLOW_PID) && !defined(FEATURE_FLOW_AFM07) && !defined(FEATURE_FLOW_FS3000)
+  #error "FEATURE_FLOW_PID requiere sensor de flujo"
+#endif
+
+// FEATURE_FLOW_CALIBRATION: curva fija PWM->flujo para equipos estacionarios.
+// FEATURE_FLOW_PID: control dinámico de flujo para dron.
+#if !defined(FEATURE_FLOW_CALIBRATION) && !defined(FEATURE_FLOW_PID)
+  #define FEATURE_FLOW_CALIBRATION
 #endif
 
 #if defined(FEATURE_MOTOR_PWM) && defined(FEATURE_MOTOR_PWM_POWER_PIN)

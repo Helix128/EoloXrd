@@ -5,15 +5,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "../Board/RS485Bus.h"
+#include <Eolo/Types/AnemometerData.h>
 
 #define ANEM_ID 1
-
-struct AnemometerData {
-    float speed;
-    float windKph;
-    int direction;
-    bool valid;
-};
 
 class Anemometer {
 private:

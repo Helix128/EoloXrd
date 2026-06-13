@@ -33,6 +33,7 @@ public:
 #include "Context.h"
 #include "Session.h"
 #include "../Config.h"
+#include <Eolo/Core/Flow/FlowSchedule.h>
 
 #ifndef FEATURE_HEADLESS
 #include "../Drawing/SceneManager.h"
@@ -158,6 +159,12 @@ inline void CaptureController::update(Context &ctx)
             return;
         }
     }
+
+    ctx.session.targetFlow = FlowSchedule::targetAtElapsed(
+        ctx.session.targetFlow,
+        ctx.session.flowSectionCount,
+        ctx.session.flowSections,
+        ctx.session.elapsedTime);
 
 #if !BAREBONES
     ctx.updateMotors();

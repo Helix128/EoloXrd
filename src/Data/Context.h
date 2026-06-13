@@ -11,9 +11,6 @@
 #include "CaptureController.h"
 #include "MotorCaptureControl.h"
 #include "UploadService.h"
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
-#include "HeadlessMotorCalibration.h"
-#endif
 #include "../Config.h"
 #include "../Board/I2CBus.h"
 #ifndef FEATURE_HEADLESS
@@ -49,9 +46,6 @@ typedef struct Context
     CaptureController capture;
     MotorCaptureControl motorCapture;
     UploadService uploader;
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
-    HeadlessMotorCalibration headlessCalibration;
-#endif
 
     static constexpr int CAPTURE_INTERVAL = CaptureController::CAPTURE_INTERVAL;
     bool &isCapturing = capture.isCapturing;
@@ -432,8 +426,9 @@ public:
 #endif
 
         updateMotorThermalProtection();
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
-        headlessCalibration.update(*this);
+#if defined(FEATURE_FLOW_PID)
+        if (motorCapture.isPidTestRunning())
+            updateMotors();
 #endif
         updateCapture();
         bool statusChanged = updateUiSnapshot();
@@ -449,13 +444,7 @@ public:
         return components.rtc.now().unixtime();
     }
 
-    bool isHeadlessCalibrationRunning() const {
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
-        return headlessCalibration.isRunning();
-#else
-        return false;
-#endif
-    }
+    bool isHeadlessCalibrationRunning() const { return false; }
 
     void beginCapture() { capture.begin(*this); }
     void pauseCapture() { capture.pause(*this); }
@@ -479,8 +468,5 @@ inline Context *Context::instance = nullptr;
 #include "RTCNetworkSync.h"
 #include "MotorCaptureControl.h"
 #include "UploadService.h"
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
-#include "HeadlessMotorCalibration.h"
-#endif
 
 #endif

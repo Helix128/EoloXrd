@@ -1,0 +1,6 @@
+#ifndef EOLO_SMART_FLOW_CONTROLLER_COMPAT_H
+#define EOLO_SMART_FLOW_CONTROLLER_COMPAT_H
+
+#include <Eolo/Core/Flow/SmartFlowController.h>
+
+#endif // EOLO_SMART_FLOW_CONTROLLER_COMPAT_H

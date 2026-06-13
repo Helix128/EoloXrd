@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "Effectors/Motor.h"
+#include <Eolo/Core/Motor/PwmMath.h>
+#include <Eolo/Core/Power/BatteryMath.h>
 
 void test_next_ramped_pwm_steps_up_without_overshoot()
 {
@@ -17,6 +19,19 @@ void test_next_ramped_pwm_constrains_values()
 {
     TEST_ASSERT_EQUAL_INT(0, MotorManager::nextRampedPwm(-20, -1, 16));
     TEST_ASSERT_EQUAL_INT(MAX_PWM, MotorManager::nextRampedPwm(MAX_PWM - 1, MAX_PWM + 500, 16));
+}
+
+void test_pwm_math_core_limits_step_without_motor_hardware()
+{
+    TEST_ASSERT_EQUAL_INT(132, PwmMath::limitStep(100, 200, 32, MAX_PWM));
+    TEST_ASSERT_EQUAL_INT(168, PwmMath::limitStep(200, 100, 32, MAX_PWM));
+}
+
+void test_battery_math_clamps_percentage()
+{
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, BatteryMath::pctFromVoltage(-1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 50.0f, BatteryMath::pctFromVoltage(8.4f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, BatteryMath::pctFromVoltage(20.0f));
 }
 
 void test_initial_motor_state_is_zero()
@@ -72,6 +87,8 @@ void setup()
     RUN_TEST(test_next_ramped_pwm_steps_up_without_overshoot);
     RUN_TEST(test_next_ramped_pwm_decreases_immediately);
     RUN_TEST(test_next_ramped_pwm_constrains_values);
+    RUN_TEST(test_pwm_math_core_limits_step_without_motor_hardware);
+    RUN_TEST(test_battery_math_clamps_percentage);
     RUN_TEST(test_initial_motor_state_is_zero);
     RUN_TEST(test_limit_pwm_step_limits_both_directions);
     RUN_TEST(test_closed_loop_pwm_deadband_preserves_integral_correction);

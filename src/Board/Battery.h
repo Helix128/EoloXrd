@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <string.h>
 #include "../Config.h"
+#include <Eolo/Core/Power/BatteryMath.h>
 
 #ifdef FEATURE_DUAL_BATTERY
 #include "I2CBus.h"
@@ -14,10 +15,10 @@
 class Battery {
 public:
     static constexpr int BATTERY_COUNT = 2;
-    static constexpr int ADC_MAX = 4095;
-    static constexpr float ADC_VREF = 3.3f;
-    static constexpr float DIVIDER_RATIO = 7.8f;
-    static constexpr float BATT_MAX_VOLTAGE = 16.8f;
+    static constexpr int ADC_MAX = BatteryMath::AdcMax;
+    static constexpr float ADC_VREF = BatteryMath::AdcVref;
+    static constexpr float DIVIDER_RATIO = BatteryMath::DividerRatio;
+    static constexpr float BATT_MAX_VOLTAGE = BatteryMath::MaxVoltage;
 
 #ifdef FEATURE_DUAL_BATTERY
     static constexpr uint8_t DEFAULT_I2C_ADDR = 10;
@@ -134,18 +135,11 @@ private:
     int getLevel() { return analogRead(battery_pin); }
 
     float voltageFromLevel(float level) {
-        float voltage = (level / (float)ADC_MAX) * ADC_VREF;
-        voltage *= 1.96f / 1.84f;
-        voltage *= DIVIDER_RATIO;
-        voltage += 0.8f;
-        return voltage;
+        return BatteryMath::voltageFromAdcLevel(level, ADC_MAX, ADC_VREF, DIVIDER_RATIO);
     }
 
     float pctFromVoltage(float v) {
-        float pct = (v / BATT_MAX_VOLTAGE) * 100.0f;
-        if (pct > 100.0f) pct = 100.0f;
-        if (pct < 0.0f) pct = 0.0f;
-        return pct;
+        return BatteryMath::pctFromVoltage(v, BATT_MAX_VOLTAGE);
     }
 
     int battery_pin = 34;
@@ -160,25 +154,15 @@ private:
     bool emaInitialized = false;
 
     static float mvToVolts(int16_t mv) {
-        return (float)mv / 1000.0f;
+        return BatteryMath::mvToVolts(mv);
     }
 
     static uint8_t crc8(const uint8_t *data, size_t len) {
-        uint8_t crc = 0;
-        for (size_t i = 0; i < len; ++i) {
-            crc ^= data[i];
-            for (uint8_t bit = 0; bit < 8; ++bit) {
-                crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
-            }
-        }
-        return crc;
+        return BatteryMath::crc8(data, len);
     }
 
     float pctFromVoltage(float v) {
-        float pct = (v / BATT_MAX_VOLTAGE) * 100.0f;
-        if (pct > 100.0f) pct = 100.0f;
-        if (pct < 0.0f) pct = 0.0f;
-        return pct;
+        return BatteryMath::pctFromVoltage(v, BATT_MAX_VOLTAGE);
     }
 #endif
 };

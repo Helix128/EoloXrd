@@ -2,10 +2,11 @@
 #include <unity.h>
 #include "Board/CaptureSwitches.h"
 #include "Board/HeadlessSetupTypes.h"
+#include <Eolo/Core/Input/CaptureSwitchLogic.h>
 
 void test_wait_table()
 {
-    CaptureSwitchSelection off = CaptureSwitches::decode(0b00, 0b01);
+    CaptureSwitchSelection off = CaptureSwitchLogic::decode(0b00, 0b01);
     TEST_ASSERT_FALSE(off.waitEnabled);
     TEST_ASSERT_FALSE(off.shouldStart);
 
@@ -67,7 +68,7 @@ void test_decode_full_table()
 
     for (uint8_t waitCode = 0; waitCode < 4; waitCode++) {
         for (uint8_t durationCode = 0; durationCode < 4; durationCode++) {
-            CaptureSwitchSelection selection = CaptureSwitches::decode(waitCode, durationCode);
+            CaptureSwitchSelection selection = CaptureSwitchLogic::decode(waitCode, durationCode);
             TEST_ASSERT_EQUAL_UINT8(waitCode, selection.waitCode);
             TEST_ASSERT_EQUAL_UINT8(durationCode, selection.durationCode);
             TEST_ASSERT_EQUAL_UINT32(waitSeconds[waitCode], selection.waitSeconds);

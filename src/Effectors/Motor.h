@@ -2,8 +2,8 @@
 #define MOTOR_H
 
 #include <Arduino.h>
-#include <math.h>
 #include "../Config.h"
+#include <Eolo/Core/Motor/PwmMath.h>
 
 #define PWM_RESOLUTION MOTOR_PWM_RESOLUTION_BITS
 #define MAX_PWM ((1 << PWM_RESOLUTION) - 1)
@@ -62,35 +62,18 @@ private:
 
   static int constrainPwm(int pwm)
   {
-    if (pwm < 0)
-      return 0;
-    if (pwm > MAX_PWM)
-      return MAX_PWM;
-    return pwm;
+    return PwmMath::clamp(pwm, MAX_PWM);
   }
 
 public:
   static int nextRampedPwm(int current, int target, int step)
   {
-    current = constrainPwm(current);
-    target = constrainPwm(target);
-    if (step <= 0 || target <= current)
-      return target;
-    int next = current + step;
-    return next > target ? target : next;
+    return PwmMath::nextRamped(current, target, step, MAX_PWM);
   }
 
   static int limitPwmStep(int current, int target, int maxStep)
   {
-    current = constrainPwm(current);
-    target = constrainPwm(target);
-    if (maxStep <= 0)
-      return target;
-    if (target > current + maxStep)
-      return current + maxStep;
-    if (target < current - maxStep)
-      return current - maxStep;
-    return target;
+    return PwmMath::limitStep(current, target, maxStep, MAX_PWM);
   }
 
   static int nextClosedLoopPwm(int basePwm,
@@ -105,27 +88,19 @@ public:
                                float integralLimit,
                                int maxStepPwm)
   {
-    basePwm = constrainPwm(basePwm);
-    currentPwm = constrainPwm(currentPwm);
-    if (dtSeconds < 0.0f)
-      dtSeconds = 0.0f;
-
-    float error = targetFlow - measuredFlow;
-    if (fabsf(error) < deadbandLpm)
-      error = 0.0f;
-
-    integral += error * dtSeconds;
-    if (integralLimit >= 0.0f)
-    {
-      if (integral > integralLimit)
-        integral = integralLimit;
-      else if (integral < -integralLimit)
-        integral = -integralLimit;
-    }
-
-    float correction = kp * error + ki * integral;
-    int desiredPwm = constrainPwm(basePwm + static_cast<int>(correction));
-    return limitPwmStep(currentPwm, desiredPwm, maxStepPwm);
+    return PwmMath::nextClosedLoop(
+        basePwm,
+        currentPwm,
+        targetFlow,
+        measuredFlow,
+        dtSeconds,
+        integral,
+        deadbandLpm,
+        kp,
+        ki,
+        integralLimit,
+        maxStepPwm,
+        MAX_PWM);
   }
 
 private:

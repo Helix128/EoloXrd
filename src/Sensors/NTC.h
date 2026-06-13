@@ -2,27 +2,19 @@
 #define NTC_SENSOR_H
 
 #include <Arduino.h>
-#include <math.h>
 #include "../Config.h"
-
-struct NTCData
-{
-  int raw = 0;
-  float voltage = 0.0f;
-  float resistance = 0.0f;
-  float temperature = -99.0f;
-  bool valid = false;
-};
+#include <Eolo/Core/Sensors/NtcThermistor.h>
+#include <Eolo/Types/NTCData.h>
 
 class NTC
 {
 public:
-  static constexpr float DefaultFixedResistance = 10000.0f;
-  static constexpr float DefaultR25 = 10000.0f;
-  static constexpr float DefaultBeta = 3950.0f;
-  static constexpr float T25Kelvin = 298.15f;
-  static constexpr float AdcVref = 3.3f;
-  static constexpr int AdcMax = 4095;
+  static constexpr float DefaultFixedResistance = NtcThermistor::DefaultFixedResistance;
+  static constexpr float DefaultR25 = NtcThermistor::DefaultR25;
+  static constexpr float DefaultBeta = NtcThermistor::DefaultBeta;
+  static constexpr float T25Kelvin = NtcThermistor::T25Kelvin;
+  static constexpr float AdcVref = NtcThermistor::AdcVref;
+  static constexpr int AdcMax = NtcThermistor::AdcMax;
 
   void begin(int pin = NTC_PIN)
   {
@@ -55,7 +47,7 @@ public:
 
   static float rawToVoltage(int raw)
   {
-    return ((float)raw * AdcVref) / (float)AdcMax;
+    return NtcThermistor::rawToVoltage(raw);
   }
 
   static bool computeTemperature(int raw, float &temperature, float &resistance,
@@ -63,20 +55,7 @@ public:
                                  float r25 = DefaultR25,
                                  float beta = DefaultBeta)
   {
-    if (raw <= 10 || raw >= 4085)
-      return false;
-
-    float voltage = rawToVoltage(raw);
-    if (voltage <= 0.0f || voltage >= AdcVref)
-      return false;
-
-    resistance = fixedResistance * voltage / (AdcVref - voltage);
-    if (resistance <= 0.0f)
-      return false;
-
-    float tempK = 1.0f / ((1.0f / T25Kelvin) + (logf(resistance / r25) / beta));
-    temperature = tempK - 273.15f;
-    return isfinite(temperature);
+    return NtcThermistor::computeTemperature(raw, temperature, resistance, fixedResistance, r25, beta);
   }
 
   static bool motorOverheatLatched(bool current,
@@ -85,13 +64,7 @@ public:
                                    float highThreshold = NTC_MOTOR_OVERHEAT_HIGH_C,
                                    float lowThreshold = NTC_MOTOR_OVERHEAT_LOW_C)
   {
-    if (!valid || !isfinite(temperature))
-      return current;
-    if (temperature >= highThreshold)
-      return true;
-    if (temperature <= lowThreshold)
-      return false;
-    return current;
+    return NtcThermistor::motorOverheatLatched(current, valid, temperature, highThreshold, lowThreshold);
   }
 
 private:
