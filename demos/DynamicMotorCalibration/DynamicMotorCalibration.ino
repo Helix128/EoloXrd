@@ -15,7 +15,7 @@
 
   Comandos Serial:
     t 5.0              cambia flujo objetivo en L/min
-    b 960              cambia PWM inicial 0..2047
+    b 1660             cambia PWM inicial 0..2047
     p 640              fija PWM actual/manual antes de arrancar
     tune slow          perfil slow|normal|fast
     model              imprime modelo RAM
@@ -43,7 +43,7 @@ ModbusMaster afm07;
 
 bool controlEnabled = false;
 float targetFlowLpm = 5.0f;
-int basePwm = 960;
+int basePwm = 1660;
 int currentPwm = 0;
 uint32_t lastControlMs = 0;
 uint8_t consecutiveAfm07Errors = 0;
@@ -156,7 +156,7 @@ void printStatus() {
 void printHelp() {
   Serial.println();
   Serial.println("Demo calibracion dinamica motor EOLO Dron");
-  Serial.println("Comandos: t 5.0 | b 960 | p 640 | tune slow|normal|fast | model | resetmodel | verbose on|off | run | stop | status");
+  Serial.println("Comandos: t 5.0 | b 1660 | p 640 | tune slow|normal|fast | model | resetmodel | verbose on|off | run | stop | status");
   printStatus();
 }
 

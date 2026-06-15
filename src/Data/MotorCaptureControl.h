@@ -29,6 +29,7 @@ class MotorCaptureControl
     };
     bool pidTestRunning = false;
     float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
+    bool pidConfigLogged = false;
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
 
@@ -172,8 +173,33 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     int currentPwm = ctx.components.motor.getMotorPwm(0);
 
     FlowData flowData;
+    if (!pidConfigLogged)
+    {
+        LOG_OUT("PID config: interval=");
+        LOG_OUT(pidCfg.intervalMs);
+        LOG_OUT("ms stale=");
+        LOG_OUT(pidCfg.sensorStaleMs);
+        LOG_OUT("ms maxDt=");
+        LOG_OUT(pidCfg.maxDtMs);
+        LOG_OUT("ms Kp/Ki/Kd=");
+        LOG_OUT(pidCfg.kp, 2);
+        LOG_OUT("/");
+        LOG_OUT(pidCfg.ki, 2);
+        LOG_OUT("/");
+        LOG_OUT(pidCfg.kd, 2);
+        LOG_OUT(" step=");
+        LOG_OUT(pidCfg.maxStep);
+        LOG_OUT(" deadband=");
+        LOG_OUT(pidCfg.deadband, 2);
+        LOG_OUT(" alpha=");
+        LOG_OUT(pidCfg.filterAlpha, 2);
+        LOG_OUT(" minActive=");
+        LOG_OUT_LN(pidCfg.minActive, 2);
+        pidConfigLogged = true;
+    }
+
     bool flowReadValid = ctx.components.flowSensor.getData(flowData) && flowData.valid;
-    bool flowFresh = flowReadValid && flowData.fresh && !flowData.stale && flowData.ageMs <= pidCfg.sensorStaleMs;
+    bool flowFresh = flowReadValid && flowData.ageMs <= pidCfg.sensorStaleMs;
     if (!flowFresh)
     {
         resetFlowController();
@@ -197,7 +223,7 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     input.measuredFlow = flowFresh ? flowData.flow : -1.0f;
     input.flowValid = flowReadValid;
     input.flowFresh = flowFresh;
-    input.flowStale = flowReadValid && !flowFresh;
+    input.flowStale = flowReadValid && flowData.ageMs > pidCfg.sensorStaleMs;
     input.flowAgeMs = flowData.ageMs;
     input.maxPwm = MAX_PWM;
 

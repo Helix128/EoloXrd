@@ -3,6 +3,7 @@
 #include "Effectors/Motor.h"
 #include <Eolo/Core/Motor/PwmMath.h>
 #include <Eolo/Core/Power/BatteryMath.h>
+#include <Eolo/Core/Flow/FlowMotorController.h>
 
 void test_next_ramped_pwm_steps_up_without_overshoot()
 {
@@ -80,6 +81,85 @@ void test_closed_loop_pwm_clamps_integral_and_pwm()
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 30.0f, integral);
 }
 
+void test_flow_pid_responsive_preset_limits_pwm_growth()
+{
+    FlowPidConfig config;
+    config.intervalMs = 800;
+    config.sensorStaleMs = 2800;
+    config.maxDtMs = 2800;
+    config.kp = 28.0f;
+    config.ki = 0.4f;
+    config.kd = 5.0f;
+    config.integralLimit = 6.0f;
+    config.maxStep = 8;
+    config.filterAlpha = 0.35f;
+    config.deadband = 0.15f;
+    config.minActive = 0.30f;
+
+    FlowMotorController controller;
+    FlowMotorInput input;
+    input.targetFlow = 5.0f;
+    input.measuredFlow = 0.0f;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.flowStale = false;
+    input.maxPwm = MAX_PWM;
+
+    FlowMotorOutput output{};
+    for (uint32_t t = 0; t <= 3200; t += 800)
+    {
+        input.nowMs = t;
+        input.currentPwm = output.pwm;
+        output = controller.update(input, config);
+    }
+
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+    TEST_ASSERT_TRUE(output.pwm <= 64);
+    TEST_ASSERT_TRUE(output.smartStatus.integral <= config.integralLimit);
+}
+
+void test_flow_pid_accepts_delayed_sample_under_stale_limit()
+{
+    FlowPidConfig config;
+    config.intervalMs = 800;
+    config.sensorStaleMs = 2800;
+    config.maxDtMs = 2800;
+    config.kp = 28.0f;
+    config.ki = 0.4f;
+    config.kd = 5.0f;
+    config.integralLimit = 6.0f;
+    config.maxStep = 8;
+    config.filterAlpha = 0.35f;
+    config.deadband = 0.15f;
+    config.minActive = 0.30f;
+
+    FlowMotorController controller;
+    FlowMotorInput input;
+    input.targetFlow = 5.0f;
+    input.measuredFlow = 1.0f;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.flowStale = false;
+    input.maxPwm = MAX_PWM;
+
+    input.nowMs = 0;
+    FlowMotorOutput output = controller.update(input, config);
+    input.nowMs = 800;
+    input.currentPwm = output.pwm;
+    output = controller.update(input, config);
+
+    input.nowMs = 1600;
+    input.currentPwm = output.pwm;
+    input.flowAgeMs = 1600;
+    input.flowFresh = true;
+    input.flowStale = false;
+    output = controller.update(input, config);
+
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+    TEST_ASSERT_TRUE(output.updated);
+    TEST_ASSERT_TRUE(output.pwm > 0);
+}
+
 void setup()
 {
     delay(1000);
@@ -95,6 +175,8 @@ void setup()
     RUN_TEST(test_closed_loop_pwm_increases_when_flow_is_low);
     RUN_TEST(test_closed_loop_pwm_decreases_when_flow_is_high);
     RUN_TEST(test_closed_loop_pwm_clamps_integral_and_pwm);
+    RUN_TEST(test_flow_pid_responsive_preset_limits_pwm_growth);
+    RUN_TEST(test_flow_pid_accepts_delayed_sample_under_stale_limit);
     UNITY_END();
 }
 
