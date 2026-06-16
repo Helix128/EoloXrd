@@ -41,6 +41,33 @@ function minSecToSec(min, sec) {
   return (Number(min || 0) * 60) + Number(sec || 0);
 }
 
+function formatDuration(totalSeconds) {
+  if (totalSeconds === INF || Number(totalSeconds) === INF) return 'Sin límite';
+  const n = Number(totalSeconds || 0);
+  if (n <= 0) return '0 s';
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = n % 60;
+  return [h ? `${h} h` : '', m ? `${m} min` : '', s ? `${s} s` : ''].filter(Boolean).join(' ') || '0 s';
+}
+
+function clampNumber(value, min, max) {
+  if (value === '') return '';
+  const n = Number(value);
+  if (isNaN(n)) return '';
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function normalizeTimePair(minInput, secInput) {
+  minInput.value = clampNumber(minInput.value, 0, 1440);
+  secInput.value = clampNumber(secInput.value, 0, 59);
+  return minSecToSec(minInput.value, secInput.value);
+}
+
+function sectionStart(index) {
+  return flowSections.slice(0, index).reduce((sum, s) => sum + Number(s.durationSeconds || 0), 0);
+}
+
 // Theme Toggle Logic
 function initTheme() {
   const savedTheme = localStorage.getItem('eolo-theme');
@@ -161,14 +188,23 @@ function validateFlowConfig() {
   let msg = '';
   if (flowMode() === 'fixed') {
     const f = parseFloat($('targetFlow').value);
-    if (isNaN(f) || f < 0 || f > 8) msg = 'Ingrese un flujo fijo entre 0 y 8 L/min';
-    if ($('durationMode').value !== 'infinite' && !$('durMin').value && !$('durSec').value) msg = 'Ingrese una duración o elija sin límite de tiempo';
+    if ($('durationMode').value !== 'infinite' && durationSeconds() <= 0) msg = 'Duración total debe ser mayor a 0 o elegir sin límite.';
+    if (isNaN(f) || f < 0 || f > 8) msg = 'Flujo fijo debe estar entre 0 y 8 L/min.';
+  } else if (!flowSections.length) {
+    msg = 'Agregue al menos un tramo o use una plantilla.';
   } else {
-    if (!flowSections.length) msg = 'Agregue al menos un tramo';
-    for (const s of flowSections) {
-      if (!s.durationSeconds || s.durationSeconds <= 0) msg = 'Cada tramo necesita duración';
-      if (isNaN(s.targetFlow) || s.targetFlow === '' || s.targetFlow < 0 || s.targetFlow > 8) msg = 'Cada tramo necesita flujo entre 0 y 8 L/min';
+    for (let i = 0; i < flowSections.length; i++) {
+      const s = flowSections[i];
+      if (!s.durationSeconds || s.durationSeconds <= 0) {
+        msg = `Tramo ${i + 1}: duración debe ser mayor a 0.`;
+        break;
+      }
+      if (s.targetFlow === '' || isNaN(s.targetFlow) || s.targetFlow < 0 || s.targetFlow > 8) {
+        msg = `Tramo ${i + 1}: flujo debe estar entre 0 y 8 L/min.`;
+        break;
+      }
     }
+    if (!msg && sectionTotal() <= 0) msg = 'La suma de tramos debe ser mayor a 0.';
   }
   $('flowWarning').textContent = msg;
   return !msg;
@@ -183,68 +219,88 @@ function syncScheduleField() {
     : '[]';
 }
 
+function updateCaptureSummary() {
+  if (!$('captureSummary')) return;
+  const periods = flowMode() === 'periods';
+  const last = flowSections[flowSections.length - 1];
+  const finalFlow = periods
+    ? (last && last.targetFlow !== '' && !isNaN(last.targetFlow) ? `${Number(last.targetFlow).toFixed(1)} L/min` : 'Sin definir')
+    : ($('targetFlow').value ? `${Number($('targetFlow').value).toFixed(1)} L/min` : 'Sin definir');
+  $('summaryWait').textContent = formatDuration(waitSeconds());
+  $('summaryDuration').textContent = periods ? `${formatDuration(sectionTotal())} calculada` : formatDuration(durationSeconds());
+  $('summaryMode').textContent = periods ? 'Perfil por tramos' : 'Flujo fijo';
+  $('summaryFinalFlow').textContent = finalFlow;
+}
+
 function updateScheduleStatus() {
   if (!$('scheduleStatus')) return;
   const total = sectionTotal();
-  const totalFmt = secToMinSec(total);
-  const totalStr = `${totalFmt.min || 0} min ${totalFmt.sec || 0} s`;
   if (flowMode() === 'periods') {
     const last = flowSections[flowSections.length - 1];
-    const lastFlow = last && last.targetFlow !== '' && !isNaN(last.targetFlow) ? ` · final ${Number(last.targetFlow).toFixed(1)} L/min` : '';
+    const lastFlow = last && last.targetFlow !== '' && !isNaN(last.targetFlow) ? ` · flujo final ${Number(last.targetFlow).toFixed(1)} L/min` : '';
     $('scheduleStatus').textContent = flowSections.length
-      ? `${flowSections.length} tramo${flowSections.length === 1 ? '' : 's'} · ${totalStr}${lastFlow}`
-      : 'Sin tramos definidos.';
+      ? `${flowSections.length} tramo${flowSections.length === 1 ? '' : 's'} · duración total calculada: ${formatDuration(total)}${lastFlow}`
+      : 'Sin tramos: agregue uno o use una plantilla.';
   } else {
     $('scheduleStatus').textContent = `Flujo fijo${$('targetFlow').value ? ': ' + $('targetFlow').value + ' L/min' : ' sin definir'}`;
   }
   syncScheduleField();
+  updateCaptureSummary();
   validateFlowConfig();
 }
 
 function renderSections() {
   const body = $('sectionsBody');
   if (!flowSections.length) {
-    body.innerHTML = '<div class="sections-empty">Sin tramos. Agregue uno para definir la secuencia.</div>';
+    body.innerHTML = '<div class="sections-empty"><strong>Sin tramos</strong><span>Agrega uno o usa una plantilla para armar la secuencia.</span></div>';
     updateScheduleStatus();
     return;
   }
-  body.innerHTML = flowSections.map((s, i) => {
-    const timeObj = s.durationSeconds ? secToMinSec(s.durationSeconds) : { min: '', sec: '' };
-    const flowValue = s.targetFlow === '' || s.targetFlow === null || s.targetFlow === undefined ? '' : Number(s.targetFlow || 0).toFixed(1);
-    const fill = Math.max(0, Math.min(100, Number(s.targetFlow || 0) / 8 * 100));
-    return `
-      <section class="flow-section-card">
-        <div class="flow-card-head">
-          <div>
-            <span class="flow-step">Tramo ${i + 1}</span>
-            <strong>${flowValue ? flowValue + ' L/min' : 'Flujo sin definir'}</strong>
-          </div>
-          <button type="button" class="btn-section-remove" data-section-remove="${i}">Quitar</button>
-        </div>
-        <div class="flow-rail" aria-hidden="true"><span style="width:${fill}%"></span></div>
-        <div class="flow-card-fields">
-          <div class="field compact-field">
-            <span class="label">Duración</span>
-            <div class="time-inputs-container">
-              <div class="time-field">
-                <input data-section-min="${i}" type="number" min="0" max="1440" placeholder="Min" value="${timeObj.min}">
-                <span class="time-unit">M</span>
-              </div>
-              <div class="time-field-separator">:</div>
-              <div class="time-field">
-                <input data-section-sec="${i}" type="number" min="0" max="59" placeholder="Seg" value="${timeObj.sec}">
-                <span class="time-unit">S</span>
+  body.innerHTML = `
+    <div class="sections-table" role="table" aria-label="Perfil de flujo por tramos">
+      <div class="sections-row sections-head" role="row">
+        <span>Tramo</span><span>Inicio</span><span>Duración</span><span>Fin</span><span>Flujo</span><span>Acciones</span>
+      </div>
+      ${flowSections.map((s, i) => {
+        const start = sectionStart(i);
+        const duration = Number(s.durationSeconds || 0);
+        const end = start + duration;
+        const timeObj = duration ? secToMinSec(duration) : { min: '', sec: '' };
+        const flowValue = s.targetFlow === '' || s.targetFlow === null || s.targetFlow === undefined ? '' : Number(s.targetFlow || 0).toFixed(1);
+        const fill = Math.max(0, Math.min(100, Number(s.targetFlow || 0) / 8 * 100));
+        return `
+          <div class="sections-row flow-section-card" role="row">
+            <div class="section-index" data-label="Tramo"><span>${i + 1}</span></div>
+            <div class="section-time" data-label="Inicio"><strong>${formatDuration(start)}</strong></div>
+            <div class="section-duration" data-label="Duración">
+              <div class="time-inputs-container compact-time">
+                <div class="time-field">
+                  <input data-section-min="${i}" type="number" min="0" max="1440" placeholder="Min" value="${timeObj.min}">
+                  <span class="time-unit">M</span>
+                </div>
+                <div class="time-field-separator">:</div>
+                <div class="time-field">
+                  <input data-section-sec="${i}" type="number" min="0" max="59" placeholder="Seg" value="${timeObj.sec}">
+                  <span class="time-unit">S</span>
+                </div>
               </div>
             </div>
+            <div class="section-time" data-label="Fin"><strong>${formatDuration(end)}</strong></div>
+            <div class="section-flow" data-label="Flujo">
+              <input id="sectionFlow${i}" data-section-flow="${i}" type="number" min="0" max="8" step="0.1" placeholder="0.0" value="${flowValue}" aria-label="Flujo tramo ${i + 1}">
+              <div class="flow-rail" aria-hidden="true"><span style="width:${fill}%"></span></div>
+            </div>
+            <div class="section-actions" data-label="Acciones">
+              <button type="button" title="Subir" data-section-move="${i}" data-direction="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button type="button" title="Bajar" data-section-move="${i}" data-direction="1" ${i === flowSections.length - 1 ? 'disabled' : ''}>↓</button>
+              <button type="button" title="Duplicar" data-section-duplicate="${i}">Duplicar</button>
+              <button type="button" class="btn-section-remove" data-section-remove="${i}">Quitar</button>
+            </div>
           </div>
-          <div class="field compact-field">
-            <label for="sectionFlow${i}">Flujo (L/min)</label>
-            <input id="sectionFlow${i}" data-section-flow="${i}" type="number" min="0" max="8" step="0.1" placeholder="0.0" value="${flowValue}">
-          </div>
-        </div>
-      </section>
-    `;
-  }).join('');
+        `;
+      }).join('')}
+    </div>
+  `;
   updateScheduleStatus();
 }
 
@@ -261,10 +317,17 @@ function applyConfig(c) {
   $('waitMin').value = w.min;
   $('waitSec').value = w.sec;
   $('targetFlow').value = Number(c.targetFlow || 0).toFixed(1);
+  const loadedSections = c.flowSections || [];
   setDuration(Number(c.durationSeconds) === INF ? 'infinite' : c.durationSeconds || 300);
-  setSections(c.flowSections || []);
-  setFlowMode((c.flowSections || []).length ? 'periods' : 'fixed');
+  setSections(loadedSections);
+  setFlowMode(loadedSections.length ? 'periods' : 'fixed');
   updateScheduleStatus();
+}
+
+function setSystemState(cls) {
+  const el = $('systemSummary');
+  el.classList.remove('state-ok', 'state-warn', 'state-error');
+  if (cls) el.classList.add(cls);
 }
 
 async function loadStatus() {
@@ -274,19 +337,33 @@ async function loadStatus() {
     const s = await r.json();
     const rtcText = formatRtc(s.rtc);
     $('statusPills').innerHTML = `
-      <span class="pill ${s.sdReady ? 'ok' : 'bad'}">SD: ${s.sdStatus.toUpperCase()}</span>
+      <span class="pill ${s.sdReady ? 'ok' : 'bad'}">SD: ${s.sdStatus.toLowerCase()}</span>
       <span class="pill">RTC: ${rtcText}</span>
     `;
-    $('systemStateText').textContent = s.sdReady ? 'Listo para configurar' : 'Revisar tarjeta SD';
-    $('systemStateDetails').textContent = `SD: ${s.sdStatus.toUpperCase()} · RTC: ${rtcText}`;
+    $('systemStateText').textContent = s.sdReady ? 'Listo para configurar' : 'Revisar la tarjeta SD';
+    $('systemStateDetails').textContent = `SD: ${s.sdStatus.toLowerCase()} · RTC: ${rtcText}`;
+    setSystemState(s.sdReady ? 'state-ok' : 'state-warn');
+    if (s.defaults) applyConfig(s.defaults);
     $('setupStatus').textContent = 'Listo';
-    } catch (e) {
+  } catch (e) {
     console.warn('Error fetching status', e);
-    $('statusPills').innerHTML = '<span class="pill bad">Estado no disponible</span>';
-    $('systemStateText').textContent = 'Estado no disponible';
-    $('systemStateDetails').textContent = 'No se pudo leer el estado del sistema.';
+    $('statusPills').innerHTML = '<span class="pill bad">Sin conexión</span>';
+    $('systemStateText').textContent = 'No se pudo leer el estado';
+    $('systemStateDetails').textContent = 'Asegúrate de estar conectado a la red del dispositivo.';
+    setSystemState('state-error');
     $('setupStatus').textContent = 'Error de conexión';
   }
+}
+
+function updateLogStatBar() {
+  const bar = $('logStatBar');
+  if (!bar) return;
+  if (!logFiles.length) {
+    bar.innerHTML = '<span>Sin archivos en la SD</span>';
+    return;
+  }
+  const totalBytes = logFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+  bar.innerHTML = `<strong>${logFiles.length}</strong> archivo${logFiles.length !== 1 ? 's' : ''} <span class="log-stat-sep">·</span> <strong>${fmtSize(totalBytes)}</strong> en total`;
 }
 
 async function loadLogs() {
@@ -296,12 +373,15 @@ async function loadLogs() {
     const r = await fetch('/api/logs');
     if (!r.ok) {
       body.innerHTML = '<tr><td colspan="3" class="empty-table">SD no disponible</td></tr>';
+      logFiles = [];
+      updateLogStatBar();
       return;
     }
     const j = await r.json();
     logFiles = j.files || [];
+    updateLogStatBar();
     if (!logFiles.length) {
-      body.innerHTML = '<tr><td colspan="3" class="empty-table">No se encontraron archivos CSV</td></tr>';
+      body.innerHTML = '<tr><td colspan="3" class="empty-table">No hay archivos CSV en la SD</td></tr>';
       return;
     }
     body.innerHTML = logFiles.map(f => `
@@ -319,21 +399,23 @@ async function loadLogs() {
     `).join('');
   } catch (e) {
     body.innerHTML = '<tr><td colspan="3" class="empty-table">Error al listar registros</td></tr>';
+    logFiles = [];
+    updateLogStatBar();
   }
 }
 
 async function preview(name) {
-  $('preview').textContent = 'Cargando visualización de datos...';
+  $('preview').textContent = 'Cargando...';
   try {
     const r = await fetch('/api/logs/preview?file=' + encodeURIComponent(name));
     if (!r.ok) {
-      $('preview').textContent = 'No se pudo cargar la vista previa del archivo.';
+      $('preview').textContent = 'No se pudo cargar la vista previa.';
       return;
     }
     const j = await r.json();
     $('preview').textContent = [j.header].concat(j.rows || []).join('\n');
   } catch (e) {
-    $('preview').textContent = 'Error al procesar vista previa.';
+    $('preview').textContent = 'Error al procesar la vista previa.';
   }
 }
 
@@ -482,6 +564,25 @@ async function deletePreset(name) {
   }
 }
 
+function applySectionTemplate(name) {
+  const templates = {
+    constant: [{ durationSeconds: 300, targetFlow: Number($('targetFlow').value || 5) }],
+    stairs: [
+      { durationSeconds: 300, targetFlow: 2 },
+      { durationSeconds: 300, targetFlow: 4 },
+      { durationSeconds: 300, targetFlow: 6 }
+    ],
+    flush: [
+      { durationSeconds: 120, targetFlow: 8 },
+      { durationSeconds: 180, targetFlow: 5 },
+      { durationSeconds: 60, targetFlow: 0 }
+    ],
+    empty: []
+  };
+  setSections(templates[name] || []);
+  setFlowMode('periods');
+}
+
 // Event delegation listeners
 document.addEventListener('click', e => {
   const t = e.target.closest('button');
@@ -502,9 +603,30 @@ document.addEventListener('click', e => {
   if (t.dataset.loadPreset !== undefined) loadPreset(t.dataset.loadPreset);
   if (t.dataset.deletePreset !== undefined) deletePreset(t.dataset.deletePreset);
   
+  if (t.dataset.template !== undefined) {
+    applySectionTemplate(t.dataset.template);
+  }
   if (t.dataset.sectionRemove !== undefined) {
     flowSections.splice(Number(t.dataset.sectionRemove), 1);
     renderSections();
+  }
+  if (t.dataset.sectionDuplicate !== undefined) {
+    if (flowSections.length >= MAX_SECTIONS) {
+      notify('Máximo programable de ' + MAX_SECTIONS + ' tramos superado', 'error');
+    } else {
+      const idx = Number(t.dataset.sectionDuplicate);
+      flowSections.splice(idx + 1, 0, { ...flowSections[idx] });
+      renderSections();
+    }
+  }
+  if (t.dataset.sectionMove !== undefined) {
+    const idx = Number(t.dataset.sectionMove);
+    const next = idx + Number(t.dataset.direction || 0);
+    if (next >= 0 && next < flowSections.length) {
+      const [item] = flowSections.splice(idx, 1);
+      flowSections.splice(next, 0, item);
+      renderSections();
+    }
   }
   validateFlowConfig();
 });
@@ -513,16 +635,16 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.sectionMin !== undefined) {
     const idx = Number(t.dataset.sectionMin);
-    const minEl = t.value;
-    const secEl = document.querySelector(`[data-section-sec="${idx}"]`).value;
-    flowSections[idx].durationSeconds = !minEl && !secEl ? '' : minSecToSec(minEl, secEl);
+    const minInput = t;
+    const secInput = document.querySelector(`[data-section-sec="${idx}"]`);
+    flowSections[idx].durationSeconds = !minInput.value && !secInput.value ? '' : normalizeTimePair(minInput, secInput);
     updateScheduleStatus();
   }
   if (t.dataset.sectionSec !== undefined) {
     const idx = Number(t.dataset.sectionSec);
-    const minEl = document.querySelector(`[data-section-min="${idx}"]`).value;
-    const secEl = t.value;
-    flowSections[idx].durationSeconds = !minEl && !secEl ? '' : minSecToSec(minEl, secEl);
+    const minInput = document.querySelector(`[data-section-min="${idx}"]`);
+    const secInput = t;
+    flowSections[idx].durationSeconds = !minInput.value && !secInput.value ? '' : normalizeTimePair(minInput, secInput);
     updateScheduleStatus();
   }
   if (t.dataset.sectionFlow !== undefined) {
@@ -532,18 +654,36 @@ document.addEventListener('input', e => {
     if (card) {
       const value = flowSections[idx].targetFlow;
       const fill = Math.max(0, Math.min(100, Number(value || 0) / 8 * 100));
-      card.querySelector('.flow-card-head strong').textContent = value === '' ? 'Flujo sin definir' : Number(value).toFixed(1) + ' L/min';
-      card.querySelector('.flow-rail span').style.width = fill + '%';
+      const rail = card.querySelector('.flow-rail span');
+      if (rail) rail.style.width = fill + '%';
     }
     updateScheduleStatus();
   }
 });
 
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (t.dataset && (t.dataset.sectionMin !== undefined || t.dataset.sectionSec !== undefined)) renderSections();
+});
+
+function bindTimePair(minId, secId) {
+  const minInput = $(minId);
+  const secInput = $(secId);
+  [minInput, secInput].forEach(el => {
+    el.addEventListener('input', () => {
+      normalizeTimePair(minInput, secInput);
+      updateScheduleStatus();
+    });
+    el.addEventListener('blur', () => {
+      normalizeTimePair(minInput, secInput);
+      updateScheduleStatus();
+    });
+  });
+}
+
 // Manual form input bindings
-$('waitMin').addEventListener('input', updateScheduleStatus);
-$('waitSec').addEventListener('input', updateScheduleStatus);
-$('durMin').addEventListener('input', updateScheduleStatus);
-$('durSec').addEventListener('input', updateScheduleStatus);
+bindTimePair('waitMin', 'waitSec');
+bindTimePair('durMin', 'durSec');
 $('targetFlow').addEventListener('input', updateScheduleStatus);
 document.querySelectorAll('input[name="flowMode"]').forEach(el => el.addEventListener('change', updateFlowModeUI));
 

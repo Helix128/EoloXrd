@@ -52,7 +52,11 @@ inline void CaptureController::begin(Context &ctx)
     isEnd = false;
     ctx.session.capturedVolume = 0.0;
     ctx.resetMotorFlowController();
-    ctx.updateMotorThermalProtection();
+    bool motorOverheat = ctx.updateMotorThermalProtection();
+#if defined(FEATURE_FLOW_PID) && defined(EOLO_TARGET_DRON)
+    if (!motorOverheat)
+        ctx.components.motor.setPwmImmediate(FLOW_PID_BASE_PWM);
+#endif
     LOG_LN("Iniciando captura...");
 #ifdef FEATURE_MODEM
     ctx.components.modemService.warmUp();
