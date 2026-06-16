@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EOLO · Panel de Control</title>
+  <title>EOLO · Panel de control</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- HEADER & TOP NAVIGATION -->
+  <!-- header -->
   <header>
     <div class="header-container">
       <div class="left-header">
@@ -23,23 +23,23 @@
       
       <div class="right-header">
         <button type="button" id="themeToggle" class="btn-theme-toggle" aria-label="Cambiar tema">
-          <!-- Moon Icon (Dark Mode active default) -->
+          <!-- luna (modo oscuro activo por defecto) -->
           <svg class="icon-moon" viewBox="0 0 24 24"><path d="M12.3 22h-.1c-5.5 0-10-4.5-10-10 0-4.8 3.5-8.9 8.2-9.8.5-.1 1 .3.9.8-.1.4-.4.8-.4 1.2 0 4.4 3.6 8 8 8 .4 0 .8-.1 1.2-.4.5-.1.9.4.8.9-.9 4.7-5 8.3-9.8 8.3z"/></svg>
-          <!-- Sun Icon (Light Mode active) -->
+          <!-- sol (modo claro activo) -->
           <svg class="icon-sun hidden" viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.01c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>
         </button>
         <div class="status-pills" id="statusPills" aria-live="polite">
-          <span class="pill loading-pill">Cargando estado...</span>
+          <span class="pill loading-pill">Verificando...</span>
         </div>
       </div>
     </div>
   </header>
 
-  <!-- NAVIGATION DRAWER / DRAWER OVERLAY -->
+  <!-- overlay y drawer de nav -->
   <div id="drawerOverlay" class="drawer-overlay"></div>
   <nav id="navDrawer" class="nav-drawer">
     <div class="drawer-header">
-      <h2>Menú EOLO</h2>
+      <h2>EOLO XRD</h2>
       <button type="button" id="closeDrawer" class="btn-close-drawer" aria-label="Cerrar menú">
         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
@@ -69,7 +69,7 @@
     </div>
   </nav>
 
-  <!-- MAIN DASHBOARD CONTENT -->
+  <!-- contenido principal -->
   <main class="dashboard">
     <section class="system-summary panel" id="systemSummary" aria-live="polite">
       <div class="system-summary-main">
@@ -79,88 +79,107 @@
       <div class="summary-details" id="systemStateDetails">Verificando SD y reloj.</div>
     </section>
     
-    <!-- VIEW 1: CONFIGURATION -->
+    <!-- vista 1: configuración -->
     <section id="view-config" class="section-view panel active">
-      <h2>Parámetros de Captura</h2>
-      <p class="section-desc">Defina el tiempo de espera, la duración total y la velocidad de flujo para la captura del dron.</p>
+      <h2>Configuración de captura</h2>
+      <p class="section-desc">Ajusta la espera, duración y caudal antes de arrancar.</p>
       
       <form id="setupForm" class="form-vertical" aria-label="Configuración de captura">
         <input id="flowSchedule" name="flowSchedule" type="hidden" value="[]">
         
         <div class="field">
-          <span class="label">Espera antes de capturar</span>
+          <span class="label">Espera antes de arrancar</span>
           <div class="time-inputs-container">
             <div class="time-field">
               <input id="waitMin" type="number" min="0" max="1440" value="" placeholder="0" inputmode="numeric" aria-label="Minutos de espera">
-              <span class="time-unit">Min</span>
+              <span class="time-unit">min</span>
             </div>
             <div class="time-field-separator">:</div>
             <div class="time-field">
               <input id="waitSec" type="number" min="0" max="59" value="" placeholder="0" inputmode="numeric" aria-label="Segundos de espera">
-              <span class="time-unit">Seg</span>
+              <span class="time-unit">seg</span>
             </div>
           </div>
           <div class="preset-chips">
-            <button type="button" class="chip" data-wait="0">Instantáneo</button>
+            <button type="button" class="chip" data-wait="0">Sin espera</button>
             <button type="button" class="chip" data-wait="300">5 min</button>
             <button type="button" class="chip" data-wait="900">15 min</button>
           </div>
         </div>
 
-        <div class="field">
+        <div class="field flow-mode-field">
           <span class="label">Tipo de flujo</span>
           <div class="mode-toggle" role="radiogroup" aria-label="Tipo de flujo">
             <label class="mode-option">
               <input type="radio" name="flowMode" value="fixed" checked>
-              <span>Flujo fijo</span>
+              <span><strong>Flujo fijo</strong><small>Un caudal durante toda la captura</small></span>
             </label>
             <label class="mode-option">
               <input type="radio" name="flowMode" value="periods">
-              <span>Por tramos</span>
+              <span><strong>Perfil por tramos</strong><small>Caudal variable por etapas</small></span>
             </label>
           </div>
         </div>
 
-        <div class="field fixed-flow-field">
-          <label for="durationMode">Duración</label>
-          <select id="durationMode" name="durationMode">
-            <option value="finite">Tiempo fijo</option>
-            <option value="infinite">Sin límite de tiempo</option>
-          </select>
+        <div class="capture-summary" id="captureSummary" aria-live="polite">
+          <div><span>Espera</span><strong id="summaryWait">0 s</strong></div>
+          <div><span>Duración</span><strong id="summaryDuration">Sin definir</strong></div>
+          <div><span>Modo</span><strong id="summaryMode">Flujo fijo</strong></div>
+          <div><span>Flujo final</span><strong id="summaryFinalFlow">Sin definir</strong></div>
         </div>
 
-        <div class="field fixed-flow-field" id="durationField">
-          <span class="label">Duración de la captura</span>
-          <div class="time-inputs-container">
-            <div class="time-field">
-              <input id="durMin" type="number" min="0" max="1440" value="" placeholder="5" inputmode="numeric" aria-label="Minutos de duración">
-              <span class="time-unit">Min</span>
-            </div>
-            <div class="time-field-separator">:</div>
-            <div class="time-field">
-              <input id="durSec" type="number" min="0" max="59" value="" placeholder="0" inputmode="numeric" aria-label="Segundos de duración">
-              <span class="time-unit">Seg</span>
-            </div>
+        <div class="fixed-flow-field flow-config-group">
+          <div class="field">
+            <label for="durationMode">Duración total</label>
+            <select id="durationMode" name="durationMode">
+              <option value="finite">Tiempo fijo</option>
+              <option value="infinite">Sin límite de tiempo</option>
+            </select>
           </div>
-          <div class="preset-chips">
-            <button type="button" class="chip" data-duration="300">5 min</button>
-            <button type="button" class="chip" data-duration="900">15 min</button>
-            <button type="button" class="chip" data-duration="3600">1 hora</button>
-          </div>
-        </div>
 
-        <div class="field fixed-flow-field">
-          <label for="targetFlow">Flujo fijo (L/min)</label>
-          <input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1" value="" placeholder="5.0" inputmode="decimal">
+          <div class="field" id="durationField">
+            <span class="label">Duración de la captura</span>
+            <div class="time-inputs-container">
+              <div class="time-field">
+                <input id="durMin" type="number" min="0" max="1440" value="" placeholder="5" inputmode="numeric" aria-label="Minutos de duración">
+                <span class="time-unit">min</span>
+              </div>
+              <div class="time-field-separator">:</div>
+              <div class="time-field">
+                <input id="durSec" type="number" min="0" max="59" value="" placeholder="0" inputmode="numeric" aria-label="Segundos de duración">
+                <span class="time-unit">seg</span>
+              </div>
+            </div>
+            <div class="preset-chips">
+              <button type="button" class="chip" data-duration="300">5 min</button>
+              <button type="button" class="chip" data-duration="900">15 min</button>
+              <button type="button" class="chip" data-duration="3600">1 hora</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="targetFlow">Flujo fijo (L/min)</label>
+            <input id="targetFlow" name="targetFlow" type="number" min="0" max="8" step="0.1" value="" placeholder="5.0" inputmode="decimal">
+          </div>
         </div>
 
         <div class="period-flow-fields hidden" id="periodFlowFields">
+          <div class="period-explain">
+            <strong>Duración calculada automáticamente</strong>
+            <span>En perfil por tramos la duración total es la suma de todos los tramos — no se puede poner sin límite porque el controlador necesita una secuencia finita.</span>
+          </div>
+          <div class="template-actions" aria-label="Plantillas de perfil">
+            <button type="button" class="chip" data-template="constant">Constante 5 min</button>
+            <button type="button" class="chip" data-template="stairs">Escalera 2→4→6</button>
+            <button type="button" class="chip" data-template="flush">Limpieza / flush</button>
+            <button type="button" class="chip" data-template="empty">Vacío</button>
+          </div>
           <div class="period-actions">
             <button type="button" class="btn-secondary btn-sm" id="addSection">Agregar tramo</button>
             <button type="button" class="btn-secondary btn-sm" id="clearSections">Borrar tramos</button>
           </div>
           <div class="sections-list" id="sectionsBody">
-            <div class="sections-empty">Sin tramos. Agregue uno para definir la secuencia.</div>
+            <div class="sections-empty"><strong>Sin tramos</strong><span>Agrega uno o usa una plantilla para armar la secuencia.</span></div>
           </div>
           <div class="profile-summary" id="scheduleStatus">Flujo fijo sin definir.</div>
         </div>
@@ -172,18 +191,18 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit" id="confirmBtn" class="btn-primary">Confirmar e Iniciar Captura</button>
+          <button type="submit" id="confirmBtn" class="btn-primary">Iniciar captura</button>
         </div>
       </form>
     </section>
 
-    <!-- VIEW 2: PRESETS -->
+    <!-- vista 2: presets -->
     <section id="view-presets" class="section-view panel">
       <div class="panel-header">
-        <h2>Presets Guardados</h2>
-        <button type="button" class="btn-secondary btn-sm" id="refreshPresets">Actualizar Lista</button>
+        <h2>Presets guardados</h2>
+        <button type="button" class="btn-secondary btn-sm" id="refreshPresets">Refrescar</button>
       </div>
-      <p class="section-desc">Cargue configuraciones de captura preestablecidas almacenadas en la memoria del dispositivo.</p>
+      <p class="section-desc">Perfiles guardados en la SD. Carga uno para arrancar rápido.</p>
       
       <div class="presets-container">
         <div class="presets-grid" id="presetsGrid">
@@ -191,25 +210,29 @@
         </div>
         
         <div class="preset-save-box">
-          <h3>Guardar configuración actual</h3>
+          <h3>Guardar como preset</h3>
           <div class="preset-save-fields">
-            <input id="presetName" type="text" maxlength="23" placeholder="Nombre de preset (ej: bano_1)" aria-label="Nombre del preset">
-            <button type="button" id="savePreset">Guardar Preset</button>
+            <input id="presetName" type="text" maxlength="23" placeholder="Nombre del preset (ej: bano_1)" aria-label="Nombre del preset">
+            <button type="button" id="savePreset">Guardar</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- VIEW 3: FILE EXPLORER & PREVIEW -->
+    <!-- vista 3: registros CSV -->
     <section id="view-logs" class="section-view panel">
       <div class="panel-header">
-        <h2>Registros CSV en Tarjeta SD</h2>
+        <h2>Registros CSV en la SD</h2>
         <div class="actions">
-          <button type="button" class="btn-secondary btn-sm" id="refreshLogs">Actualizar Lista</button>
-          <button type="button" class="btn-secondary btn-sm" id="downloadAll">Descargar Todo</button>
+          <button type="button" class="btn-secondary btn-sm" id="refreshLogs">Refrescar</button>
+          <button type="button" class="btn-secondary btn-sm" id="downloadAll">Descargar todo</button>
         </div>
       </div>
-      <p class="section-desc">Visualice y descargue los archivos de registro de captura almacenados en la tarjeta SD.</p>
+      <p class="section-desc">Archivos CSV guardados en la SD. Previsualiza o descarga los que necesites.</p>
+
+      <div class="log-stat-bar" id="logStatBar" aria-live="polite">
+        <span>—</span>
+      </div>
       
       <div class="table-container mobile-list">
         <table>
@@ -229,9 +252,9 @@
       </div>
 
       <div class="preview-panel">
-        <h2>Previsualización de Datos</h2>
+        <h2>Vista previa</h2>
         <div class="preview-container">
-          <pre id="preview" class="preview-box">Seleccione un archivo CSV del explorador superior para previsualizar los últimos registros.</pre>
+          <pre id="preview" class="preview-box">← Selecciona un archivo para ver las últimas filas.</pre>
         </div>
       </div>
     </section>

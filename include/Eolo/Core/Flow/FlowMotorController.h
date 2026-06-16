@@ -26,6 +26,9 @@ struct FlowPidConfig
     float kd = 6.0f;
     uint32_t maxDtMs = 1000;
     uint32_t sensorStaleMs = 1200;
+    float discoveryThresholdLpm = 1.0f;
+    int discoveryStepPwm = 100;
+    uint32_t discoveryIntervalMs = 100;
 };
 
 struct FlowPidStatus
@@ -51,6 +54,9 @@ struct FlowPidStatus
     float estimatedGain = 0.0f;
     float confidence = 0.0f;
     bool modelValid = false;
+    bool discovering = false;
+    int discoveredPwm = -1;
+    float discoveryThresholdLpm = 0.0f;
 };
 
 struct FlowMotorInput
@@ -103,6 +109,12 @@ public:
             return false;
         if (config.sensorStaleMs < config.intervalMs || config.sensorStaleMs > 30000)
             return false;
+        if (isnan(config.discoveryThresholdLpm) || config.discoveryThresholdLpm < 0.0f || config.discoveryThresholdLpm > 5.0f)
+            return false;
+        if (config.discoveryStepPwm <= 0 || config.discoveryStepPwm > maxPwm)
+            return false;
+        if (config.discoveryIntervalMs < 50 || config.discoveryIntervalMs > config.intervalMs)
+            return false;
         return true;
     }
 
@@ -137,6 +149,14 @@ public:
         _lastDtSeconds = 0.0f;
         _fault = FLOW_PID_FAULT_NONE;
         _timingOk = true;
+        _discovering = false;
+        _discoveredPwm = -1;
+        _discoveryThresholdLpm = 0.0f;
+    }
+
+    bool isInitialized() const
+    {
+        return _initialized;
     }
 
     FlowMotorOutput update(const FlowMotorInput &input, const FlowPidConfig &config)
@@ -147,7 +167,8 @@ public:
         output.fault = _fault;
         output.smartStatus = _smartStatus;
 
-        if (_initialized && input.nowMs - _lastUpdateMs < config.intervalMs)
+        uint32_t updateIntervalMs = _discovering ? config.discoveryIntervalMs : config.intervalMs;
+        if (_initialized && input.nowMs - _lastUpdateMs < updateIntervalMs)
             return output;
 
         if (!_initialized || fabsf(_targetFlow - input.targetFlow) > 0.001f)
@@ -159,6 +180,9 @@ public:
                 _smart.resetController(true);
             _smartStatus = SmartFlowStatus();
             _targetFlow = input.targetFlow;
+            _discovering = config.discoveryThresholdLpm > 0.0f && input.targetFlow > config.discoveryThresholdLpm;
+            _discoveredPwm = -1;
+            _discoveryThresholdLpm = config.discoveryThresholdLpm;
             _lastUpdateMs = input.nowMs;
             _currentPwm = input.currentPwm;
             output.updated = true;
@@ -175,6 +199,9 @@ public:
             _fault = input.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
             _lastUpdateMs = input.nowMs;
             _smart.resetController(true);
+            _discovering = config.discoveryThresholdLpm > 0.0f && input.targetFlow > config.discoveryThresholdLpm;
+            _discoveredPwm = -1;
+            _discoveryThresholdLpm = config.discoveryThresholdLpm;
             output.fault = _fault;
             return output;
         }
@@ -194,6 +221,41 @@ public:
         }
         _fault = FLOW_PID_FAULT_NONE;
         _smart.setTune(tuneFromConfig(config));
+
+        if (_discovering)
+        {
+            if (input.measuredFlow >= config.discoveryThresholdLpm)
+            {
+                _discovering = false;
+                _discoveredPwm = input.currentPwm;
+                _smart.resetController(true);
+            }
+            else
+            {
+                int nextPwm = input.currentPwm + config.discoveryStepPwm;
+                if (nextPwm > input.maxPwm)
+                    nextPwm = input.maxPwm;
+                _currentPwm = nextPwm;
+                _filteredFlow = input.measuredFlow;
+                _smartStatus = SmartFlowStatus();
+                _smartStatus.pwm = _currentPwm;
+                _smartStatus.rawFlow = input.measuredFlow;
+                _smartStatus.fastFlow = input.measuredFlow;
+                _smartStatus.slowFlow = input.measuredFlow;
+                _smartStatus.errorFast = input.targetFlow - input.measuredFlow;
+                _smartStatus.errorSlow = input.targetFlow - input.measuredFlow;
+                _smartStatus.step = config.discoveryStepPwm;
+                _smartStatus.mode = SMART_FLOW_MIN_ACTIVE_BOOST;
+
+                output.updated = true;
+                output.initialized = true;
+                output.pwm = _currentPwm;
+                output.fault = _fault;
+                output.smartStatus = _smartStatus;
+                return output;
+            }
+        }
+
         _smartStatus = _smart.update(input.nowMs, input.currentPwm, input.targetFlow, input.measuredFlow, dtSeconds, input.maxPwm);
         _filteredFlow = _smartStatus.fastFlow;
         _currentPwm = _smartStatus.pwm;
@@ -230,6 +292,9 @@ public:
         status.estimatedGain = _smartStatus.estimatedGain;
         status.confidence = _smartStatus.confidence;
         status.modelValid = _smartStatus.modelValid;
+        status.discovering = _discovering;
+        status.discoveredPwm = _discoveredPwm;
+        status.discoveryThresholdLpm = _discoveryThresholdLpm;
         return status;
     }
 
@@ -245,6 +310,9 @@ private:
     float _lastDtSeconds = 0.0f;
     FlowPidFault _fault = FLOW_PID_FAULT_NONE;
     bool _timingOk = true;
+    bool _discovering = false;
+    int _discoveredPwm = -1;
+    float _discoveryThresholdLpm = 0.0f;
 };
 
 #endif

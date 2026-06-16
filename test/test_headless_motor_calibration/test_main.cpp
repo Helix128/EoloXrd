@@ -1,12 +1,18 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "Data/MotorCaptureControl.h"
+#include "Data/Context.h"
 #include <Eolo/Core/Flow/SmartFlowController.h>
 
 void test_default_pid_config_is_valid()
 {
     FlowPidConfig config;
     TEST_ASSERT_TRUE(MotorCaptureControl::validatePidConfig(config));
+}
+
+void test_flow_pid_base_pwm_is_1660()
+{
+    TEST_ASSERT_EQUAL_INT(1660, FLOW_PID_BASE_PWM);
 }
 
 void test_rejects_invalid_pid_timing()
@@ -61,6 +67,72 @@ void test_flow_pid_status_exposes_smart_model_fields()
     TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, status.fault);
     TEST_ASSERT_TRUE(status.timingOk);
     TEST_ASSERT_FALSE(status.modelValid);
+    TEST_ASSERT_FALSE(status.discovering);
+    TEST_ASSERT_EQUAL_INT(-1, status.discoveredPwm);
+}
+
+void test_flow_motor_controller_discovery_uses_fast_interval()
+{
+    FlowMotorController controller;
+    FlowPidConfig config;
+    config.intervalMs = 800;
+    config.discoveryIntervalMs = 100;
+    config.discoveryStepPwm = 100;
+    config.discoveryThresholdLpm = 1.0f;
+
+    FlowMotorInput input;
+    input.nowMs = 100;
+    input.currentPwm = 1000;
+    input.targetFlow = 5.0f;
+    input.measuredFlow = 0.0f;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.maxPwm = MAX_PWM;
+    controller.update(input, config);
+
+    input.nowMs = 200;
+    FlowMotorOutput output = controller.update(input, config);
+    FlowPidStatus status = controller.status(true, false, 5.0f);
+
+    TEST_ASSERT_TRUE(output.updated);
+    TEST_ASSERT_EQUAL_INT(1100, output.pwm);
+    TEST_ASSERT_TRUE(status.discovering);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, status.discoveryThresholdLpm);
+}
+
+void test_flow_motor_controller_finishes_discovery_at_threshold()
+{
+    FlowMotorController controller;
+    FlowPidConfig config;
+    config.intervalMs = 800;
+    config.discoveryIntervalMs = 100;
+    config.discoveryStepPwm = 100;
+    config.discoveryThresholdLpm = 1.0f;
+
+    FlowMotorInput input;
+    input.nowMs = 100;
+    input.currentPwm = 1000;
+    input.targetFlow = 5.0f;
+    input.measuredFlow = 0.0f;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.maxPwm = MAX_PWM;
+    controller.update(input, config);
+
+    input.nowMs = 200;
+    FlowMotorOutput discoveryOutput = controller.update(input, config);
+    TEST_ASSERT_TRUE(discoveryOutput.updated);
+    TEST_ASSERT_TRUE(controller.status(true, false, 5.0f).discovering);
+
+    input.nowMs = 300;
+    input.currentPwm = discoveryOutput.pwm;
+    input.measuredFlow = 1.1f;
+    FlowMotorOutput pidOutput = controller.update(input, config);
+    FlowPidStatus status = controller.status(true, false, 5.0f);
+
+    TEST_ASSERT_TRUE(pidOutput.updated);
+    TEST_ASSERT_FALSE(status.discovering);
+    TEST_ASSERT_EQUAL_INT(discoveryOutput.pwm, status.discoveredPwm);
 }
 
 void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
@@ -121,6 +193,19 @@ void test_flow_motor_controller_caps_dt_after_invalid_sensor()
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, status.dtSeconds);
 }
 
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
+void test_drone_capture_keeps_base_pwm_until_pid_has_fresh_flow()
+{
+    Context ctx;
+    ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
+    ctx.components.motor.setPwmImmediate(FLOW_PID_BASE_PWM);
+
+    ctx.updateMotors();
+
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_BASE_PWM, ctx.components.motor.getMotorPwm(0));
+}
+#endif
+
 void test_smart_flow_controller_uses_bounded_static_memory()
 {
     TEST_ASSERT_TRUE(sizeof(SmartFlowController) < 1024);
@@ -131,13 +216,19 @@ void setup()
     delay(1000);
     UNITY_BEGIN();
     RUN_TEST(test_default_pid_config_is_valid);
+    RUN_TEST(test_flow_pid_base_pwm_is_1660);
     RUN_TEST(test_rejects_invalid_pid_timing);
     RUN_TEST(test_rejects_invalid_pid_gains);
     RUN_TEST(test_rejects_invalid_pid_filter);
     RUN_TEST(test_rejects_invalid_pid_fault_timing_config);
     RUN_TEST(test_flow_pid_status_exposes_smart_model_fields);
+    RUN_TEST(test_flow_motor_controller_discovery_uses_fast_interval);
+    RUN_TEST(test_flow_motor_controller_finishes_discovery_at_threshold);
     RUN_TEST(test_flow_motor_controller_rejects_stale_sensor_without_pwm_update);
     RUN_TEST(test_flow_motor_controller_caps_dt_after_invalid_sensor);
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
+    RUN_TEST(test_drone_capture_keeps_base_pwm_until_pid_has_fresh_flow);
+#endif
     RUN_TEST(test_smart_flow_controller_uses_bounded_static_memory);
     UNITY_END();
 }

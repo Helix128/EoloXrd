@@ -49,6 +49,7 @@ public:
 
 #include "../../Config.h"
 #include "../Context.h"
+#include "LogSchema.h"
 
 inline void LogService::logTaskWorker(void *arg)
 {
@@ -236,8 +237,36 @@ inline bool LogService::logData(Context &ctx)
     dateStr.replace(":", "_");
     dateStr.replace("-", "_");
 
+    String header = LogSchema::header(ctx);
     String filename = String(logsDir) + "/log_" + dateStr + ".csv";
     bool fileExists = SD.exists(filename.c_str());
+
+    for (int schemaAttempt = 0; fileExists; ++schemaAttempt)
+    {
+        File existingFile = SD.open(filename.c_str(), FILE_READ);
+        if (!existingFile)
+        {
+            markSdFailed();
+            LOG_LN("No se pudo abrir el archivo para validar header");
+            return false;
+        }
+
+        String existingHeader = existingFile.readStringUntil('\n');
+        existingHeader.trim();
+        existingFile.close();
+        if (existingHeader == header)
+            break;
+
+        if (schemaAttempt >= 98)
+        {
+            markSdFailed();
+            LOG_LN("No se encontro nombre disponible para schema CSV actual");
+            return false;
+        }
+
+        filename = String(logsDir) + "/log_" + dateStr + "_schema" + String(schemaAttempt + 2) + ".csv";
+        fileExists = SD.exists(filename.c_str());
+    }
 
     if (!fileExists)
     {
@@ -249,11 +278,7 @@ inline bool LogService::logData(Context &ctx)
             return false;
         }
 
-#ifdef FEATURE_ANEMOMETER
-        file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,ntc_temperature,battery_pct");
-#else
-        file.println("time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,ntc_temperature,battery_pct");
-#endif
+        file.println(header);
         file.close();
 
         LOG_LN("Archivo de log creado: " + filename);
@@ -269,89 +294,11 @@ inline bool LogService::logData(Context &ctx)
         return false;
     }
 
-    file.print(ctx.components.rtc.now().timestamp());
-    file.print(",");
-
-    FlowData flowData;
-    if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
-        flowData.flow = -1.0;
-    file.print(flowData.flow);
-    file.print(",");
-
-    file.print(ctx.session.targetFlow);
-    file.print(",");
-    file.print(ctx.components.bme.temperature);
-    file.print(",");
-    file.print(ctx.components.bme.humidity);
-    file.print(",");
-    file.print(ctx.components.bme.pressure);
-    file.print(",");
-
-    float pm1 = 0.0f;
-    float pm25 = 0.0f;
-    float pm10 = 0.0f;
-#ifdef FEATURE_PLANTOWER
-    PlantowerData ptowerData;
-    (void)ctx.components.plantower.getData(ptowerData);
-    pm1 = ptowerData.pm1_0;
-    pm25 = ptowerData.pm2_5;
-    pm10 = ptowerData.pm10_0;
-#endif
-
-    file.print(pm1);
-    file.print(",");
-    file.print(pm25);
-    file.print(",");
-    file.print(pm10);
-    file.print(",");
-
-#ifdef FEATURE_ANEMOMETER
-    AnemometerData anemoData;
-    if (!ctx.components.anemometer.getData(anemoData) || !anemoData.valid)
-        LOG_LN("Error al leer anemómetro para log");
-    file.print(anemoData.speed);
-    file.print(",");
-    file.print(anemoData.direction);
-    file.print(",");
-#endif
-
-    float ntcTemperature = -1.0f;
-#ifdef FEATURE_NTC
-    NTCData ntcData;
-    if (ctx.components.ntc.getData(ntcData))
-        ntcTemperature = ntcData.temperature;
-#endif
-
-    file.print(ntcTemperature);
-    file.print(",");
-    file.print(ctx.components.battery.getPct());
-    file.println();
+    LogSchema::writeRow(file, ctx);
 
     if (EoloDebug::verboseLogsEnabled())
     {
-        LOG_LN("Datos registrados en SD: ");
-        LOG_OUT(" Time: ");
-        LOG_OUT_LN(ctx.components.rtc.now().timestamp());
-        LOG_OUT(" Flow: ");
-        LOG_OUT_LN(flowData.flow);
-        LOG_OUT(" Flow_target: ");
-        LOG_OUT_LN(ctx.session.targetFlow);
-        LOG_OUT(" Temp: ");
-        LOG_OUT_LN(ctx.components.bme.temperature);
-        LOG_OUT(" Hum: ");
-        LOG_OUT_LN(ctx.components.bme.humidity);
-        LOG_OUT(" Pres: ");
-        LOG_OUT_LN(ctx.components.bme.pressure);
-        LOG_OUT(" PM1: ");
-        LOG_OUT_LN(pm1);
-        LOG_OUT(" PM2.5: ");
-        LOG_OUT_LN(pm25);
-        LOG_OUT(" PM10: ");
-        LOG_OUT_LN(pm10);
-        LOG_OUT(" NTC: ");
-        LOG_OUT_LN(ntcTemperature);
-        LOG_OUT(" Battery: ");
-        LOG_OUT_LN(ctx.components.battery.getPct());
+        LOG_LN("Datos registrados en SD con schema: " + header);
     }
     file.close();
 

@@ -25,7 +25,10 @@ class MotorCaptureControl
         FLOW_PID_MIN_ACTIVE,
         FLOW_PID_KD,
         FLOW_PID_MAX_DT_MS,
-        FLOW_PID_SENSOR_STALE_MS
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
     };
     bool pidTestRunning = false;
     float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
@@ -194,7 +197,14 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
         LOG_OUT(" alpha=");
         LOG_OUT(pidCfg.filterAlpha, 2);
         LOG_OUT(" minActive=");
-        LOG_OUT_LN(pidCfg.minActive, 2);
+        LOG_OUT(pidCfg.minActive, 2);
+        LOG_OUT(" discovery=");
+        LOG_OUT(pidCfg.discoveryThresholdLpm, 2);
+        LOG_OUT("L/min step=");
+        LOG_OUT(pidCfg.discoveryStepPwm);
+        LOG_OUT(" interval=");
+        LOG_OUT(pidCfg.discoveryIntervalMs);
+        LOG_OUT_LN("ms");
         pidConfigLogged = true;
     }
 
@@ -202,8 +212,13 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     bool flowFresh = flowReadValid && flowData.ageMs <= pidCfg.sensorStaleMs;
     if (!flowFresh)
     {
+        bool pidWasInitialized = pid.isInitialized();
         resetFlowController();
+#if defined(EOLO_TARGET_DRON)
+        ctx.components.motor.setPwmImmediate(pidWasInitialized ? 0 : FLOW_PID_BASE_PWM);
+#else
         ctx.components.motor.setPwmImmediate(0);
+#endif
         static uint32_t lastSensorFaultLogMs = 0;
         if (nowMs - lastSensorFaultLogMs >= 5000)
         {
