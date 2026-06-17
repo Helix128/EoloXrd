@@ -94,7 +94,7 @@ public:
             minutesLeft,
             secondsLeftRemainder
         );
-        // Calculate widths for centering
+        // Calcular anchos para centrado
         ctx.u8g2.setFont(FONT_BOLD_L);
         int width_start = ctx.u8g2.getStrWidth(timeStr);
         int width_remain = ctx.u8g2.getStrWidth(timeLeftStr);
@@ -104,7 +104,7 @@ public:
         int left_time_x = start_x;
         int right_time_x = start_x + width_start + space;
 
-        // Calculate label positions
+        // Calcular posición de etiquetas
         ctx.u8g2.setFont(FONT_REGULAR_S);
         int width_label_start = ctx.u8g2.getStrWidth("Inicio");
         int width_label_remain = ctx.u8g2.getStrWidth("Restante");

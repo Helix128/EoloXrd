@@ -371,7 +371,7 @@ private:
     _server.sendContent(""); // end chunked stream
   }
 
-  // Fill provided buffer 'out' with the safe log path. Returns true on success.
+  // Rellena el buffer 'out' con la ruta segura del log. Retorna true si el nombre es válido.
   bool safeLogPathFromRequest(char *out, size_t outLen)
   {
     // Note: WebServer::arg returns a String; fetch minimally and use c_str().

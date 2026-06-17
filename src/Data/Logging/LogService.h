@@ -305,7 +305,6 @@ inline bool LogService::logData(Context &ctx)
     if (EoloDebug::verboseLogsEnabled())
     {
         LOG_LN("Archivo de log escrito!");
-        LOG_LN("Log completado con éxito.");
     }
     sdStatus = SD_OK;
     return true;

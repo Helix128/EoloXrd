@@ -302,7 +302,6 @@ public:
     bool ok = true;
     bool powerLost = false;
 
-    // Inicializa el RTC interno del ESP32. Siempre devuelve true.
     bool begin()
     {
         // El RTC interno no requiere inicialización especial.
