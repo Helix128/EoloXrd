@@ -95,6 +95,9 @@ void test_flow_pid_responsive_preset_limits_pwm_growth()
     config.filterAlpha = 0.35f;
     config.deadband = 0.15f;
     config.minActive = 0.30f;
+    config.discoveryThresholdLpm = 0.0f;
+    config.discoveryStepPwm = 100;
+    config.discoveryIntervalMs = 100;
 
     FlowMotorController controller;
     FlowMotorInput input;
@@ -132,6 +135,9 @@ void test_flow_pid_accepts_delayed_sample_under_stale_limit()
     config.filterAlpha = 0.35f;
     config.deadband = 0.15f;
     config.minActive = 0.30f;
+    config.discoveryThresholdLpm = 0.0f;
+    config.discoveryStepPwm = 100;
+    config.discoveryIntervalMs = 100;
 
     FlowMotorController controller;
     FlowMotorInput input;

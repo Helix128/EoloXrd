@@ -6,7 +6,22 @@
 
 void test_default_pid_config_is_valid()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     TEST_ASSERT_TRUE(MotorCaptureControl::validatePidConfig(config));
 }
 
@@ -17,14 +32,44 @@ void test_flow_pid_base_pwm_is_1660()
 
 void test_rejects_invalid_pid_timing()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.intervalMs = 50;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 }
 
 void test_rejects_invalid_pid_gains()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.kp = -1.0f;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -39,7 +84,22 @@ void test_rejects_invalid_pid_gains()
 
 void test_rejects_invalid_pid_filter()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.filterAlpha = 0.0f;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -49,7 +109,22 @@ void test_rejects_invalid_pid_filter()
 
 void test_rejects_invalid_pid_fault_timing_config()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.maxDtMs = config.intervalMs - 1;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -74,7 +149,22 @@ void test_flow_pid_status_exposes_smart_model_fields()
 void test_flow_motor_controller_discovery_uses_fast_interval()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.intervalMs = 800;
     config.discoveryIntervalMs = 100;
     config.discoveryStepPwm = 100;
@@ -103,7 +193,22 @@ void test_flow_motor_controller_discovery_uses_fast_interval()
 void test_flow_motor_controller_finishes_discovery_at_threshold()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     config.intervalMs = 800;
     config.discoveryIntervalMs = 100;
     config.discoveryStepPwm = 100;
@@ -138,7 +243,22 @@ void test_flow_motor_controller_finishes_discovery_at_threshold()
 void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     FlowMotorInput input;
     input.nowMs = 100;
     input.currentPwm = 500;
@@ -162,7 +282,22 @@ void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
 void test_flow_motor_controller_caps_dt_after_invalid_sensor()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = {
+        FLOW_PID_INTERVAL_MS,
+        FLOW_PID_DEADBAND,
+        FLOW_PID_KP,
+        FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT,
+        FLOW_PID_MAX_STEP,
+        FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE,
+        FLOW_PID_KD,
+        FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS,
+        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
+        FLOW_PID_DISCOVERY_STEP,
+        FLOW_PID_DISCOVERY_INTERVAL_MS
+    };
     FlowMotorInput input;
     input.nowMs = 100;
     input.currentPwm = 500;

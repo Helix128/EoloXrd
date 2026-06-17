@@ -13,22 +13,50 @@ enum FlowPidFault : uint8_t
     FLOW_PID_FAULT_TIMING = 3
 };
 
+// Cotas de validación de FlowPidConfig.
+// Los valores reflejan los límites físicos del actuador y del lazo de control.
+namespace FlowPidLimits
+{
+    // Intervalo de ciclo: mínimo útil del sensor / máximo seguro sin watchdog
+    static constexpr uint32_t INTERVAL_MIN_MS            = 100;
+    static constexpr uint32_t INTERVAL_MAX_MS            = 10000;
+    // Deadband en L/min: >5 supera el rango nominal del caudalímetro
+    static constexpr float    DEADBAND_MAX                = 5.0f;
+    // Kp: >1000 satura el actuador con error mínimo
+    static constexpr float    KP_MAX                      = 1000.0f;
+    // Ki: >200 produce wind-up violento en el rango PWM disponible
+    static constexpr float    KI_MAX                      = 200.0f;
+    // integralLimit: acumulador interno del PID; >500 excede la resolución del actuador
+    static constexpr float    INTEGRAL_LIMIT_MAX          = 500.0f;
+    // Kd: >500 amplifica el ruido del sensor hasta saturación
+    static constexpr float    KD_MAX                      = 500.0f;
+    // minActive en L/min: >5 L/min no tiene sentido como umbral de activación
+    static constexpr float    MIN_ACTIVE_MAX              = 5.0f;
+    // maxDtMs / sensorStaleMs: ventana máxima antes de considerar el ciclo inválido
+    static constexpr uint32_t MAX_DT_MAX_MS               = 30000;
+    static constexpr uint32_t SENSOR_STALE_MAX_MS         = 30000;
+    // discoveryThresholdLpm: umbral de flujo para activar discovery; >5 supera rango nominal
+    static constexpr float    DISCOVERY_THRESHOLD_MAX_LPM = 5.0f;
+    // discoveryIntervalMs: intervalo mínimo entre pasos de discovery
+    static constexpr uint32_t DISCOVERY_INTERVAL_MIN_MS   = 50;
+}
+
 struct FlowPidConfig
 {
-    uint32_t intervalMs = 100;
-    float deadband = 0.08f;
-    float kp = 80.0f;
-    float ki = 8.0f;
-    float integralLimit = 30.0f;
-    int maxStep = 32;
-    float filterAlpha = 0.30f;
-    float minActive = 0.20f;
-    float kd = 6.0f;
-    uint32_t maxDtMs = 1000;
-    uint32_t sensorStaleMs = 1200;
-    float discoveryThresholdLpm = 1.0f;
-    int discoveryStepPwm = 100;
-    uint32_t discoveryIntervalMs = 100;
+    uint32_t intervalMs;
+    float deadband;
+    float kp;
+    float ki;
+    float integralLimit;
+    int maxStep;
+    float filterAlpha;
+    float minActive;
+    float kd;
+    uint32_t maxDtMs;
+    uint32_t sensorStaleMs;
+    float discoveryThresholdLpm;
+    int discoveryStepPwm;
+    uint32_t discoveryIntervalMs;
 };
 
 struct FlowPidStatus
@@ -87,33 +115,33 @@ class FlowMotorController
 public:
     static bool validateConfig(const FlowPidConfig &config, int maxPwm)
     {
-        if (config.intervalMs < 100 || config.intervalMs > 10000)
+        if (config.intervalMs < FlowPidLimits::INTERVAL_MIN_MS || config.intervalMs > FlowPidLimits::INTERVAL_MAX_MS)
             return false;
-        if (isnan(config.deadband) || config.deadband < 0.0f || config.deadband > 5.0f)
+        if (isnan(config.deadband) || config.deadband < 0.0f || config.deadband > FlowPidLimits::DEADBAND_MAX)
             return false;
-        if (isnan(config.kp) || config.kp < 0.0f || config.kp > 1000.0f)
+        if (isnan(config.kp) || config.kp < 0.0f || config.kp > FlowPidLimits::KP_MAX)
             return false;
-        if (isnan(config.ki) || config.ki < 0.0f || config.ki > 200.0f)
+        if (isnan(config.ki) || config.ki < 0.0f || config.ki > FlowPidLimits::KI_MAX)
             return false;
-        if (isnan(config.integralLimit) || config.integralLimit < 0.0f || config.integralLimit > 500.0f)
+        if (isnan(config.integralLimit) || config.integralLimit < 0.0f || config.integralLimit > FlowPidLimits::INTEGRAL_LIMIT_MAX)
             return false;
-        if (isnan(config.kd) || config.kd < 0.0f || config.kd > 500.0f)
+        if (isnan(config.kd) || config.kd < 0.0f || config.kd > FlowPidLimits::KD_MAX)
             return false;
         if (config.maxStep <= 0 || config.maxStep > maxPwm)
             return false;
         if (isnan(config.filterAlpha) || config.filterAlpha <= 0.0f || config.filterAlpha > 1.0f)
             return false;
-        if (isnan(config.minActive) || config.minActive < 0.0f || config.minActive > 5.0f)
+        if (isnan(config.minActive) || config.minActive < 0.0f || config.minActive > FlowPidLimits::MIN_ACTIVE_MAX)
             return false;
-        if (config.maxDtMs < config.intervalMs || config.maxDtMs > 30000)
+        if (config.maxDtMs < config.intervalMs || config.maxDtMs > FlowPidLimits::MAX_DT_MAX_MS)
             return false;
-        if (config.sensorStaleMs < config.intervalMs || config.sensorStaleMs > 30000)
+        if (config.sensorStaleMs < config.intervalMs || config.sensorStaleMs > FlowPidLimits::SENSOR_STALE_MAX_MS)
             return false;
-        if (isnan(config.discoveryThresholdLpm) || config.discoveryThresholdLpm < 0.0f || config.discoveryThresholdLpm > 5.0f)
+        if (isnan(config.discoveryThresholdLpm) || config.discoveryThresholdLpm < 0.0f || config.discoveryThresholdLpm > FlowPidLimits::DISCOVERY_THRESHOLD_MAX_LPM)
             return false;
         if (config.discoveryStepPwm <= 0 || config.discoveryStepPwm > maxPwm)
             return false;
-        if (config.discoveryIntervalMs < 50 || config.discoveryIntervalMs > config.intervalMs)
+        if (config.discoveryIntervalMs < FlowPidLimits::DISCOVERY_INTERVAL_MIN_MS || config.discoveryIntervalMs > config.intervalMs)
             return false;
         return true;
     }
