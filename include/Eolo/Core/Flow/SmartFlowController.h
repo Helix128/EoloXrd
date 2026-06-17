@@ -382,19 +382,10 @@ public:
         SmartFlowMode mode = SMART_FLOW_PID_ONLY;
         int pwmFF = predictPwmForFlow(currentPwm, targetFlow, fastFlow, maxPwm, mode);
 
-        if (fastFlow < tune.minActive && targetFlow > tune.minActive && currentPwm < maxPwm)
-        {
-            integral = 0.0f;
-            mode = SMART_FLOW_MIN_ACTIVE_BOOST;
-            pwmFF = maxPwm;
-        }
-
+        // Nota: MIN_ACTIVE_BOOST y lowerClamp eliminados.
+        // El arranque en frío (capacitor) es manejado por la fase Kick del FlowMotorController.
+        // El PWM puede bajar libremente tras el kick — no hay piso artificial.
         bool lowerClamp = false;
-        if (modelValid && minFlowPwm >= 0 && targetFlow > tune.minActive && pwmFF < minFlowPwm - 80)
-        {
-            pwmFF = minFlowPwm - 80;
-            lowerClamp = true;
-        }
 
         pwmFF = smoothFeedForward(currentPwm, clampInt(pwmFF, 0, maxPwm), maxPwm);
         int pidCorrection = 0;

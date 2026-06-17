@@ -64,6 +64,7 @@ public:
     _server.on("/api/presets/load", HTTP_GET, [this]() { handlePresetLoad(); });
     _server.on("/api/presets/save", HTTP_POST, [this]() { handlePresetSave(); });
     _server.on("/api/presets/delete", HTTP_POST, [this]() { handlePresetDelete(); });
+    _server.on("/api/motor/ignite", HTTP_POST, [this]() { handleIgnite(); });
     _server.on("/favicon.ico", HTTP_GET, [this]() {
       _server.send(204, "image/x-icon", "");
     });
@@ -284,10 +285,20 @@ private:
     _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kHeadlessSetupHtmlGzip), kHeadlessSetupHtmlGzipSize);
   }
 
+  void handleIgnite()
+  {
+#if defined(FEATURE_FLOW_PID)
+    _ctx.motorCapture.forceIgnition();
+    _server.send(200, "application/json", "{\"ok\":true}");
+#else
+    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"no PID\"}");
+#endif
+  }
+
   void handleStatus()
   {
     CaptureSwitchSnapshot snap = _switches.snapshot();
-    StaticJsonDocument<1536> doc;
+    StaticJsonDocument<2048> doc;
     doc["sdReady"] = _ctx.isSdReady;
     doc["sdStatus"] = sdStatusText(_ctx.sdStatus);
     doc["rtc"] = _ctx.components.rtc.now().timestamp();
@@ -310,6 +321,16 @@ private:
     switches["durationCode"] = snap.durationCode;
     switches["wait"] = CaptureSwitches::waitDescription(snap.waitCode);
     switches["duration"] = CaptureSwitches::durationDescription(snap.durationCode);
+
+#if defined(FEATURE_FLOW_PID)
+    FlowPidStatus pidSt = _ctx.motorCapture.getPidStatus();
+    JsonObject motor = doc.createNestedObject("motor");
+    motor["ignitionPhase"] = FlowMotorController::ignitionPhaseText(pidSt.ignitionPhase);
+    motor["kickActive"] = pidSt.kickActive;
+    motor["kickCount"] = pidSt.kickCount;
+    motor["stallDetected"] = pidSt.stallDetected;
+    motor["pwm"] = pidSt.pwm;
+#endif
 
     size_t needed = measureJson(doc) + 1;
     char *buf = (char *)malloc(needed);
@@ -371,7 +392,7 @@ private:
     _server.sendContent(""); // end chunked stream
   }
 
-  // Fill provided buffer 'out' with the safe log path. Returns true on success.
+  // Rellena el buffer 'out' con la ruta segura del log. Retorna true si el nombre de archivo es válido.
   bool safeLogPathFromRequest(char *out, size_t outLen)
   {
     // Note: WebServer::arg returns a String; fetch minimally and use c_str().

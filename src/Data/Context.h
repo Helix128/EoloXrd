@@ -158,6 +158,8 @@ public:
         if (bootTaskHandle != nullptr || bootInitComplete || bootInitRunning)
             return;
 
+        // Prio 1: tarea de inicializacion de una sola ejecucion; finaliza antes de que corran los sensores.
+        // Stack 8192: realiza I2C, SD, RTC y setup inicial con buffers temporales grandes.
         xTaskCreatePinnedToCore(
             bootInitWorker,
             "EoloBootInit",

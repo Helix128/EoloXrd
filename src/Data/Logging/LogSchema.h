@@ -64,8 +64,8 @@ namespace LogSchema
     inline const char *captureState(ContextT &ctx)
     {
 #ifdef FEATURE_FLOW_PID
-        if (ctx.motorCapture.getPidStatus().discovering)
-            return "Calibrando";
+        if (ctx.motorCapture.getPidStatus().kickActive)
+            return "Arrancando";
 #endif
         (void)ctx;
         return "Capturando";

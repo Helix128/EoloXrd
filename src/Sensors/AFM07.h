@@ -17,11 +17,20 @@ private:
     unsigned long _lastSuccessMs = 0;
     static const uint16_t REG_INSTANT_FLOW = 0x0000;
     static constexpr float FLOW_DIVISOR = AFM07_FLOW_DIVISOR;
+    // 800 ms: el AFM07 actualiza el registro de caudal a ~1 Hz; sondear a 800 ms deja margen sin saturar el bus RS485.
+    // Diferente a Anemometer (1100 ms) para escalonar las peticiones Modbus y evitar colisiones en el bus compartido.
     static const uint32_t READ_INTERVAL_MS = 800;
+    // 5000 ms: backoff tras error Modbus; evita spam de retries ante fallo prolongado del sensor.
     static const uint32_t ERROR_BACKOFF_MS = 5000;
+    // 1200 ms: dato considerado fresco si llegó en el último ciclo de lectura (800 ms + margen de jitter).
     static const uint32_t FRESH_DATA_MS = 1200;
+    // 15000 ms: sin respuesta en 15 s → dato obsoleto; umbral conservador para alertar fallo de sensor.
     static const uint32_t STALE_DATA_MS = 15000;
     static const BaseType_t TASK_CORE = 0;
+    // Prio 1: por debajo del driver RS485 (prio 2); bloquea en mutex durante la lectura Modbus.
+    // Stack 4096: suficiente para el frame Modbus + buffer local; medir con uxTaskGetStackHighWaterMark en DEBUG.
+    static const UBaseType_t TASK_PRIORITY   = 1;
+    static const uint32_t TASK_STACK_BYTES   = 4096;
 
     static void taskWorker(void* arg) {
         AFM07* self = (AFM07*)arg;
@@ -89,7 +98,7 @@ public:
             return false;
         }
         RS485Bus::getInstance().begin();
-        BaseType_t ok = xTaskCreatePinnedToCore(taskWorker, "AFM07Task", 4096, this, 1, &_taskHandle, TASK_CORE);
+        BaseType_t ok = xTaskCreatePinnedToCore(taskWorker, "AFM07Task", TASK_STACK_BYTES, this, TASK_PRIORITY, &_taskHandle, TASK_CORE);
         if (ok != pdPASS) {
             _taskHandle = nullptr;
             LOG_LN("No se pudo crear AFM07Task");

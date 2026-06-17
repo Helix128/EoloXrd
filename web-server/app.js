@@ -345,6 +345,13 @@ async function loadStatus() {
     setSystemState(s.sdReady ? 'state-ok' : 'state-warn');
     if (s.defaults) applyConfig(s.defaults);
     $('setupStatus').textContent = 'Listo';
+    if (s.motor && $('motorStatusText')) {
+      const phase = s.motor.ignitionPhase || 'off';
+      const kicks = s.motor.kickCount || 0;
+      const stall = s.motor.stallDetected;
+      const phaseLabel = {off: 'Apagado', kick: 'Arrancando…', run: 'En marcha'}[phase] || phase;
+      $('motorStatusText').textContent = `${phaseLabel} · kicks: ${kicks}${stall ? ' · ⚠ STALL' : ''}`;
+    }
   } catch (e) {
     console.warn('Error fetching status', e);
     $('statusPills').innerHTML = '<span class="pill bad">Sin conexión</span>';
@@ -750,7 +757,19 @@ $('setupForm').addEventListener('submit', async e => {
   btn.textContent = orig;
 });
 
+async function igniteMotor() {
+  try {
+    const r = await fetch('/api/motor/ignite', {method: 'POST'});
+    const d = await r.json();
+    notify(d.ok ? 'Kick de arranque enviado al motor' : 'Error: ' + (d.error || '?'), d.ok ? 'success' : 'error');
+    setTimeout(loadStatus, 600);
+  } catch (e) {
+    notify('Error al comunicar con el dispositivo', 'error');
+  }
+}
+
 // Initialization
 initTheme();
 updateFlowModeUI();
+if ($('igniteMotorBtn')) $('igniteMotorBtn').addEventListener('click', igniteMotor);
 loadStatus().then(loadLogs).then(loadPresets);

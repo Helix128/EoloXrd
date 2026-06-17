@@ -26,13 +26,16 @@ class MotorCaptureControl
         FLOW_PID_KD,
         FLOW_PID_MAX_DT_MS,
         FLOW_PID_SENSOR_STALE_MS,
-        FLOW_PID_DISCOVERY_THRESHOLD_LPM,
-        FLOW_PID_DISCOVERY_STEP,
-        FLOW_PID_DISCOVERY_INTERVAL_MS
+        FLOW_PID_KICK_PWM,
+        FLOW_PID_KICK_MS,
+        FLOW_PID_STALL_FLOW_LPM,
+        FLOW_PID_RESTALL_COOLDOWN_MS,
+        FLOW_PID_STALL_CONFIRM_MS
     };
     bool pidTestRunning = false;
     float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
     bool pidConfigLogged = false;
+    uint16_t _lastLoggedKickCount = 0;
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
 
@@ -60,6 +63,7 @@ public:
     void startPidTest(float targetFlow) { pidTestTargetFlow = targetFlow; pidTestRunning = true; resetFlowController(); }
     void stopPidTest(Context &ctx);
     FlowPidStatus getPidStatus() const;
+    void forceIgnition() { pid.forceKick(); }
 #endif
 };
 
@@ -198,38 +202,22 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
         LOG_OUT(pidCfg.filterAlpha, 2);
         LOG_OUT(" minActive=");
         LOG_OUT(pidCfg.minActive, 2);
-        LOG_OUT(" discovery=");
-        LOG_OUT(pidCfg.discoveryThresholdLpm, 2);
-        LOG_OUT("L/min step=");
-        LOG_OUT(pidCfg.discoveryStepPwm);
-        LOG_OUT(" interval=");
-        LOG_OUT(pidCfg.discoveryIntervalMs);
+        LOG_OUT(" kick=" );
+        LOG_OUT(pidCfg.kickPwm);
+        LOG_OUT(" kickMs=");
+        LOG_OUT(pidCfg.kickMs);
+        LOG_OUT("ms stallFlow=");
+        LOG_OUT(pidCfg.stallFlowLpm, 2);
+        LOG_OUT("L/min cooldown=");
+        LOG_OUT(pidCfg.restallCooldownMs);
+        LOG_OUT("ms stallConfirm=");
+        LOG_OUT(pidCfg.stallConfirmMs);
         LOG_OUT_LN("ms");
         pidConfigLogged = true;
     }
 
     bool flowReadValid = ctx.components.flowSensor.getData(flowData) && flowData.valid;
     bool flowFresh = flowReadValid && flowData.ageMs <= pidCfg.sensorStaleMs;
-    if (!flowFresh)
-    {
-        bool pidWasInitialized = pid.isInitialized();
-        resetFlowController();
-#if defined(EOLO_TARGET_DRON)
-        ctx.components.motor.setPwmImmediate(pidWasInitialized ? 0 : FLOW_PID_BASE_PWM);
-#else
-        ctx.components.motor.setPwmImmediate(0);
-#endif
-        static uint32_t lastSensorFaultLogMs = 0;
-        if (nowMs - lastSensorFaultLogMs >= 5000)
-        {
-            LOG_OUT("PID flujo sensor no fresco: valid=");
-            LOG_OUT(flowReadValid ? "si" : "no");
-            LOG_OUT(" ageMs=");
-            LOG_OUT_LN(flowData.ageMs);
-            lastSensorFaultLogMs = nowMs;
-        }
-        return;
-    }
 
     FlowMotorInput input;
     input.nowMs = nowMs;
@@ -243,41 +231,76 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     input.maxPwm = MAX_PWM;
 
     FlowMotorOutput output = pid.update(input, pidCfg);
-    if (!output.updated)
-        return;
 
+    // Log arranque/re-kick (una vez por evento)
+    if (output.kickActive && output.kickCount > _lastLoggedKickCount)
+    {
+        _lastLoggedKickCount = output.kickCount;
+        if (output.stallDetected)
+        {
+            LOG_OUT("Motor re-kick por stall (kick #");
+            LOG_OUT(output.kickCount);
+            LOG_OUT_LN(")");
+        }
+        else
+        {
+            LOG_OUT("Motor kick de arranque (kick #");
+            LOG_OUT(output.kickCount);
+            LOG_OUT_LN(")");
+        }
+    }
+
+    // Log fault de sensor (con rate limit)
     if (output.fault != FLOW_PID_FAULT_NONE)
     {
-        ctx.components.motor.setPwmImmediate(0);
+        static uint32_t lastSensorFaultLogMs = 0;
+        if (nowMs - lastSensorFaultLogMs >= 5000)
+        {
+            const char *faultName =
+                output.fault == FLOW_PID_FAULT_SENSOR_STALE   ? "stale" :
+                output.fault == FLOW_PID_FAULT_SENSOR_INVALID ? "invalid" : "timing";
+            LOG_OUT("PID flujo sensor fault: ");
+            LOG_OUT(faultName);
+            LOG_OUT(" ageMs=");
+            LOG_OUT_LN(flowData.ageMs);
+            lastSensorFaultLogMs = nowMs;
+        }
         return;
     }
+
+    if (!output.updated)
+        return;
 
     ctx.components.motor.setMotorPwm(0, output.pwm);
     for (int i = 1; i < MotorManager::motorCount; i++)
         ctx.components.motor.setMotorPwm(i, 0);
 
-    static uint32_t lastPidLogMs = 0;
-    if (nowMs - lastPidLogMs >= 1000)
+    // Log PID periódico (solo en Run, no durante kick)
+    if (!output.kickActive)
     {
-        LOG_OUT("PID flujo: medido ");
-        LOG_OUT(flowData.flow, 2);
-        LOG_OUT(" filtrado ");
-        LOG_OUT(output.smartStatus.fastFlow, 2);
-        LOG_OUT(" L/min PWM ");
-        LOG_OUT(output.pwm);
-        LOG_OUT(" P/I/D ");
-        LOG_OUT(output.smartStatus.pTerm, 1);
-        LOG_OUT("/");
-        LOG_OUT(output.smartStatus.iTerm, 1);
-        LOG_OUT("/");
-        LOG_OUT(output.smartStatus.dTerm, 1);
-        LOG_OUT(" modo ");
-        LOG_OUT(static_cast<int>(output.smartStatus.mode));
-        LOG_OUT(" gain ");
-        LOG_OUT(output.smartStatus.estimatedGain, 5);
-        LOG_OUT(" conf ");
-        LOG_OUT_LN(output.smartStatus.confidence, 2);
-        lastPidLogMs = nowMs;
+        static uint32_t lastPidLogMs = 0;
+        if (nowMs - lastPidLogMs >= 1000)
+        {
+            LOG_OUT("PID flujo: medido ");
+            LOG_OUT(flowData.flow, 2);
+            LOG_OUT(" filtrado ");
+            LOG_OUT(output.smartStatus.fastFlow, 2);
+            LOG_OUT(" L/min PWM ");
+            LOG_OUT(output.pwm);
+            LOG_OUT(" P/I/D ");
+            LOG_OUT(output.smartStatus.pTerm, 1);
+            LOG_OUT("/");
+            LOG_OUT(output.smartStatus.iTerm, 1);
+            LOG_OUT("/");
+            LOG_OUT(output.smartStatus.dTerm, 1);
+            LOG_OUT(" modo ");
+            LOG_OUT(static_cast<int>(output.smartStatus.mode));
+            LOG_OUT(" gain ");
+            LOG_OUT(output.smartStatus.estimatedGain, 5);
+            LOG_OUT(" conf ");
+            LOG_OUT_LN(output.smartStatus.confidence, 2);
+            lastPidLogMs = nowMs;
+        }
     }
 }
 #endif

@@ -204,6 +204,11 @@ private:
     if (readFloatArg(args, "ilim", floatValue)) config.integralLimit = floatValue;
     if (readFloatArg(args, "alpha", floatValue)) config.filterAlpha = floatValue;
     if (readFloatArg(args, "minActive", floatValue)) config.minActive = floatValue;
+    if (readIntArg(args, "kick", intValue)) config.kickPwm = intValue;
+    if (readIntArg(args, "kickMs", intValue)) config.kickMs = (uint32_t)intValue;
+    if (readFloatArg(args, "stallFlow", floatValue)) config.stallFlowLpm = floatValue;
+    if (readIntArg(args, "cooldown", intValue)) config.restallCooldownMs = (uint32_t)intValue;
+    if (readIntArg(args, "stallConfirm", intValue)) config.stallConfirmMs = (uint32_t)intValue;
     return config;
   }
 
@@ -234,6 +239,12 @@ private:
   void printPidStatus(Print &out) const
   {
     FlowPidStatus s = _ctx->motorCapture.getPidStatus();
+    out.printf("PID ignicion: fase=%s kick=%s kicks=%u lastKick=%lums stall=%s\n",
+               FlowMotorController::ignitionPhaseText(s.ignitionPhase),
+               s.kickActive ? "si" : "no",
+               (unsigned)s.kickCount,
+               (unsigned long)s.lastKickMs,
+               s.stallDetected ? "si" : "no");
     out.printf("PID flujo: running=%s test=%s fault=%s timing=%s mode=%s model=%s conf=%.2f gain=%.5f target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d dt=%.3f P/I/D=%.1f/%.1f/%.1f integral=%.3f limited=%s\n",
                s.running ? "si" : "no", _ctx->motorCapture.isPidTestRunning() ? "si" : "no",
                pidFaultText(s.fault), s.timingOk ? "ok" : "bad",
@@ -298,8 +309,15 @@ private:
       printPidStatus(out);
       return true;
     }
+    if (sub == "ignite")
+    {
+      _ctx->motorCapture.forceIgnition();
+      out.println("Kick de arranque enviado al motor.");
+      printPidStatus(out);
+      return true;
+    }
 
-    out.println("Uso: drone pid status|config|set|test|stop");
+    out.println("Uso: drone pid status|config|set|test|stop|ignite");
     return true;
   }
 
@@ -310,8 +328,9 @@ private:
     out.println("  drone status       estado compacto");
     out.println("  drone status -v    estado con detalles raw");
     out.println("  drone pid status|config");
-    out.println("  drone pid set [interval=1000 deadband=0.08 kp=80 ki=8 kd=6 ilim=30 maxStep=32 alpha=0.30 minActive=0.20 maxDt=1000 stale=1200]");
+    out.println("  drone pid set [interval=800 deadband=0.15 kp=28 ki=0.4 kd=5 ilim=6 maxStep=8 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
     out.println("  drone pid test [target=5.0]|stop");
+    out.println("  drone pid ignite         kick manual de arranque");
     out.println("  drone help         ayuda");
   }
 

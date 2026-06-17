@@ -182,6 +182,8 @@ inline void LogService::startLogTask(Context &ctx)
     if (logQueue == nullptr)
         logQueue = xQueueCreate(4, sizeof(LogJob));
     if (logTaskHandle == nullptr && logQueue != nullptr)
+        // Prio 1 (servicio de fondo): escritura SD asincrona; cede CPU a sensores y bus RS485.
+        // Stack 8192: operaciones de archivo SD + formateo de log en buffer temporal.
         xTaskCreatePinnedToCore(logTaskWorker, "EoloLogTask", 8192, &ctx, 1, &logTaskHandle, 0);
 }
 
@@ -305,7 +307,6 @@ inline bool LogService::logData(Context &ctx)
     if (EoloDebug::verboseLogsEnabled())
     {
         LOG_LN("Archivo de log escrito!");
-        LOG_LN("Log completado con éxito.");
     }
     sdStatus = SD_OK;
     return true;
