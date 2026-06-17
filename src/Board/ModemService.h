@@ -50,12 +50,16 @@ public:
     bool createdWorker = false;
     if (_worker == nullptr)
     {
+      // Prio 1 (servicio de fondo): cede CPU a sensores y bus RS485 (prio 2).
+      // Stack 8192: AT command parsing de TinyGSM requiere buffers de respuesta amplios.
+      static const UBaseType_t kTaskPriority = 1;
+      static const uint32_t kTaskStack = 8192;
       BaseType_t created = xTaskCreatePinnedToCore(
         workerEntry,
         "ModemService",
-        8192,
+        kTaskStack,
         this,
-        1,
+        kTaskPriority,
         &_worker,
         0);
 

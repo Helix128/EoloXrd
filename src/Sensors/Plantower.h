@@ -132,7 +132,11 @@ public:
         _serial = &Serial2;
         _rxPin = PT_RX;
         _txPin = PT_TX;
-        xTaskCreatePinnedToCore(taskWorker, "PlantowerTask", 2048, this, 1, &_taskHandle, 1);
+        // Prio 1: sensor de fondo, sin requisito de tiempo real duro; nucleo 1 para liberar nucleo 0 al bus RS485.
+        // Stack 2048: lectura UART directa sin buffers adicionales; medir con uxTaskGetStackHighWaterMark en DEBUG.
+        static const UBaseType_t kTaskPriority = 1;
+        static const uint32_t kTaskStack = 2048;
+        xTaskCreatePinnedToCore(taskWorker, "PlantowerTask", kTaskStack, this, kTaskPriority, &_taskHandle, 1);
     }   
 
     bool getData(PlantowerData& output) {

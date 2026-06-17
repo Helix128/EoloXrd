@@ -246,7 +246,7 @@ public:
         }
 
         components.motor.setPwm(0);
-        LOG_OUT_LN("\nDiagnóstico completado.");
+        LOG_OUT_LN("\nDiagnóstico de motores completado: todos los motores detenidos.");
         LOG_OUT_LN("Presiona el botón para volver.");
         LOG_OUT_LN("========================================\n");
 

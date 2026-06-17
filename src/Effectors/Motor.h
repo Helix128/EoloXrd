@@ -247,7 +247,6 @@ public:
     writeMotorPwm(motorIdx, pwm);
   }
 
-  // Establecer TODOS los motores al mismo PWM
   void setPwm(int pwm)
   {
     for (int i = 0; i < motorCount; i++)
@@ -260,7 +259,6 @@ public:
       setMotorPwmImmediate(i, pwm);
   }
 
-  // Establecer TODOS los motores al mismo porcentaje (0-100%)
   void setPowerPct(float powerPct)
   {
     if (powerPct > 100.0f)

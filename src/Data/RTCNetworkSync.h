@@ -100,6 +100,8 @@ inline bool RTCNetworkSync::start(Context &ctx)
 
     status = RTCNetworkSyncStatus::Running;
     ctx.markUiDirty();
+    // Prio 1 (servicio de fondo): sincronizacion NTP no critica en tiempo real.
+    // Stack 8192: HTTP GET + JSON parsing para la respuesta del servidor de tiempo.
     BaseType_t created = xTaskCreatePinnedToCore(
         worker,
         "EoloRTCSync",
