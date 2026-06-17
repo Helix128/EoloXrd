@@ -182,6 +182,8 @@ inline void LogService::startLogTask(Context &ctx)
     if (logQueue == nullptr)
         logQueue = xQueueCreate(4, sizeof(LogJob));
     if (logTaskHandle == nullptr && logQueue != nullptr)
+        // Prio 1 (servicio de fondo): escritura SD asíncrona no bloquea sensores.
+        // Stack 8192: operaciones de archivo SD + formateo de log.
         xTaskCreatePinnedToCore(logTaskWorker, "EoloLogTask", 8192, &ctx, 1, &logTaskHandle, 0);
 }
 

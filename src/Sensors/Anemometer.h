@@ -18,10 +18,16 @@ private:
 
     static const uint16_t REG_START = 0x0000;
     static const uint8_t REG_COUNT = 2;
+    // 1100 ms: velocidad de actualización del anemómetro Modbus a ~0.9 Hz; escalonado 300 ms tras AFM07 (800 ms)
+    // para que las peticiones RS485 de ambos sensores no colisionen en el bus compartido.
     static const uint32_t READ_INTERVAL_MS = 1100;
+    // 5000 ms: backoff tras error Modbus, consistente con AFM07 para simplificar el diagnóstico de bus.
     static const uint32_t ERROR_BACKOFF_MS = 5000;
+    // 15000 ms: sin respuesta durante 15 s → dato obsoleto; umbral conservador para alertar fallo de sensor.
     static const uint32_t STALE_DATA_MS = 15000;
     static const BaseType_t TASK_CORE = 0;
+    static const uint32_t TASK_STACK_BYTES = 4096; // suficiente para Modbus + buffer local; medir con uxTaskGetStackHighWaterMark en DEBUG
+    static const UBaseType_t TASK_PRIORITY = 1;    // por debajo del driver RS485 (prio 2); espera en mutex del bus
 
     static void taskWorker(void* arg) {
         Anemometer* self = (Anemometer*)arg;
@@ -80,7 +86,9 @@ public:
 
     void begin() {
         RS485Bus::getInstance().begin();
-        xTaskCreatePinnedToCore(taskWorker, "AnemTask", 4096, this, 1, &_taskHandle, TASK_CORE);
+        // Prio TASK_PRIORITY (1): menor que el driver RS485 (2); bloquea en mutex durante lectura Modbus.
+        // Stack TASK_STACK_BYTES (4096): ajustar tras medir uxTaskGetStackHighWaterMark en DEBUG.
+        xTaskCreatePinnedToCore(taskWorker, "AnemTask", TASK_STACK_BYTES, this, TASK_PRIORITY, &_taskHandle, TASK_CORE);
     }
 
     bool getData(AnemometerData& output) {

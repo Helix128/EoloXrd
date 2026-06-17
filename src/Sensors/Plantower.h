@@ -98,6 +98,10 @@ private:
     PlantowerData _data;
     PlantowerParser _parser;
     
+    static const uint32_t TASK_STACK_BYTES = 2048; // lectura UART simple sin heap extra; medir con uxTaskGetStackHighWaterMark en DEBUG
+    static const UBaseType_t TASK_PRIORITY = 1;    // tarea de sensor, sin requisito de tiempo real duro
+    static const BaseType_t TASK_CORE = 1;         // núcleo 1 para liberar núcleo 0 para RS485
+    
     static void taskWorker(void* arg) {
         Plantower* self = (Plantower*)arg;
         self->_serial->begin(9600, SERIAL_8N1, self->_rxPin, self->_txPin);
@@ -132,7 +136,9 @@ public:
         _serial = &Serial2;
         _rxPin = PT_RX;
         _txPin = PT_TX;
-        xTaskCreatePinnedToCore(taskWorker, "PlantowerTask", 2048, this, 1, &_taskHandle, 1);
+        // Prio TASK_PRIORITY (1): sensor de fondo, sin requisito de tiempo real duro.
+        // Stack TASK_STACK_BYTES (2048): lectura UART directa; ajustar tras medir HWM en DEBUG.
+        xTaskCreatePinnedToCore(taskWorker, "PlantowerTask", TASK_STACK_BYTES, this, TASK_PRIORITY, &_taskHandle, TASK_CORE);
     }   
 
     bool getData(PlantowerData& output) {

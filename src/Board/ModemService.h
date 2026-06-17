@@ -20,6 +20,9 @@ public:
   static constexpr uint32_t SignalPollMs = 15000;
   static constexpr size_t MaxResponseBytes = sizeof(ModemJobResult::responsePreview);
   static constexpr size_t HttpResponseBytes = 4096;
+  static const uint32_t TASK_STACK_BYTES  = 8192; // stack para AT command parsing + buffers TinyGSM
+  static const UBaseType_t TASK_PRIORITY  = 1;    // servicio de fondo; no bloquea sensores ni bus
+  static const BaseType_t TASK_CORE       = 0;
 
   explicit ModemService(Modem &driver) : _driver(driver) {}
 
@@ -50,14 +53,16 @@ public:
     bool createdWorker = false;
     if (_worker == nullptr)
     {
+      // Prio TASK_PRIORITY (1): servicio de fondo; cede CPU a sensores y bus RS485.
+      // Stack TASK_STACK_BYTES (8192): AT parsing de TinyGSM requiere buffers de respuesta.
       BaseType_t created = xTaskCreatePinnedToCore(
         workerEntry,
         "ModemService",
-        8192,
+        TASK_STACK_BYTES,
         this,
-        1,
+        TASK_PRIORITY,
         &_worker,
-        0);
+        TASK_CORE);
 
       if (created != pdPASS)
       {
