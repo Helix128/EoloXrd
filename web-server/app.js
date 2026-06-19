@@ -768,6 +768,129 @@ async function igniteMotor() {
   }
 }
 
+// ===== DEBUG PWM MODE =====
+let _debugActive = false;
+let _debugRefreshTimer = null;
+let _debugMaxPwm = 255;
+
+function setDebugUiActive(active) {
+  _debugActive = active;
+  $('debugWarnBanner').classList.toggle('hidden', active);
+  $('debugActivePanel').classList.toggle('hidden', !active);
+}
+
+async function enterDebugMode() {
+  const btn = $('enterDebugBtn');
+  btn.disabled = true;
+  btn.textContent = 'Activando...';
+  try {
+    const r = await fetch('/api/debug/enter', { method: 'POST' });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      notify('Modo debug activado. El servidor Wi-Fi sigue activo.', 'success');
+      setDebugUiActive(true);
+      startDebugRefresh();
+    } else {
+      notify('No se pudo activar el modo debug', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Entrar modo debug';
+    }
+  } catch (e) {
+    notify('Error de conexión al activar debug', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Entrar modo debug';
+  }
+}
+
+async function applyDebugPwm(pct) {
+  try {
+    const fd = new URLSearchParams();
+    fd.set('pct', pct.toFixed(1));
+    const r = await fetch('/api/debug/pwm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: fd
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) notify('Error aplicando PWM: ' + (d.error || '?'), 'error');
+  } catch (e) {
+    notify('Error de red aplicando PWM', 'error');
+  }
+}
+
+async function loadDebugStatus() {
+  if (!_debugActive) return;
+  try {
+    const r = await fetch('/api/debug/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    _debugMaxPwm = d.maxPwm || 255;
+    $('debugMaxPwmLabel').textContent = _debugMaxPwm;
+    $('debugPwmRawLabel').textContent = d.pwm ?? '—';
+    $('debugReadPwm').textContent = d.pwm ?? '—';
+    const pct = d.pct != null ? d.pct.toFixed(1) + ' %' : '—';
+    $('debugReadPct').textContent = pct;
+    if (d.flow) {
+      const lpm = d.flow.valid ? d.flow.lpm.toFixed(2) + ' L/min' : 'sin datos';
+      $('debugReadFlow').textContent = lpm;
+      $('debugFlowPill').textContent = 'Flujo: ' + (d.flow.valid ? d.flow.lpm.toFixed(2) + ' L/min' : '—');
+    }
+    if (d.motorTempValid) {
+      const t = Number(d.motorTemp).toFixed(1) + ' °C';
+      $('debugReadTemp').textContent = t;
+      $('debugTempPill').textContent = 'Temp: ' + t;
+    } else {
+      $('debugReadTemp').textContent = '—';
+      $('debugTempPill').textContent = 'Temp: —';
+    }
+    const oh = !!d.overheat;
+    $('debugOverheatPill').classList.toggle('hidden', !oh);
+  } catch (_) {}
+}
+
+function startDebugRefresh() {
+  if (_debugRefreshTimer) clearInterval(_debugRefreshTimer);
+  loadDebugStatus();
+  _debugRefreshTimer = setInterval(loadDebugStatus, 1000);
+}
+
+function stopDebugRefresh() {
+  if (_debugRefreshTimer) { clearInterval(_debugRefreshTimer); _debugRefreshTimer = null; }
+}
+
+// Pause/resume debug refresh when switching views
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.target;
+    if (target === 'view-debug' && _debugActive) startDebugRefresh();
+    else stopDebugRefresh();
+  });
+});
+
+// Slider live label
+if ($('debugPwmSlider')) {
+  $('debugPwmSlider').addEventListener('input', () => {
+    $('debugPwmPctLabel').textContent = $('debugPwmSlider').value;
+  });
+}
+
+if ($('enterDebugBtn')) $('enterDebugBtn').addEventListener('click', enterDebugMode);
+
+if ($('applyDebugPwmBtn')) {
+  $('applyDebugPwmBtn').addEventListener('click', () => {
+    const pct = Number($('debugPwmSlider').value);
+    applyDebugPwm(pct).then(loadDebugStatus);
+  });
+}
+
+if ($('stopDebugMotorBtn')) {
+  $('stopDebugMotorBtn').addEventListener('click', () => {
+    $('debugPwmSlider').value = 0;
+    $('debugPwmPctLabel').textContent = '0';
+    applyDebugPwm(0).then(loadDebugStatus);
+  });
+}
+
 // Initialization
 initTheme();
 updateFlowModeUI();

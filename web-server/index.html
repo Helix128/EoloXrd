@@ -58,6 +58,12 @@
         </button>
       </li>
       <li>
+        <button type="button" class="nav-item" data-target="view-debug">
+          <svg viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C13 5.06 12.51 5 12 5s-1 .06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>
+          Debug PWM
+        </button>
+      </li>
+      <li>
         <button type="button" class="nav-item" data-target="view-logs">
           <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
           Registros CSV
@@ -222,6 +228,56 @@
           <div class="preset-save-fields">
             <input id="presetName" type="text" maxlength="23" placeholder="Nombre del preset (ej: bano_1)" aria-label="Nombre del preset">
             <button type="button" id="savePreset">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- vista debug: control directo de PWM -->
+    <section id="view-debug" class="section-view panel">
+      <h2>Modo Debug &mdash; Control directo PWM</h2>
+      <p class="section-desc">Permite controlar el motor directamente sin PID ni captura. El servidor Wi-Fi permanece activo.</p>
+
+      <div class="debug-warn-banner" id="debugWarnBanner">
+        <strong>&#9888; Modo debug desactivado</strong>
+        <span>Haz clic en &ldquo;Entrar modo debug&rdquo; para activar el control directo de PWM. El PID y la captura quedan suspendidos mientras este modo esté activo.</span>
+        <button type="button" class="btn-primary" id="enterDebugBtn">Entrar modo debug</button>
+      </div>
+
+      <div class="debug-active-panel hidden" id="debugActivePanel">
+        <div class="debug-status-bar" id="debugStatusBar" aria-live="polite">
+          <span class="pill ok" id="debugStatePill">DEBUG ACTIVO</span>
+          <span id="debugFlowPill" class="pill">Flujo: —</span>
+          <span id="debugTempPill" class="pill">Temp: —</span>
+          <span id="debugOverheatPill" class="pill hidden bad">&#9888; OVERHEAT</span>
+        </div>
+
+        <div class="field">
+          <label for="debugPwmSlider">PWM directo &mdash; <strong><span id="debugPwmPctLabel">0</span>%</strong> &nbsp;<span class="debug-pwm-raw">(<span id="debugPwmRawLabel">0</span>&nbsp;/&nbsp;<span id="debugMaxPwmLabel">255</span>)</span></label>
+          <input type="range" id="debugPwmSlider" min="0" max="100" step="1" value="0" class="debug-pwm-slider">
+        </div>
+
+        <div class="form-actions debug-pwm-actions">
+          <button type="button" class="btn-primary" id="applyDebugPwmBtn">&#9654; Aplicar PWM</button>
+          <button type="button" class="btn-secondary" id="stopDebugMotorBtn">&#9632; Motor a 0</button>
+        </div>
+
+        <div class="debug-live-readout" id="debugLiveReadout">
+          <div class="readout-row">
+            <span class="readout-label">PWM actual</span>
+            <strong id="debugReadPwm">—</strong>
+          </div>
+          <div class="readout-row">
+            <strong class="readout-label">% potencia</strong>
+            <strong id="debugReadPct">—</strong>
+          </div>
+          <div class="readout-row">
+            <span class="readout-label">Flujo medido</span>
+            <strong id="debugReadFlow">—</strong>
+          </div>
+          <div class="readout-row">
+            <span class="readout-label">Temp. motor</span>
+            <strong id="debugReadTemp">—</strong>
           </div>
         </div>
       </div>
