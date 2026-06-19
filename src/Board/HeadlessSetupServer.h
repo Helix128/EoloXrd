@@ -65,6 +65,9 @@ public:
     _server.on("/api/presets/save", HTTP_POST, [this]() { handlePresetSave(); });
     _server.on("/api/presets/delete", HTTP_POST, [this]() { handlePresetDelete(); });
     _server.on("/api/motor/ignite", HTTP_POST, [this]() { handleIgnite(); });
+    _server.on("/api/debug/enter", HTTP_POST, [this]() { handleDebugEnter(); });
+    _server.on("/api/debug/pwm", HTTP_POST, [this]() { handleDebugPwm(); });
+    _server.on("/api/debug/status", HTTP_GET, [this]() { handleDebugStatus(); });
     _server.on("/favicon.ico", HTTP_GET, [this]() {
       _server.send(204, "image/x-icon", "");
     });
@@ -106,6 +109,7 @@ public:
 
   bool confirmed() const { return _confirmed; }
   const HeadlessSetupConfig &confirmedConfig() const { return _confirmedConfig; }
+  bool debugModeActive() const { return _debugMode; }
 
 private:
   Context &_ctx;
@@ -116,6 +120,7 @@ private:
   HeadlessSetupConfig _confirmedConfig;
   bool _running = false;
   bool _confirmed = false;
+  bool _debugMode = false;
 
   static const char *sdStatusText(SDStatus status)
   {
@@ -283,6 +288,81 @@ private:
     _server.sendHeader("Cache-Control", "no-store");
     _server.sendHeader("Content-Encoding", "gzip");
     _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kHeadlessSetupHtmlGzip), kHeadlessSetupHtmlGzipSize);
+  }
+
+  void handleDebugEnter()
+  {
+    _debugMode = true;
+    LOG_LN("Debug mode activado via web.");
+    _server.send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleDebugPwm()
+  {
+    if (!_debugMode)
+    {
+      _server.send(403, "application/json", "{\"ok\":false,\"error\":\"not_in_debug\"}");
+      return;
+    }
+
+    int pwm = 0;
+    if (_server.hasArg("pct"))
+    {
+      float pct = _server.arg("pct").toFloat();
+      if (pct < 0.0f) pct = 0.0f;
+      if (pct > 100.0f) pct = 100.0f;
+      pwm = static_cast<int>((MAX_PWM * pct) / 100.0f);
+    }
+    else if (_server.hasArg("pwm"))
+    {
+      pwm = _server.arg("pwm").toInt();
+      if (pwm < 0) pwm = 0;
+      if (pwm > MAX_PWM) pwm = MAX_PWM;
+    }
+    else
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing_param\"}");
+      return;
+    }
+
+    _ctx.components.motor.setPwmImmediate(pwm);
+    LOG_OUT("Debug PWM: ");
+    LOG_OUT_LN(pwm);
+    _server.send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleDebugStatus()
+  {
+    StaticJsonDocument<512> doc;
+    doc["debugMode"] = _debugMode;
+    doc["maxPwm"] = MAX_PWM;
+
+    int currentPwm = _ctx.components.motor.getMotorPwm(0);
+    doc["pwm"] = currentPwm;
+    doc["pct"] = (MAX_PWM > 0) ? (currentPwm * 100.0f / MAX_PWM) : 0.0f;
+
+#if defined(FEATURE_FLOW_AFM07) || defined(FEATURE_FLOW_FS3000)
+    FlowData flowData;
+    bool flowValid = _ctx.components.flowSensor.getData(flowData) && flowData.valid;
+    JsonObject flow = doc.createNestedObject("flow");
+    flow["valid"] = flowValid;
+    flow["lpm"] = flowValid ? flowData.flow : 0.0f;
+    flow["ageMs"] = flowData.ageMs;
+#endif
+
+    doc["motorTempValid"] = _ctx.motorCapture.motorThermalSensorValid;
+    doc["motorTemp"] = _ctx.motorCapture.motorThermalTemperature;
+    doc["overheat"] = _ctx.motorCapture.motorOverheatActive;
+
+    size_t needed = measureJson(doc) + 1;
+    char *buf = (char *)malloc(needed);
+    if (buf) {
+      serializeJson(doc, buf, needed);
+      _server.send(200, "application/json", buf);
+      free(buf);
+    } else {
+      _server.send(503, "application/json", "{\"error\":\"memory\"}");
+    }
   }
 
   void handleIgnite()

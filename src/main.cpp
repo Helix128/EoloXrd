@@ -75,7 +75,8 @@ enum class DroneBootState : uint8_t
   Setup,
   Waiting,
   Capturing,
-  Finished
+  Finished,
+  Debug
 };
 
 static DroneBootState droneState = DroneBootState::Idle;
@@ -125,6 +126,9 @@ static void updateDroneStatusLed()
     break;
   case DroneBootState::Finished:
     setDroneLed(StatusLedPattern::Finished);
+    break;
+  case DroneBootState::Debug:
+    setDroneLed(StatusLedPattern::Setup);
     break;
   case DroneBootState::Idle:
   default:
@@ -213,10 +217,26 @@ static void configureDroneCapture()
 
 static void updateDroneController()
 {
+  if (droneState == DroneBootState::Debug)
+  {
+    ctx.components.motor.updateRamp();
+    ctx.updateMotorThermalProtection();
+    headlessSetupServer.handleClient();
+    updateDroneStatusLed();
+    return;
+  }
+
   if (droneState == DroneBootState::Setup)
   {
     ctx.components.motor.setPowerPct(0);
     headlessSetupServer.handleClient();
+    if (headlessSetupServer.debugModeActive())
+    {
+      LOG_LN("Drone: entrando a modo debug PWM; servidor web permanece activo.");
+      droneState = DroneBootState::Debug;
+      updateDroneStatusLed();
+      return;
+    }
     if (headlessSetupServer.confirmed())
     {
       HeadlessSetupConfig config = headlessSetupServer.confirmedConfig();
