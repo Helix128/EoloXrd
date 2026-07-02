@@ -11,8 +11,8 @@ public:
   static constexpr uint32_t InfiniteDurationSeconds = UINT32_MAX;
   static constexpr uint32_t kWaitSeconds[4] = {
       0,
+      1UL * MinuteSeconds,
       5UL * MinuteSeconds,
-      15UL * MinuteSeconds,
       0
   };
   static constexpr uint32_t kDurationSeconds[4] = {
