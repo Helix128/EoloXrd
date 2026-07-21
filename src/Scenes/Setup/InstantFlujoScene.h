@@ -33,7 +33,7 @@ public:
              
             ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
-            ctx.session.startDate = ctx.components.rtc.now();
+            ctx.session.startUnix = ctx.components.rtc.now().unixtime();
             ctx.session.duration = 3600;
             ctx.saveSession();
             SceneManager::setScene("plantower",ctx);

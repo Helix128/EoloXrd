@@ -53,6 +53,7 @@ public:
             _calcChecksum += ch;
             if (_packetLen != ExpectedLen)
             {
+                _data.valid = false;
                 reset();
             }
             else
@@ -89,6 +90,10 @@ public:
                     _data.pm2_5 = (_buffer[8] << 8) | _buffer[9];
                     _data.pm10_0 = (_buffer[10] << 8) | _buffer[11];
                     _data.valid = true;
+                }
+                else
+                {
+                    _data.valid = false;
                 }
                 reset();
                 return isValid;

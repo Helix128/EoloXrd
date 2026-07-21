@@ -4,6 +4,9 @@
 
 Esta carpeta contiene los manuales de operacion para los modelos EOLO vigentes. Cada manual esta pensado para uso en terreno: preparacion, configuracion, captura, datos generados, mantenimiento basico y solucion de problemas.
 
+La arquitectura de software y el roadmap de modularización se mantienen en
+[architecture.md](architecture.md) y [eolo-modular-roadmap.md](eolo-modular-roadmap.md).
+
 ## Elegir manual
 
 | Modelo | Manual | Pinout técnico | Caracteristicas principales |

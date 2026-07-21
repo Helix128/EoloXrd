@@ -2,7 +2,7 @@
 
 Fuente: `src/Board/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
 
-EOLO Express Legacy comparte el mapa base de pines con EOLO Standard y EOLO Express. La diferencia funcional principal es el sensor de flujo legacy FS3000 en vez de AFM07.
+EOLO Express Legacy comparte la mayor parte del mapa base con EOLO Standard y EOLO Express. La diferencia funcional principal es el sensor de flujo legacy FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 
 ## Resumen
 
@@ -14,23 +14,20 @@ EOLO Express Legacy comparte el mapa base de pines con EOLO Standard y EOLO Expr
 | microSD | MOSI | `GPIO23` | `SD_MOSI_PIN` |
 | microSD | MISO | `GPIO19` | `SD_MISO_PIN` |
 | microSD | SCK | `GPIO18` | `SD_SCK_PIN` |
-| Switch espera | SW0 | `GPIO32` | `WAIT_SW0_PIN` |
-| Switch espera | SW1 | `GPIO14` | `WAIT_SW1_PIN` |
-| Switch duración | SW0 | `GPIO36` | `DURATION_SW0_PIN` |
-| Switch duración | SW1 | `GPIO39` | `DURATION_SW1_PIN` |
+| Switches headless | SW0..SW3 | `EOLO_PIN_UNUSED` | `WAIT_SW*_PIN`, `DURATION_SW*_PIN` |
 | Batería | ADC | `GPIO34` | `BATTERY_ADC_PIN` |
 | RS485 | RX | `GPIO35` | `RS485_RX_PIN` |
 | RS485 | TX | `GPIO33` | `RS485_TX_PIN` |
 | RS485 | DE/RE | `GPIO26` | `RS485_DE_RE_PIN` |
-| Motor | PWM 0 | `GPIO25` | `MOTOR_PWM_PIN_0` |
-| Motor | PWM 1 | `GPIO27` | `MOTOR_PWM_PIN_1` |
-| Plantower | RX | `GPIO34` | `PT_RX` |
-| Plantower | TX | `GPIO32` | `PT_TX` |
+| Motor/bomba | PWM 0 | `GPIO14` | `MOTOR_PWM_PIN_0` |
+| Motor/bomba | PWM 1 | `GPIO25` | `MOTOR_PWM_PIN_1` |
+| Plantower | RX | `GPIO16` | `PT_RX` |
+| Plantower | TX | `GPIO17` | `PT_TX` |
 | Periféricos | Alimentación | `GPIO4` | `PPH_PWR_PIN` |
 | Módem | PWR | `GPIO13` | `MODEM_PWR_PIN` |
 | Módem | RX | `GPIO16` | `MODEM_RX_PIN` |
 | Módem | TX | `GPIO17` | `MODEM_TX_PIN` |
-| LED estado | NeoPixel | `GPIO27` | `NEOPIXEL_PIN` |
+| LED estado | NeoPixel | `EOLO_PIN_UNUSED` | `NEOPIXEL_PIN` |
 
 ## Diferencias funcionales
 
@@ -42,10 +39,11 @@ EOLO Express Legacy comparte el mapa base de pines con EOLO Standard y EOLO Expr
 | Módem | No habilitado por flags de build |
 | Anemómetro | No habilitado por flags de build |
 | Doble batería | No habilitado por flags de build |
+| NeoPixel | `EOLO_PIN_UNUSED`; GPIO27 queda disponible para CS del OLED |
 | NTC motor | `EOLO_PIN_UNUSED` |
 | Motor FG | `EOLO_PIN_UNUSED` |
 
 ## Notas
 
-- `GPIO34`, `GPIO35`, `GPIO36` y `GPIO39` son solo entrada.
-- `GPIO36` y `GPIO39`, usados como switches de duración, se configuran como `INPUT`.
+- El mapa de motores `GPIO14/25` deja libre `GPIO27` para el CS del OLED SPI.
+- Plantower usa `GPIO16/GPIO17`, pines de módem no usados por Express Legacy.

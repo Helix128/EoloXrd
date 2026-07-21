@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "../Board/RS485Bus.h"
+#include <Eolo/Core/Sensors/AFM07Model.h>
 #include <Eolo/Types/FlowData.h>
 
 #define AFM_ID 2
@@ -14,7 +15,7 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _dataMutex;
     FlowData _data;
-    unsigned long _lastSuccessMs = 0;
+    uint32_t _lastSuccessMs = 0;
     static const uint16_t REG_INSTANT_FLOW = 0x0000;
     static constexpr float FLOW_DIVISOR = AFM07_FLOW_DIVISOR;
     // 800 ms: el AFM07 actualiza el registro de caudal a ~1 Hz; sondear a 800 ms deja margen sin saturar el bus RS485.
@@ -45,23 +46,12 @@ private:
 
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
-                    float val = (float)rawData[0] / FLOW_DIVISOR;
-                    self->_data.flow = val;
-                    self->_data.velocity = val;
-                    self->_data.valid = true;
-                    self->_data.fresh = true;
-                    self->_data.stale = false;
-                    self->_data.ageMs = 0;
-                    self->_lastSuccessMs = now;
+                    AFM07Model::applyReadSuccess(self->_data, self->_lastSuccessMs, rawData[0], now, FLOW_DIVISOR);
                     if (EoloDebug::verboseLogsEnabled()) {
                         LOG_F("AFM07: raw=%d, flow=%.2f L/min \n", rawData[0], self->_data.flow);
                     }
                 } else {
-                    uint32_t ageMs = self->_lastSuccessMs > 0 ? now - self->_lastSuccessMs : STALE_DATA_MS + 1;
-                    self->_data.ageMs = ageMs;
-                    self->_data.fresh = false;
-                    self->_data.stale = ageMs > FRESH_DATA_MS;
-                    self->_data.valid = self->_lastSuccessMs > 0 && ageMs <= STALE_DATA_MS;
+                    AFM07Model::applyReadFailure(self->_data, self->_lastSuccessMs, now, FRESH_DATA_MS, STALE_DATA_MS);
                 }
                 xSemaphoreGive(self->_dataMutex);
             } else {
@@ -93,6 +83,8 @@ public:
     }
 
     bool begin() {
+        if (_taskHandle != nullptr)
+            return true;
         if (_dataMutex == nullptr) {
             LOG_LN("AFM07 sin mutex");
             return false;
@@ -112,14 +104,7 @@ public:
         if (_dataMutex == nullptr) return false;
         if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             uint32_t now = millis();
-            uint32_t ageMs = _lastSuccessMs > 0 ? now - _lastSuccessMs : STALE_DATA_MS + 1;
-            _data.ageMs = ageMs;
-            _data.fresh = _lastSuccessMs > 0 && ageMs <= FRESH_DATA_MS;
-            _data.stale = _lastSuccessMs > 0 && ageMs > FRESH_DATA_MS;
-            if (_lastSuccessMs == 0 || ageMs > STALE_DATA_MS) {
-                _data.valid = false;
-                _data.fresh = false;
-            }
+            AFM07Model::refreshAge(_data, _lastSuccessMs, now, FRESH_DATA_MS, STALE_DATA_MS);
             output = _data;
             success = _data.valid;
             xSemaphoreGive(_dataMutex);

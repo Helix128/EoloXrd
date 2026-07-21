@@ -1,5 +1,5 @@
-#ifndef LOGO_SCENE_H
-#define LOGO_SCENE_H
+#ifndef TEMPLATE_SCENE_H
+#define TEMPLATE_SCENE_H
 
 #include "IScene.h"
 #include "../Data/Context.h"

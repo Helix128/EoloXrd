@@ -110,11 +110,11 @@ void test_config_maps_to_session()
     session.elapsedTime = 12;
     session.lastLog = 34;
 
-    DateTime now(2026, 5, 26, 12, 0, 0);
-    HeadlessSetup::applyToSession(config, session, now);
+    const uint32_t nowUnix = 1789819200UL;
+    HeadlessSetup::applyToSession(config, session, nowUnix);
 
     TEST_ASSERT_FALSE(session.usePlantower);
-    TEST_ASSERT_EQUAL_UINT32(now.unixtime() + 300, session.startDate.unixtime());
+    TEST_ASSERT_EQUAL_UINT32(nowUnix + 300, session.startUnix);
     TEST_ASSERT_EQUAL_UINT32(900, session.duration);
     TEST_ASSERT_EQUAL_UINT32(0, session.elapsedTime);
     TEST_ASSERT_EQUAL_UINT32(0, session.lastLog);
@@ -137,8 +137,8 @@ void test_config_maps_flow_sections_to_session()
     TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config));
 
     Session session;
-    DateTime now(2026, 5, 26, 12, 0, 0);
-    HeadlessSetup::applyToSession(config, session, now);
+    const uint32_t nowUnix = 1789819200UL;
+    HeadlessSetup::applyToSession(config, session, nowUnix);
 
     TEST_ASSERT_EQUAL_UINT8(2, session.flowSectionCount);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, session.targetFlow);

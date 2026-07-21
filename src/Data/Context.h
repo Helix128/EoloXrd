@@ -11,23 +11,25 @@
 #include "CaptureController.h"
 #include "MotorCaptureControl.h"
 #include "UploadService.h"
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "../Board/I2CBus.h"
+#include "../Board/SPIBus.h"
 #ifndef FEATURE_HEADLESS
 #include "../Drawing/SceneManager.h"
 #endif
-#include "ESPJob.h"
 #ifndef FEATURE_HEADLESS
 #include <U8g2lib.h>
+#include <SPI.h>
+#include "../Drawing/Logos.h"
 #endif
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "Profiler.h"
+#include <atomic>
 
 typedef struct Context
 {
-    static Context *instance;
 #ifndef FEATURE_HEADLESS
     DisplayModel &u8g2;
 #endif
@@ -58,15 +60,17 @@ typedef struct Context
     bool &isSdReady = logging.isSdReady;
     const char *&eoloDir = logging.eoloDir;
     const char *&logsDir = logging.logsDir;
-    bool &uploadPending = logging.uploadPending;
-    bool &uploadActive = uploader.uploadActive;
-    volatile bool &logActive = logging.logActive;
+    std::atomic_bool &uploadPending = logging.uploadPending;
+    std::atomic_bool &uploadActive = uploader.uploadActive;
+    std::atomic_bool &logActive = logging.logActive;
     bool uiDirty = true;
 
     UiSnapshot uiSnapshot;
     TaskHandle_t bootTaskHandle = nullptr;
-    bool bootInitComplete = false;
-    bool bootInitRunning = false;
+    // Written by boot init task (core 0), read by UI/main loop (core 1).
+    std::atomic_bool bootInitComplete{false};
+    // Written by boot init task (core 0), read by UI/main loop (core 1).
+    std::atomic_bool bootInitRunning{false};
 
     enum class BootPhase : uint8_t {
         Idle,
@@ -74,8 +78,10 @@ typedef struct Context
         InitSD,
         Done
     };
-    volatile BootPhase bootPhase = BootPhase::Idle;
-    uint32_t bootPhaseStartMs = 0;
+    // Written by boot init task (core 0), read by splash UI/main loop (core 1).
+    std::atomic<BootPhase> bootPhase{BootPhase::Idle};
+    // Written by boot init task (core 0), read by splash UI/main loop (core 1).
+    std::atomic_uint32_t bootPhaseStartMs{0};
     const char *rtcAdjustReturnScene = "inicio";
 
     using RTCNetworkSyncStatus = ::RTCNetworkSyncStatus;
@@ -90,13 +96,8 @@ public:
     void begin()
     {
         PROFILE_SCOPE("context.begin");
-        instance = this;
-
         // 1. Esperar a que los periféricos (ya encendidos en main.cpp) se estabilicen
         delay(100); 
-
-        // 2. Inicializar bus I2C una sola vez para todo el sistema
-        I2CBus::getInstance().begin();
 
         bool grande = false;
 #ifdef FEATURE_MODEM
@@ -155,7 +156,7 @@ public:
 
     void startBootInitTask()
     {
-        if (bootTaskHandle != nullptr || bootInitComplete || bootInitRunning)
+        if (bootTaskHandle != nullptr || bootInitComplete.load() || bootInitRunning.load())
             return;
 
         // Prio 1: tarea de inicializacion de una sola ejecucion; finaliza antes de que corran los sensores.
@@ -170,26 +171,55 @@ public:
             0);
     }
 
-    bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl) { return rtcSync.syncFromTimeServer(*this, url); }
-    bool startRTCNetworkSync() { return rtcSync.start(*this); }
+    bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl)
+    {
+#ifdef FEATURE_MODEM
+        bool queued = rtcSync.syncFromTimeServer(components.modemService, components.rtc, url);
+        if (queued) markUiDirty();
+        return queued;
+#else
+        (void)url;
+        return false;
+#endif
+    }
+
+    bool startRTCNetworkSync()
+    {
+#ifdef FEATURE_MODEM
+        bool started = rtcSync.start(components.modemService, components.rtc,
+                                     RTCManager::DefaultTimeServerUrl);
+        if (started) markUiDirty();
+        return started;
+#else
+        return false;
+#endif
+    }
     RTCNetworkSyncStatus getRTCNetworkSyncStatus() const { return rtcSync.getStatus(); }
 
     void initDisplay()
     {
 #ifndef FEATURE_HEADLESS
+        SPIBus::Guard spiGuard;
+#if !EOLO_DISPLAY_SPI
+        I2CBus::Guard i2cGuard;
+#endif
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+        SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+#endif
         bool began = u8g2.begin();
         if (!began)
         {
             LOG_LN("Fallo al iniciar pantalla");
             return;
         }
-        u8g2.setBusClock(I2C_CLOCK); // (fix pantalla para que la señal sea más cuadrada)
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+        u8g2.setBusClock(EoloConfig::board.displaySpiClockHz);
+#elif !EOLO_DISPLAY_SPI
+        u8g2.setBusClock(I2C_CLOCK);
+#endif
         u8g2.clearBuffer();
-        u8g2.setFont(FONT_BOLD_L);
-        int textWidth = u8g2.getStrWidth("EOLO");
-        int x = (u8g2.getDisplayWidth() - textWidth) / 2;
-        int y = (u8g2.getDisplayHeight() / 2) + (u8g2.getAscent() / 2);
-        u8g2.drawStr(x, y, "EOLO");
+        u8g2.setBitmapMode(1);
+        u8g2.drawXBM(0, 0, 128, 64, cmas);
         u8g2.sendBuffer();
         isDisplayReady = true;
 #endif
@@ -198,6 +228,7 @@ public:
     void setDisplayPower(bool on)
     {
 #ifndef FEATURE_HEADLESS
+        SPIBus::Guard spiGuard;
         isDisplayOn = on;
         if (on)
         {
@@ -260,9 +291,12 @@ public:
             uiSnapshot.flow.velocity = 0.0f;
         }
 
-        uiSnapshot.environment.temperature = components.bme.temperature;
-        uiSnapshot.environment.humidity = components.bme.humidity;
-        uiSnapshot.environment.pressure = components.bme.pressure;
+        BME280Data bmeData;
+        bool bmeValid = components.bme.getData(bmeData);
+        uiSnapshot.environment.valid = bmeValid;
+        uiSnapshot.environment.temperature = bmeValid ? bmeData.temperature : -1.0f;
+        uiSnapshot.environment.humidity = bmeValid ? bmeData.humidity : -1.0f;
+        uiSnapshot.environment.pressure = bmeValid ? bmeData.pressure : -1.0f;
 #ifdef FEATURE_NTC
         uiSnapshot.environment.ntcValid = motorThermalSensorValid;
         uiSnapshot.environment.ntcTemperature = motorThermalTemperature;
@@ -323,6 +357,11 @@ public:
 
 #ifdef FEATURE_DUAL_BATTERY
         uiSnapshot.power.dualBattery = true;
+        uiSnapshot.power.valid = components.battery.hasValidData();
+        uiSnapshot.power.stale = components.battery.isStale();
+        uiSnapshot.power.ageMs = uiSnapshot.power.valid
+                                    ? millis() - components.battery.getLastSuccessMs()
+                                    : 0;
         uiSnapshot.power.poweredByDc = components.battery.isPoweredByDC();
         uiSnapshot.power.activeBattery = components.battery.getActiveMosfet();
         uiSnapshot.power.batteryPct0 = components.battery.getPct(0);
@@ -334,6 +373,9 @@ public:
         uiSnapshot.power.dcVoltage = components.battery.getDCVoltage();
 #else
         uiSnapshot.power.dualBattery = false;
+        uiSnapshot.power.valid = true;
+        uiSnapshot.power.stale = false;
+        uiSnapshot.power.ageMs = 0;
         uiSnapshot.power.poweredByDc = false;
         uiSnapshot.power.activeBattery = 0;
 #if BAREBONES == true
@@ -367,8 +409,8 @@ public:
         uiSnapshot.status.modemSignalBars = 0;
         uiSnapshot.status.modemSignalCsq = 99;
 #endif
-        uiSnapshot.status.uploadPending = uploadPending;
-        uiSnapshot.status.uploadActive = uploadActive;
+        uiSnapshot.status.uploadPending = uploadPending.load();
+        uiSnapshot.status.uploadActive = uploadActive.load();
         uiSnapshot.status.displayOn = isDisplayOn;
         uiSnapshot.status.unixTime = now.unixtime();
         uiSnapshot.status.hour = now.hour();
@@ -441,9 +483,8 @@ public:
 
     uint32_t getUnixTime()
     {
-        if (components.rtc.ok == false)
-            return 0;
-        return components.rtc.now().unixtime();
+        DateTime now = components.rtc.now();
+        return components.rtc.isValid(now) ? now.unixtime() : 0UL;
     }
 
     bool isHeadlessCalibrationRunning() const { return false; }
@@ -459,8 +500,6 @@ public:
     void updateCapture() { capture.update(*this); }
 
 } Context;
-
-inline Context *Context::instance = nullptr;
 
 #define CONTEXT_CLASS_DEFINED
 

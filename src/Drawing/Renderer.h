@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <U8g2lib.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "Layout.h"
 
 class Renderer

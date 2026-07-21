@@ -35,8 +35,8 @@ public:
             int titleX = (screenWidth - titleWidth) / 2;
             ctx.u8g2.drawStr(titleX, 24, title);
 
-            DateTime startTime = ctx.session.startDate;
-            DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
+            DateTime startTime(ctx.session.startUnix);
+            DateTime endTime = DateTime(ctx.session.startUnix + ctx.session.duration);
             float targetFlow = ctx.session.targetFlow;
             float capturedVolume = ctx.session.capturedVolume;
 

@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include <Eolo/Core/Input/CaptureSwitchLogic.h>
 
 class CaptureSwitches

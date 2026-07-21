@@ -5,9 +5,12 @@
 #include "Wire.h"
 #include <RTClib.h>
 #include <sys/time.h>
-#include "../Config.h"
-#include "ESPJob.h"
+#include "../Config/Legacy.h"
+#include "I2CBus.h"
 #include <Eolo/Core/Time/RtcTimeParser.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include <atomic>
 
 #if BAREBONES == false
 
@@ -16,6 +19,23 @@ class RTCManager
 {
 private:
     RTC_DS3231 rtc;
+    SemaphoreHandle_t _cacheMutex = nullptr;
+    SemaphoreHandle_t _requestMutex = nullptr;
+    uint32_t _cachedUnix = 0;
+    uint32_t _cachedAtMs = 0;
+    bool _cacheValid = false;
+    bool _adjustPending = false;
+    DateTime _pendingAdjust;
+
+    void updateCache(const DateTime &value) {
+        if (_cacheMutex)
+            xSemaphoreTake(_cacheMutex, pdMS_TO_TICKS(5));
+        _cachedUnix = value.unixtime();
+        _cachedAtMs = millis();
+        _cacheValid = isValid(value);
+        if (_cacheMutex)
+            xSemaphoreGive(_cacheMutex);
+    }
 
 public:
     enum class BackupBatteryStatus : uint8_t
@@ -26,42 +46,56 @@ public:
     };
 
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
-    static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
+    static constexpr const char *DefaultTimeServerUrl = RTC_TIME_SERVER_URL;
     static constexpr size_t TimeServerResponseBufferSize = 4096;
 
-    bool ok = false;
-    bool powerLost = false;
+    std::atomic_bool ok{false};
+    std::atomic_bool powerLost{false};
+
+    RTCManager()
+        : _cacheMutex(xSemaphoreCreateMutex()),
+          _requestMutex(xSemaphoreCreateMutex()) {}
 
     bool begin()
     {
         LOG_LN("Iniciando RTC...");
         ok = true;
 
-        const int TIMEOUT_MS = 5000;
-        int startTime = millis();
-    
-        if (!rtc.begin())
-        {
-            ok = false;
+        bool rtcReady = false;
+        I2CBus &bus = I2CBus::getInstance();
+        // RTClib/Adafruit BusIO vuelve a ejecutar Wire.begin() y realiza su
+        // propio sondeo. Primero registramos el ACK/NACK mediante I2CBus;
+        // así un DS3231 ausente no genera warnings repetidos ni queda fuera
+        // de las estadísticas del worker.
+        if (bus.probe(0x68) == I2CBus::Result::Ok) {
+            I2CBus::Guard guard;
+            if (guard.acquired()) {
+                rtcReady = rtc.begin(&Wire);
+                if (rtcReady)
+                    powerLost = rtc.lostPower();
+            }
         }
+        bus.applyProfile();
+        ok = rtcReady;
 
-        powerLost = ok && rtc.lostPower();
+        if (ok.load())
+            poll();
 
     
 #if CHECK_SENSORS
         testRTC();
 #endif
-        return ok;
+        return ok.load();
     }
 
     void testRTC()
     {
-        if (!ok)
+        if (!ok.load())
         {
             LOG_LN("RTC no está inicializado correctamente");
         }
         LOG_LN("Probando RTC...");
-        DateTime now = rtc.now();
+        DateTime now = this->now();
         LOG_OUT("Fecha y hora actual: ");
         LOG_OUT(now.year(), DEC);
         LOG_OUT('/');
@@ -79,10 +113,9 @@ public:
     // Devuelve la fecha/hora actual en formato "YYYY-MM-DD HH:MM:SS"
     String getTimeString()
     {
-        if (!ok)
+        DateTime now = this->now();
+        if (!isValid(now))
             return String("0000-00-00 00:00:00");
-
-        DateTime now = rtc.now();
         char buf[20];
         snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
                  now.year(), now.month(), now.day(),
@@ -92,7 +125,7 @@ public:
 
     String getTimeString(DateTime time)
     {
-        if (!ok)
+        if (!isValid(time))
             return String("0000-00-00 00:00:00");
 
         char buf[20];
@@ -105,18 +138,83 @@ public:
     // Opcional: devuelve el objeto DateTime para uso avanzado
     DateTime now()
     {
-        if (!ok)
+        if (_cacheMutex &&
+            xSemaphoreTake(_cacheMutex, pdMS_TO_TICKS(5)) != pdTRUE)
             return DateTime();
-        return rtc.now();
+        if (!_cacheValid) {
+            if (_cacheMutex)
+                xSemaphoreGive(_cacheMutex);
+            return DateTime();
+        }
+        uint32_t unixTime = _cachedUnix + ((millis() - _cachedAtMs) / 1000UL);
+        bool valid = _cacheValid;
+        if (_cacheMutex)
+            xSemaphoreGive(_cacheMutex);
+        return valid ? DateTime(unixTime) : DateTime();
+    }
+
+    // Única lectura periódica del RTC físico; el resto del firmware usa now().
+    bool poll()
+    {
+        if (!ok.load())
+            return false;
+
+        bool hasPendingAdjust = false;
+        DateTime pendingAdjust;
+        if (_requestMutex &&
+            xSemaphoreTake(_requestMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            hasPendingAdjust = _adjustPending;
+            pendingAdjust = _pendingAdjust;
+            _adjustPending = false;
+            xSemaphoreGive(_requestMutex);
+        }
+        if (hasPendingAdjust && !adjustHardware(pendingAdjust))
+            LOG_LN("No se pudo aplicar el ajuste RTC encolado");
+
+        I2CBus::Guard guard;
+        if (!guard.acquired()) {
+            ok = false;
+            return false;
+        }
+        DateTime current = rtc.now();
+        if (!isValid(current)) {
+            ok = false;
+            return false;
+        }
+        ok = true;
+        updateCache(current);
+        return true;
     }
 
     bool adjust(const DateTime &time)
     {
-        if (!ok)
+        if (!ok.load() || !isValid(time))
+            return false;
+
+        // Todo ajuste se encola, incluso si el solicitante es una tarea de
+        // comunicaciones en core 0. Así el worker I2C sigue siendo el único
+        // contexto que toca el DS3231 y la llamada nunca espera una
+        // transacción física.
+        if (!_requestMutex ||
+            xSemaphoreTake(_requestMutex, 0) != pdTRUE)
+            return false;
+        _pendingAdjust = time;
+        _adjustPending = true;
+        xSemaphoreGive(_requestMutex);
+        return true;
+    }
+
+private:
+    bool adjustHardware(const DateTime &time)
+    {
+        if (!ok.load())
             return false;
         if (!isValid(time))
             return false;
 
+        I2CBus::Guard guard;
+        if (!guard.acquired())
+            return false;
         rtc.adjust(time);
         delay(5);
 
@@ -129,6 +227,7 @@ public:
         if (verified)
         {
             powerLost = false;
+            updateCache(written);
         }
         else
         {
@@ -141,6 +240,8 @@ public:
         return verified;
     }
 
+public:
+
     bool lostPower() const
     {
         return powerLost;
@@ -148,11 +249,10 @@ public:
 
     BackupBatteryStatus getBackupBatteryStatus()
     {
-        if (!ok)
+        DateTime current = now();
+        if (!isValid(current))
             return BackupBatteryStatus::Unknown;
-
-        DateTime current = rtc.now();
-        if (powerLost || !isValid(current))
+        if (powerLost || !ok.load())
             return BackupBatteryStatus::Check;
 
         return BackupBatteryStatus::Good;
@@ -180,12 +280,20 @@ public:
 
     static bool parseDateTimeString(const char *text, DateTime &time)
     {
-        return RTCParse::parseDateTime(text, time);
+        RtcDateTime parsed;
+        if (!RtcTimeParser::parseDateTime(text, parsed))
+            return false;
+        time = DateTime(parsed.unixTime);
+        return true;
     }
 
     static bool fromUnixWithOffset(uint32_t unixUtc, int32_t offsetSeconds, DateTime &time)
     {
-        return RTCParse::fromUnixWithOffset(unixUtc, offsetSeconds, time);
+        RtcDateTime parsed;
+        if (!RtcTimeParser::fromUnixWithOffset(unixUtc, offsetSeconds, parsed))
+            return false;
+        time = DateTime(parsed.unixTime);
+        return true;
     }
 
     bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
@@ -208,53 +316,14 @@ public:
 
     static bool parseTimeServerResponse(const char *json, DateTime &localTime, int32_t &offsetSeconds)
     {
-        return RtcTimeParser::parseTimeServerResponse(json, localTime, offsetSeconds);
-    }
-
-private:
-    static bool extractJsonInt(const char *json, const char *key, int64_t &value)
-    {
-        if (json == nullptr || key == nullptr)
+        RtcDateTime parsed;
+        if (!RtcTimeParser::parseTimeServerResponse(json, parsed, offsetSeconds))
             return false;
-
-        char pattern[40];
-        int written = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-        if (written < 0 || written >= (int)sizeof(pattern))
-            return false;
-
-        const char *pos = strstr(json, pattern);
-        if (pos == nullptr)
-            return false;
-
-        pos = strchr(pos + written, ':');
-        if (pos == nullptr)
-            return false;
-        pos++;
-
-        while (*pos == ' ' || *pos == '\t' || *pos == '\r' || *pos == '\n')
-            pos++;
-
-        bool negative = false;
-        if (*pos == '-')
-        {
-            negative = true;
-            pos++;
-        }
-
-        if (*pos < '0' || *pos > '9')
-            return false;
-
-        int64_t result = 0;
-        while (*pos >= '0' && *pos <= '9')
-        {
-            result = result * 10 + (*pos - '0');
-            pos++;
-        }
-
-        value = negative ? -result : result;
+        localTime = DateTime(parsed.unixTime);
         return true;
     }
 
+private:
     bool applyNetworkTime(const DateTime &localTime, int32_t offsetSeconds, const char *source)
     {
         DateTime current = now();
@@ -296,7 +365,7 @@ public:
     };
 
     static constexpr uint32_t MaxNtpAdjustDiffSeconds = 120;
-    static constexpr const char *DefaultTimeServerUrl = "http://time.cmasccp.cl/";
+    static constexpr const char *DefaultTimeServerUrl = RTC_TIME_SERVER_URL;
     static constexpr size_t TimeServerResponseBufferSize = 4096;
 
     bool ok = true;
@@ -417,12 +486,20 @@ public:
 
     static bool parseDateTimeString(const char *text, DateTime &time)
     {
-        return RTCParse::parseDateTime(text, time);
+        RtcDateTime parsed;
+        if (!RtcTimeParser::parseDateTime(text, parsed))
+            return false;
+        time = DateTime(parsed.unixTime);
+        return true;
     }
 
     static bool fromUnixWithOffset(uint32_t unixUtc, int32_t offsetSeconds, DateTime &time)
     {
-        return RTCParse::fromUnixWithOffset(unixUtc, offsetSeconds, time);
+        RtcDateTime parsed;
+        if (!RtcTimeParser::fromUnixWithOffset(unixUtc, offsetSeconds, parsed))
+            return false;
+        time = DateTime(parsed.unixTime);
+        return true;
     }
 
     bool applyTimeServerResponse(const char *response, const char *source = DefaultTimeServerUrl)
@@ -442,52 +519,13 @@ public:
 
     static bool parseTimeServerResponse(const char *json, DateTime &localTime, int32_t &offsetSeconds)
     {
-        return RtcTimeParser::parseTimeServerResponse(json, localTime, offsetSeconds);
-    }
-
-private:
-    static bool extractJsonInt(const char *json, const char *key, int64_t &value)
-    {
-        if (json == nullptr || key == nullptr)
+        RtcDateTime parsed;
+        if (!RtcTimeParser::parseTimeServerResponse(json, parsed, offsetSeconds))
             return false;
-
-        char pattern[40];
-        int written = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-        if (written < 0 || written >= (int)sizeof(pattern))
-            return false;
-
-        const char *pos = strstr(json, pattern);
-        if (pos == nullptr)
-            return false;
-
-        pos = strchr(pos + written, ':');
-        if (pos == nullptr)
-            return false;
-        pos++;
-
-        while (*pos == ' ' || *pos == '\t' || *pos == '\r' || *pos == '\n')
-            pos++;
-
-        bool negative = false;
-        if (*pos == '-')
-        {
-            negative = true;
-            pos++;
-        }
-
-        if (*pos < '0' || *pos > '9')
-            return false;
-
-        int64_t result = 0;
-        while (*pos >= '0' && *pos <= '9')
-        {
-            result = result * 10 + (*pos - '0');
-            pos++;
-        }
-
-        value = negative ? -result : result;
+        localTime = DateTime(parsed.unixTime);
         return true;
     }
+
 };
 #endif
 #endif

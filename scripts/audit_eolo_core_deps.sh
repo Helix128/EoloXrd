@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-rg -n "Context\.h|Config\.h|Arduino\.h|WiFi\.h|SD\.h|Preferences\.h|WebServer\.h" include/Eolo/Core include/Eolo/Types && {
-  echo "Forbidden dependency found under include/Eolo/Core or include/Eolo/Types" >&2
+core_root="lib/EoloCore/include/Eolo"
+forbidden='Context\.h|Config/|Config\.h|Arduino\.h|FreeRTOS|RTClib\.h|WiFi\.h|SD\.h|Preferences\.h|WebServer\.h'
+
+rg -n "$forbidden" "$core_root/Core" "$core_root/Types" && {
+  echo "Forbidden dependency found under EoloCore" >&2
   exit 1
 }
 
-echo "Eolo Core/Types dependency audit OK"
+echo "EoloCore dependency audit OK"

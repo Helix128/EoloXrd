@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Eolo/Core/Sensors/AnemometerModel.h>
 
 #if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
     !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
@@ -7,10 +8,7 @@
 #include "../EoloDemoPinout.h"
 
 /*
-  Demo independiente de anemometro RS485/Modbus RTU.
-
-  No depende de archivos de src ni del RS485Bus del proyecto.
-  Abrir esta carpeta/sketch en Arduino IDE y seleccionar una placa ESP32.
+  Demo PlatformIO de anemómetro RS485 usando las conversiones de EoloCore.
 
   Conexiones usadas segun EOLO_MODEL_* en ../EoloDemoPinout.h.
 
@@ -123,8 +121,8 @@ void setup() {
 void loop() {
   uint16_t regs[2] = {0, 0};
   if (readHoldingRegisters(ANEMOMETER_SLAVE_ID, ANEMOMETER_START_REG, 2, regs)) {
-    float speedMs = regs[0] / 100.0f;
-    float speedKph = speedMs * 3.6f;
+    float speedMs = AnemometerModel::speedFromRaw(regs[0]);
+    float speedKph = AnemometerModel::kphFromMetersPerSecond(speedMs);
     uint16_t directionDeg = regs[1];
     Serial.printf("ANEM OK | rawSpeed=%u | %.2f m/s | %.2f km/h | dir=%u deg\n",
                   regs[0], speedMs, speedKph, directionDeg);

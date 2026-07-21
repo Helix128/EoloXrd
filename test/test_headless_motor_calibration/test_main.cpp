@@ -4,9 +4,20 @@
 #include "Data/Context.h"
 #include <Eolo/Core/Flow/SmartFlowController.h>
 
+static FlowPidConfig validPidConfig()
+{
+    return {
+        FLOW_PID_INTERVAL_MS, FLOW_PID_DEADBAND, FLOW_PID_KP, FLOW_PID_KI,
+        FLOW_PID_INTEGRAL_LIMIT, FLOW_PID_MAX_STEP, FLOW_PID_FILTER_ALPHA,
+        FLOW_PID_MIN_ACTIVE, FLOW_PID_KD, FLOW_PID_MAX_DT_MS,
+        FLOW_PID_SENSOR_STALE_MS, FLOW_PID_KICK_PWM, FLOW_PID_KICK_MS,
+        FLOW_PID_STALL_FLOW_LPM, FLOW_PID_RESTALL_COOLDOWN_MS,
+        FLOW_PID_STALL_CONFIRM_MS};
+}
+
 void test_default_pid_config_is_valid()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     TEST_ASSERT_TRUE(MotorCaptureControl::validatePidConfig(config));
 }
 
@@ -17,14 +28,14 @@ void test_flow_pid_base_pwm_is_1660()
 
 void test_rejects_invalid_pid_timing()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     config.intervalMs = 50;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 }
 
 void test_rejects_invalid_pid_gains()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     config.kp = -1.0f;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -39,7 +50,7 @@ void test_rejects_invalid_pid_gains()
 
 void test_rejects_invalid_pid_filter()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     config.filterAlpha = 0.0f;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -49,7 +60,7 @@ void test_rejects_invalid_pid_filter()
 
 void test_rejects_invalid_pid_fault_timing_config()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     config.maxDtMs = config.intervalMs - 1;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 
@@ -67,78 +78,60 @@ void test_flow_pid_status_exposes_smart_model_fields()
     TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, status.fault);
     TEST_ASSERT_TRUE(status.timingOk);
     TEST_ASSERT_FALSE(status.modelValid);
-    TEST_ASSERT_FALSE(status.discovering);
-    TEST_ASSERT_EQUAL_INT(-1, status.discoveredPwm);
+    TEST_ASSERT_EQUAL_INT((int)IgnitionPhase::Off, (int)status.ignitionPhase);
+    TEST_ASSERT_FALSE(status.kickActive);
+    TEST_ASSERT_EQUAL_UINT16(0, status.kickCount);
 }
 
-void test_flow_motor_controller_discovery_uses_fast_interval()
+void test_flow_motor_controller_starts_with_kick()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
-    config.intervalMs = 800;
-    config.discoveryIntervalMs = 100;
-    config.discoveryStepPwm = 100;
-    config.discoveryThresholdLpm = 1.0f;
+    FlowPidConfig config = validPidConfig();
 
     FlowMotorInput input;
     input.nowMs = 100;
-    input.currentPwm = 1000;
+    input.currentPwm = 0;
     input.targetFlow = 5.0f;
     input.measuredFlow = 0.0f;
     input.flowValid = true;
     input.flowFresh = true;
     input.maxPwm = MAX_PWM;
-    controller.update(input, config);
-
-    input.nowMs = 200;
     FlowMotorOutput output = controller.update(input, config);
-    FlowPidStatus status = controller.status(true, false, 5.0f);
 
     TEST_ASSERT_TRUE(output.updated);
-    TEST_ASSERT_EQUAL_INT(1100, output.pwm);
-    TEST_ASSERT_TRUE(status.discovering);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, status.discoveryThresholdLpm);
+    TEST_ASSERT_EQUAL_INT(config.kickPwm, output.pwm);
+    TEST_ASSERT_EQUAL_INT((int)IgnitionPhase::Kick, (int)output.ignitionPhase);
+    TEST_ASSERT_TRUE(output.kickActive);
+    TEST_ASSERT_EQUAL_UINT16(1, output.kickCount);
 }
 
-void test_flow_motor_controller_finishes_discovery_at_threshold()
+void test_flow_motor_controller_finishes_kick_after_configured_time()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
-    config.intervalMs = 800;
-    config.discoveryIntervalMs = 100;
-    config.discoveryStepPwm = 100;
-    config.discoveryThresholdLpm = 1.0f;
+    FlowPidConfig config = validPidConfig();
 
     FlowMotorInput input;
     input.nowMs = 100;
-    input.currentPwm = 1000;
+    input.currentPwm = 0;
     input.targetFlow = 5.0f;
     input.measuredFlow = 0.0f;
     input.flowValid = true;
     input.flowFresh = true;
     input.maxPwm = MAX_PWM;
-    controller.update(input, config);
+    FlowMotorOutput kickOutput = controller.update(input, config);
+    input.nowMs += config.kickMs;
+    input.currentPwm = kickOutput.pwm;
+    FlowMotorOutput runOutput = controller.update(input, config);
 
-    input.nowMs = 200;
-    FlowMotorOutput discoveryOutput = controller.update(input, config);
-    TEST_ASSERT_TRUE(discoveryOutput.updated);
-    TEST_ASSERT_TRUE(controller.status(true, false, 5.0f).discovering);
-
-    input.nowMs = 300;
-    input.currentPwm = discoveryOutput.pwm;
-    input.measuredFlow = 1.1f;
-    FlowMotorOutput pidOutput = controller.update(input, config);
-    FlowPidStatus status = controller.status(true, false, 5.0f);
-
-    TEST_ASSERT_TRUE(pidOutput.updated);
-    TEST_ASSERT_FALSE(status.discovering);
-    TEST_ASSERT_EQUAL_INT(discoveryOutput.pwm, status.discoveredPwm);
+    TEST_ASSERT_TRUE(runOutput.updated);
+    TEST_ASSERT_EQUAL_INT((int)IgnitionPhase::Run, (int)runOutput.ignitionPhase);
+    TEST_ASSERT_FALSE(runOutput.kickActive);
 }
 
 void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     FlowMotorInput input;
     input.nowMs = 100;
     input.currentPwm = 500;
@@ -148,8 +141,11 @@ void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
     input.flowFresh = true;
     input.maxPwm = MAX_PWM;
     controller.update(input, config);
+    input.nowMs += config.kickMs;
+    input.currentPwm = config.kickPwm;
+    controller.update(input, config);
 
-    input.nowMs = 250;
+    input.nowMs += config.intervalMs;
     input.flowFresh = false;
     input.flowStale = true;
     input.flowAgeMs = config.sensorStaleMs + 1;
@@ -162,7 +158,7 @@ void test_flow_motor_controller_rejects_stale_sensor_without_pwm_update()
 void test_flow_motor_controller_caps_dt_after_invalid_sensor()
 {
     FlowMotorController controller;
-    FlowPidConfig config;
+    FlowPidConfig config = validPidConfig();
     FlowMotorInput input;
     input.nowMs = 100;
     input.currentPwm = 500;
@@ -172,15 +168,18 @@ void test_flow_motor_controller_caps_dt_after_invalid_sensor()
     input.flowFresh = true;
     input.maxPwm = MAX_PWM;
     controller.update(input, config);
+    input.nowMs += config.kickMs;
+    input.currentPwm = config.kickPwm;
+    controller.update(input, config);
 
-    input.nowMs = 5000;
+    input.nowMs += config.maxDtMs + 1;
     input.flowValid = false;
     input.flowFresh = false;
     FlowMotorOutput invalidOutput = controller.update(input, config);
     TEST_ASSERT_FALSE(invalidOutput.updated);
     TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_SENSOR_INVALID, invalidOutput.fault);
 
-    input.nowMs = 5200;
+    input.nowMs += config.intervalMs;
     input.flowValid = true;
     input.flowFresh = true;
     input.flowStale = false;
@@ -222,8 +221,8 @@ void setup()
     RUN_TEST(test_rejects_invalid_pid_filter);
     RUN_TEST(test_rejects_invalid_pid_fault_timing_config);
     RUN_TEST(test_flow_pid_status_exposes_smart_model_fields);
-    RUN_TEST(test_flow_motor_controller_discovery_uses_fast_interval);
-    RUN_TEST(test_flow_motor_controller_finishes_discovery_at_threshold);
+    RUN_TEST(test_flow_motor_controller_starts_with_kick);
+    RUN_TEST(test_flow_motor_controller_finishes_kick_after_configured_time);
     RUN_TEST(test_flow_motor_controller_rejects_stale_sensor_without_pwm_update);
     RUN_TEST(test_flow_motor_controller_caps_dt_after_invalid_sensor);
 #if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)

@@ -2,11 +2,11 @@
 #define MOTOR_H
 
 #include <Arduino.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include <Eolo/Core/Motor/PwmMath.h>
 
-#define PWM_RESOLUTION MOTOR_PWM_RESOLUTION_BITS
-#define MAX_PWM ((1 << PWM_RESOLUTION) - 1)
+inline constexpr int PWM_RESOLUTION = EoloConfig::board.motorPwmResolutionBits;
+inline constexpr int MAX_PWM = (1 << PWM_RESOLUTION) - 1;
 
 class MotorManager
 {
@@ -105,6 +105,17 @@ public:
 
 private:
 
+  static int physicalPwmFromLogical(int pwm)
+  {
+    pwm = constrainPwm(pwm);
+    return EoloConfig::board.motorPwmInverted ? MAX_PWM - pwm : pwm;
+  }
+
+  static uint8_t physicalOffLevel()
+  {
+    return EoloConfig::board.motorPwmInverted ? HIGH : LOW;
+  }
+
   void writeMotorPwm(int motorIdx, int pwm)
   {
     if (motorIdx < 0 || motorIdx >= motorCount)
@@ -116,7 +127,7 @@ private:
       LOG_LN("Motor " + String(motorIdx) + " a " + String(pwm));
     }
     pwmValues[motorIdx] = pwm;
-    ledcWrite(ledcChannels[motorIdx], pwmValues[motorIdx]);
+    ledcWrite(ledcChannels[motorIdx], physicalPwmFromLogical(pwmValues[motorIdx]));
 #if defined(FEATURE_MOTOR_PWM_POWER_PIN)
     setMotorPowerPin(anyMotorActive());
 #endif
@@ -130,10 +141,8 @@ private:
     pwm = constrainPwm(pwm);
     targetPwmValues[motorIdx] = pwm;
 
-#if MOTOR_RAMP_STEP > 0
-    if (pwm > pwmValues[motorIdx])
+    if (EoloConfig::board.motorRampStep > 0 && pwm > pwmValues[motorIdx])
       return;
-#endif
     writeMotorPwm(motorIdx, pwm);
   }
 
@@ -160,12 +169,13 @@ public:
     for (int i = 0; i < motorCount; i++)
     {
       pinMode(motors[i], OUTPUT);
-      digitalWrite(motors[i], LOW);
+      digitalWrite(motors[i], physicalOffLevel());
       ledcSetup(ledcChannels[i], freq, resolution);
+      ledcWrite(ledcChannels[i], physicalPwmFromLogical(0));
       ledcAttachPin(motors[i], ledcChannels[i]);
       pwmValues[i] = 0;
       targetPwmValues[i] = 0;
-      ledcWrite(ledcChannels[i], 0);
+      ledcWrite(ledcChannels[i], physicalPwmFromLogical(0));
     }
 #if defined(FEATURE_MOTOR_PWM_POWER_PIN)
 #if MOTOR_POWER_PIN >= 0
@@ -201,9 +211,11 @@ public:
 
   void updateRamp()
   {
-#if MOTOR_RAMP_STEP > 0
+    if (EoloConfig::board.motorRampStep <= 0)
+      return;
+
     unsigned long now = millis();
-    if (now - lastRampMs < MOTOR_RAMP_INTERVAL_MS)
+    if (now - lastRampMs < EoloConfig::board.motorRampIntervalMs)
       return;
     lastRampMs = now;
 
@@ -212,10 +224,9 @@ public:
       if (pwmValues[i] >= targetPwmValues[i])
         continue;
 
-      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], MOTOR_RAMP_STEP);
+      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], EoloConfig::board.motorRampStep);
       writeMotorPwm(i, next);
     }
-#endif
   }
 
   int getMotorPwm(int motorIdx) const

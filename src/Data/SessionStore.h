@@ -3,13 +3,14 @@
 
 #include "Session.h"
 #include "../Board/RTCManager.h"
-#include <Preferences.h>
+#include "PreferencesSettingsStore.h"
 
 class SessionStore
 {
-    Preferences preferences;
+    PreferencesSettingsStore settings;
 
 public:
+    SessionStore() : settings("eolo_session") {}
     void save(const Session &session);
     bool load(Session &session, RTCManager &rtc);
     bool canLoad();
@@ -22,22 +23,18 @@ public:
 inline void SessionStore::save(const Session &session)
 {
     LOG_LN("Guardando sesión en Flash...");
-    preferences.begin("eolo_session", false);
-
-    preferences.putULong("startDate", session.startDate.unixtime());
-    preferences.putUInt("duration", session.duration);
-    preferences.putULong("elapsedTime", session.elapsedTime);
-    preferences.putFloat("targetFlow", session.targetFlow);
-    preferences.putFloat("capturedVol", session.capturedVolume);
-    preferences.putBool("usePlantower", session.usePlantower);
-    preferences.putUChar("flowSecCount", session.flowSectionCount);
-    preferences.putBytes("flowSections", session.flowSections, sizeof(session.flowSections));
-
-    preferences.end();
+    settings.putUInt("startDate", session.startUnix);
+    settings.putUInt("duration", session.duration);
+    settings.putUInt("elapsedTime", static_cast<uint32_t>(session.elapsedTime));
+    settings.putFloat("targetFlow", session.targetFlow);
+    settings.putFloat("capturedVol", session.capturedVolume);
+    settings.putBool("usePlantower", session.usePlantower);
+    settings.putBytes("flowSecCount", &session.flowSectionCount, sizeof(session.flowSectionCount));
+    settings.putBytes("flowSections", session.flowSections, sizeof(session.flowSections));
 
     LOG_LN("Sesión guardada en Flash:");
     LOG_OUT(" startDate: ");
-    LOG_OUT_LN(session.startDate.timestamp());
+    LOG_OUT_LN(DateTime(session.startUnix).timestamp());
     LOG_OUT(" duration: ");
     LOG_OUT_LN(session.duration);
     LOG_OUT(" elapsedTime: ");
@@ -52,41 +49,39 @@ inline void SessionStore::save(const Session &session)
 
 inline bool SessionStore::load(Session &session, RTCManager &rtc)
 {
-    preferences.begin("eolo_session", false);
-
-    if (!preferences.isKey("startDate"))
+    if (!settings.contains("startDate"))
     {
-        preferences.end();
         LOG_LN("No se encontró sesión guardada en Flash");
         return false;
     }
 
-    uint32_t startUnix = preferences.getULong("startDate", 0);
-    uint32_t durationVal = preferences.getUInt("duration", 0);
-    unsigned long elapsedTime = preferences.getULong("elapsedTime", 0);
-    float targetFlowVal = preferences.getFloat("targetFlow", 5.0f);
-    float capturedVolumeVal = preferences.getFloat("capturedVol", 0.0f);
-    bool usePlantowerVal = preferences.getBool("usePlantower", true);
-    uint8_t flowSectionCountVal = preferences.getUChar("flowSecCount", 0);
+    uint32_t startUnix = settings.getUInt("startDate", 0);
+    uint32_t durationVal = settings.getUInt("duration", 0);
+    unsigned long elapsedTime = settings.getUInt("elapsedTime", 0);
+    float targetFlowVal = settings.getFloat("targetFlow", 5.0f);
+    float capturedVolumeVal = settings.getFloat("capturedVol", 0.0f);
+    bool usePlantowerVal = settings.getBool("usePlantower", true);
+    uint8_t flowSectionCountVal = 0;
+    settings.getBytes("flowSecCount", &flowSectionCountVal, sizeof(flowSectionCountVal));
     FlowSection flowSectionsVal[MaxFlowSections];
     for (uint8_t i = 0; i < MaxFlowSections; i++)
       flowSectionsVal[i] = FlowSection();
     if (flowSectionCountVal > MaxFlowSections)
       flowSectionCountVal = 0;
-    size_t sectionBytes = preferences.getBytes("flowSections", flowSectionsVal, sizeof(flowSectionsVal));
+    size_t sectionBytes = settings.getBytes("flowSections", flowSectionsVal, sizeof(flowSectionsVal))
+                              ? sizeof(flowSectionsVal) : 0;
     if (sectionBytes != sizeof(flowSectionsVal))
       flowSectionCountVal = 0;
 
-    preferences.end();
-
-    session.startDate = DateTime(startUnix);
+    session.startUnix = startUnix;
     session.duration = durationVal;
     session.elapsedTime = 0;
 
-    if (session.startDate < rtc.now())
+    const uint32_t nowUnix = rtc.now().unixtime();
+    if (session.startUnix < nowUnix)
     {
-        session.startDate = rtc.now();
-        session.duration = durationVal - elapsedTime;
+        session.startUnix = nowUnix;
+        session.duration = elapsedTime < durationVal ? durationVal - elapsedTime : 0;
         session.elapsedTime = 0;
 
         LOG_OUT("Tiempo transcurrido restaurado: ");
@@ -103,7 +98,7 @@ inline bool SessionStore::load(Session &session, RTCManager &rtc)
 
     LOG_LN("Sesión cargada desde Flash:");
     LOG_OUT(" startDate: ");
-    LOG_OUT_LN(session.startDate.timestamp());
+    LOG_OUT_LN(DateTime(session.startUnix).timestamp());
     LOG_OUT(" duration: ");
     LOG_OUT_LN(session.duration);
     LOG_OUT(" elapsedTime: ");
@@ -121,17 +116,12 @@ inline bool SessionStore::load(Session &session, RTCManager &rtc)
 
 inline bool SessionStore::canLoad()
 {
-    preferences.begin("eolo_session", false);
-    bool hasSession = preferences.isKey("startDate");
-    preferences.end();
-    return hasSession;
+    return settings.contains("startDate");
 }
 
 inline void SessionStore::clear()
 {
-    preferences.begin("eolo_session", false);
-    preferences.clear();
-    preferences.end();
+    settings.clear();
     LOG_LN("Sesión eliminada de Flash");
 }
 

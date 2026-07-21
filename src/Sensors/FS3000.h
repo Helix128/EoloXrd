@@ -1,43 +1,64 @@
 #ifndef FS3K_HPP
 #define FS3K_HPP
 
+#include <math.h>
 #include <SparkFun_FS3000_Arduino_Library.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
+#include "../Board/I2CBus.h"
+#include <Eolo/Core/Sensors/FS3000FlowModel.h>
 #include <Eolo/Types/FlowData.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include <atomic>
 class FS3K
 {
 public:
-    FS3K() {}
+    FS3K() : _dataMutex(xSemaphoreCreateMutex()) {}
 
     float velocity = 0.0; // m/s
     float flow = 0.0;     // L/min (promedio)
     float currentFlow = 0.0; // L/min (valor más reciente)
-    bool isReady = false;    
+    std::atomic_bool isReady{false};
     
-    void begin()
+    bool begin()
     {
-        if (isReady) {
+        if (isReady.load()) {
             LOG_LN("FS3000 ya inicializado, skipping...");
-            return;
+            return true;
         }
 
-        if(!sensor.begin())
+        bool sensorReady = false;
+        {
+            I2CBus::Guard guard;
+            sensorReady = guard.acquired() && sensor.begin();
+        }
+        I2CBus::getInstance().applyProfile();
+        if(!sensorReady)
         {
             LOG_LN("Fallo al inicializar FS3000");
             isReady = false;
+            return false;
         }
         else
         {
             LOG_LN("FS3000 inicializado");
-            bool isConnected = sensor.isConnected();
+            bool isConnected = false;
+            {
+                I2CBus::Guard guard;
+                isConnected = guard.acquired() && sensor.isConnected();
+            }
             if (!isConnected)
             {
                 LOG_LN("FS3000 no conectado");
                 isReady = false;
-                return;
+                return false;
             }
             
-            sensor.setRange(AIRFLOW_RANGE_15_MPS);
+            {
+                I2CBus::Guard guard;
+                if (guard.acquired())
+                    sensor.setRange(AIRFLOW_RANGE_15_MPS);
+            }
 #if CHECK_SENSORS
             // check extra
             // Inicializar buffer de promedio y tomar lecturas para estabilizar
@@ -55,6 +76,7 @@ public:
 #if CHECK_SENSORS
             testSensor();
 #endif
+            return true;
         }
     }
     
@@ -75,20 +97,22 @@ public:
         }
     }
     
-    void readData()
+    bool readData()
     {      
-        if(!isReady)
-        {
-            velocity = -1;
-            flow = -1;
-            currentFlow = -1;
-            return;
+        if(!isReady.load())
+            return false;
+        I2CBus::Guard guard;
+        if (!guard.acquired())
+            return false;
+        float nextVelocity = sensor.readMetersPerSecond();
+        if (!isfinite(nextVelocity) || nextVelocity < 0.0f) {
+            isReady = false;
+            return false;
         }
-        velocity = sensor.readMetersPerSecond();
-        currentFlow = getFlow(velocity);
-        
+        float nextCurrentFlow = FS3000FlowModel::flowFromVelocity(nextVelocity);
+
         // Guardar en el buffer circular
-        flowBuffer[bufferIndex] = currentFlow;
+        flowBuffer[bufferIndex] = nextCurrentFlow;
         bufferIndex = (bufferIndex + 1) % MAX_AVG_VALUES;
         
         // Calcular promedio
@@ -96,18 +120,37 @@ public:
         for (int i = 0; i < MAX_AVG_VALUES; i++) {
             sum += flowBuffer[i];
         }
-        flow = sum / MAX_AVG_VALUES;
+        float nextFlow = sum / MAX_AVG_VALUES;
+        bool locked = !_dataMutex ||
+                      xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(5)) == pdTRUE;
+        if (!locked)
+            return false;
+        velocity = nextVelocity;
+        currentFlow = nextCurrentFlow;
+        flow = nextFlow;
+        _hasData = true;
+        _lastSuccessMs = millis();
+        if (_dataMutex)
+            xSemaphoreGive(_dataMutex);
+        return isfinite(nextFlow) && nextFlow >= 0.0f;
     }
+
+    bool poll() { return readData(); }
 
     bool getData(FlowData &output)
     {
-        readData();
+        bool locked = !_dataMutex ||
+                      xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(5)) == pdTRUE;
+        if (!locked)
+            return false;
         output.flow = flow;
         output.velocity = velocity;
-        output.valid = isReady && flow >= 0.0f;
-        output.fresh = output.valid;
-        output.stale = false;
-        output.ageMs = 0;
+        output.valid = _hasData && flow >= 0.0f;
+        output.ageMs = _hasData ? millis() - _lastSuccessMs : 0;
+        output.fresh = output.valid && output.ageMs <= 50UL;
+        output.stale = output.valid && output.ageMs > 5000UL;
+        if (_dataMutex)
+            xSemaphoreGive(_dataMutex);
         return output.valid;
     }
 
@@ -115,32 +158,10 @@ private:
     static const int MAX_AVG_VALUES = 16;
     float flowBuffer[MAX_AVG_VALUES] = {0};
     int bufferIndex = 0;
+    SemaphoreHandle_t _dataMutex = nullptr;
+    bool _hasData = false;
+    uint32_t _lastSuccessMs = 0;
     
-    float getFlow(float speed) const
-    {   
-        if(speed<=0) {
-            return -1.0f; // Indica error en la lectura
-        }
-        
-        static const float velocityPoints[] = {0.06, 0.34, 0.7, 1.06, 1.42, 1.74, 2.02, 2.30, 2.60, 2.80, 3.00, 3.33};
-        static const float flowPoints[] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0};
-        static const int numPoints = 12;
-
-        if (speed < velocityPoints[0]) {
-            return 0.0;
-        }
-
-        for (int i = 0; i < numPoints - 1; i++) {
-            if (speed < velocityPoints[i + 1]) {
-                float slope = (flowPoints[i + 1] - flowPoints[i]) / (velocityPoints[i + 1] - velocityPoints[i]);
-                return flowPoints[i] + slope * (speed - velocityPoints[i]);
-            }
-        }
-
-        float slope = (flowPoints[numPoints - 1] - flowPoints[numPoints - 2]) / 
-                     (velocityPoints[numPoints - 1] - velocityPoints[numPoints - 2]);
-        return flowPoints[numPoints - 1] + slope * (speed - velocityPoints[numPoints - 1]);
-    }
     FS3000 sensor;
 };
 

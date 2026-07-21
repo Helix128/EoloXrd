@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "Profiler.h"
 
 // Estadisticas de monitoreo del bus RS485

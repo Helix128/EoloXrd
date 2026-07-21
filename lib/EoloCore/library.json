@@ -1,0 +1,8 @@
+{
+  "name": "EoloCore",
+  "version": "1.0.0",
+  "description": "",
+  "build": {
+    "includeDir": "include"
+  }
+}

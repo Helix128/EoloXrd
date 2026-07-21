@@ -3,15 +3,20 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <RTClib.h>
 #include <math.h>
 #include <Eolo/Types/AnemometerData.h>
 #include <Eolo/Types/FlowData.h>
+#include <Eolo/Types/LogTypes.h>
 #include <Eolo/Types/NTCData.h>
 #include <Eolo/Types/PlantowerData.h>
 
 namespace LogSchema
 {
     static constexpr float LogMissingValue = -1.0f;
+
+    inline String header(bool includeState, bool includePlantower,
+                         bool includeAnemometer, bool includeNtc);
 
     template <typename ContextT>
     inline bool plantowerEnabled(const ContextT &ctx)
@@ -74,15 +79,22 @@ namespace LogSchema
     template <typename ContextT>
     inline String header(const ContextT &ctx)
     {
+        return header(stateColumnEnabled(ctx), plantowerEnabled(ctx),
+                      anemometerEnabled(ctx), ntcEnabled(ctx));
+    }
+
+    inline String header(bool includeState, bool includePlantower,
+                         bool includeAnemometer, bool includeNtc)
+    {
         String out = "time";
-        if (stateColumnEnabled(ctx))
+        if (includeState)
             out += ",state";
         out += ",flow,flow_target,temperature,humidity,pressure";
-        if (plantowerEnabled(ctx))
+        if (includePlantower)
             out += ",pm1,pm25,pm10";
-        if (anemometerEnabled(ctx))
+        if (includeAnemometer)
             out += ",wind_speed,wind_direction";
-        if (ntcEnabled(ctx))
+        if (includeNtc)
             out += ",ntc_temperature";
         out += ",battery_pct";
         return out;
@@ -118,6 +130,58 @@ namespace LogSchema
         file.print(",");
     }
 
+    // Serializador desacoplado de Context. El wrapper histórico de abajo se
+    // mantiene para escenas/tests que todavía consultan sensores en el acto.
+    inline void writeRow(File &file, const LogRecord &record,
+                         bool includeState, bool includePlantower,
+                         bool includeAnemometer, bool includeNtc,
+                         const char *stateText = "Capturando")
+    {
+        file.print(DateTime(record.timestampUnix).timestamp());
+        printComma(file);
+        if (includeState)
+        {
+            printValue(file, stateText == nullptr ? "Capturando" : stateText);
+            printComma(file);
+        }
+
+        printValue(file, missingIfInvalid(record.flow.valid, record.flow.flow));
+        printComma(file);
+        printValue(file, record.targetFlow);
+        printComma(file);
+        printValue(file, bmeValue(record.environment.valid, record.environment.temperature));
+        printComma(file);
+        printValue(file, bmeValue(record.environment.valid, record.environment.humidity));
+        printComma(file);
+        printValue(file, bmeValue(record.environment.valid, record.environment.pressure));
+
+        if (includePlantower)
+        {
+            printComma(file);
+            printValue(file, missingIfInvalid(record.plantower.valid, static_cast<float>(record.plantower.pm1_0)));
+            printComma(file);
+            printValue(file, missingIfInvalid(record.plantower.valid, static_cast<float>(record.plantower.pm2_5)));
+            printComma(file);
+            printValue(file, missingIfInvalid(record.plantower.valid, static_cast<float>(record.plantower.pm10_0)));
+        }
+        if (includeAnemometer)
+        {
+            printComma(file);
+            printValue(file, missingIfInvalid(record.anemometer.valid, record.anemometer.speed));
+            printComma(file);
+            printValue(file, record.anemometer.valid ? record.anemometer.direction : static_cast<int>(LogMissingValue));
+        }
+        if (includeNtc)
+        {
+            printComma(file);
+            printValue(file, missingIfInvalid(record.ntc.valid, record.ntc.temperature));
+        }
+
+        printComma(file);
+        printValue(file, record.batteryPercent);
+        file.println();
+    }
+
     template <typename ContextT>
     inline void writeRow(File &file, ContextT &ctx)
     {
@@ -137,11 +201,13 @@ namespace LogSchema
 
         printValue(file, ctx.session.targetFlow);
         printComma(file);
-        printValue(file, bmeValue(ctx.components.bme.isReady, ctx.components.bme.temperature));
+        BME280Data bmeData;
+        bool bmeValid = ctx.components.bme.getData(bmeData);
+        printValue(file, bmeValue(bmeValid, bmeData.temperature));
         printComma(file);
-        printValue(file, bmeValue(ctx.components.bme.isReady, ctx.components.bme.humidity));
+        printValue(file, bmeValue(bmeValid, bmeData.humidity));
         printComma(file);
-        printValue(file, bmeValue(ctx.components.bme.isReady, ctx.components.bme.pressure));
+        printValue(file, bmeValue(bmeValid, bmeData.pressure));
 
 #ifdef FEATURE_PLANTOWER
         if (plantowerEnabled(ctx))

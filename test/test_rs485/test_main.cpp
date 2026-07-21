@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
 #include "../../src/Board/RS485Bus.h"
-#include "../../src/Config.h"
+#include "../../src/Config/Legacy.h"
 
 // Por defecto, las pruebas no requieren tener el sensor real conectado.
 // Para ejecutar las pruebas con sensor real:

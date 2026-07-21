@@ -6,7 +6,7 @@
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/Renderer.h"
-#include "../../Config.h"
+#include "../../Config/Legacy.h"
 
 // Escena de logo/splash al iniciar la app
 class CapturaScene : public IScene
@@ -197,7 +197,7 @@ public:
         case 5:
         {
             // tiempos de inicio y fin
-            DateTime start = ctx.session.startDate;
+            DateTime start(ctx.session.startUnix);
             DateTime end = start + ctx.session.duration;
 
             String startStr = start.timestamp(DateTime::TIMESTAMP_TIME);

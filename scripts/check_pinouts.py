@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,27 +40,6 @@ DOC_DEFINES = {
     "MODEM_RX_PIN", "MODEM_TX_PIN",
 }
 
-DEMO_TO_PINOUT = {
-    "I2C_SDA_PIN": "SDA_PIN",
-    "I2C_SCL_PIN": "SCL_PIN",
-    "SD_CS_PIN": "SD_CS_PIN",
-    "DIP_PIN_1": "WAIT_SW0_PIN",
-    "DIP_PIN_2": "WAIT_SW1_PIN",
-    "DIP_PIN_3": "DURATION_SW0_PIN",
-    "DIP_PIN_4": "DURATION_SW1_PIN",
-    "NEOPIXEL_PIN": "NEOPIXEL_PIN",
-    "RS485_RX_PIN": "RS485_RX_PIN",
-    "RS485_TX_PIN": "RS485_TX_PIN",
-    "RS485_DE_RE_PIN": "RS485_DE_RE_PIN",
-    "MOTOR_PWM_PIN": "MOTOR_PWM_PIN_0",
-    "MOTOR_FG_PIN": "MOTOR_FG_PIN",
-    "PT_RX_PIN": "PT_RX",
-    "PT_TX_PIN": "PT_TX",
-    "PPH_PWR_PIN": "PPH_PWR_PIN",
-    "MODEM_PWR_PIN": "MODEM_PWR_PIN",
-}
-
-
 def eval_value(raw: str, values: dict[str, int]) -> int:
     raw = raw.strip()
     if raw == "EOLO_PIN_UNUSED":
@@ -69,30 +49,20 @@ def eval_value(raw: str, values: dict[str, int]) -> int:
     return int(raw, 0)
 
 
-def target_block(text: str, macro: str) -> str:
-    start = text.index(macro)
-    end = text.find("#elif", start + len(macro))
-    else_pos = text.find("#else", start + len(macro))
-    candidates = [p for p in (end, else_pos) if p != -1]
-    return text[start:min(candidates) if candidates else len(text)]
-
-
-def parse_defines(text: str, macro: str) -> dict[str, int]:
+def parse_defines(macro: str) -> dict[str, int]:
+    result = subprocess.run(
+        ["cc", "-E", "-dM", "-x", "c++", f"-D{macro}", str(PINOUT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     values = {"EOLO_PIN_UNUSED": -1}
-    for name, raw in re.findall(r"#define\s+(\w+)\s+([^\s/]+)", target_block(text, macro)):
+    for name, raw in re.findall(r"#define\s+(\w+)\s+([^\s/]+)", result.stdout):
         try:
             values[name] = eval_value(raw, values)
         except ValueError:
             pass
     return values
-
-
-def parse_demo(text: str, macro: str) -> dict[str, int]:
-    values = {"EOLO_PIN_UNUSED": -1}
-    out = {}
-    for name, raw in re.findall(r"static\s+const\s+int\s+(\w+)\s*=\s*([^;]+);", target_block(text, macro)):
-        out[name] = eval_value(raw, values)
-    return out
 
 
 def parse_doc(path: Path) -> dict[str, int]:
@@ -108,29 +78,21 @@ def parse_doc(path: Path) -> dict[str, int]:
 
 
 def main() -> int:
-    pinout_text = PINOUT.read_text()
     demo_text = DEMO.read_text()
     errors = []
 
+    if '#include "../src/Board/Pinout.h"' not in demo_text:
+        errors.append(f"{DEMO}: no incluye la fuente autoritativa src/Board/Pinout.h")
+
     for target, cfg in TARGETS.items():
-        pinout = parse_defines(pinout_text, cfg["macro"])
+        pinout = parse_defines(cfg["macro"])
         doc = parse_doc(cfg["doc"])
-        demo = parse_demo(demo_text, cfg["demo"])
 
         for name, doc_value in sorted(doc.items()):
             if name not in pinout:
                 errors.append(f"{cfg['doc']}: {name} no existe en Pinout.h para {target}")
             elif pinout[name] != doc_value:
                 errors.append(f"{cfg['doc']}: {name}={doc_value}, Pinout.h={pinout[name]}")
-
-        for demo_name, pinout_name in DEMO_TO_PINOUT.items():
-            if demo_name not in demo:
-                continue
-            if pinout_name not in pinout:
-                errors.append(f"{DEMO}: {demo_name} mapea a {pinout_name}, ausente en Pinout.h para {target}")
-                continue
-            if demo[demo_name] != pinout[pinout_name]:
-                errors.append(f"{DEMO}: {target} {demo_name}={demo[demo_name]}, {pinout_name}={pinout[pinout_name]}")
 
     if errors:
         print("Pinout sync check failed:")

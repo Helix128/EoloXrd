@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "../Board/RS485Bus.h"
+#include <Eolo/Core/Sensors/AnemometerModel.h>
 #include <Eolo/Types/AnemometerData.h>
 
 #define ANEM_ID 1
@@ -14,7 +15,7 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _dataMutex;
     AnemometerData _data;
-    unsigned long _lastSuccessMs = 0;
+    uint32_t _lastSuccessMs = 0;
 
     static const uint16_t REG_START = 0x0000;
     static const uint8_t REG_COUNT = 2;
@@ -46,17 +47,13 @@ private:
             if (xSemaphoreTake(self->_dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (success) {
                     int rawSpeed = (int)buffer[0];
-                    self->_data.speed = rawSpeed / 100.0f;
-                    self->_data.windKph = self->_data.speed * 3.6f;
-                    self->_data.direction = (int)buffer[1];
-                    self->_data.valid = true;
-                    self->_lastSuccessMs = now;
+                    AnemometerModel::applyReadSuccess(self->_data, self->_lastSuccessMs, rawSpeed, (int)buffer[1], now);
                     if (EoloDebug::verboseLogsEnabled()) {
                         LOG_F("Anemometro: rawSpeed=%d, speed=%.2f m/s, windKph=%.2f, direction=%d\n",
                               rawSpeed, self->_data.speed, self->_data.windKph, self->_data.direction);
                     }
                 } else {
-                    self->_data.valid = self->_lastSuccessMs > 0 && (now - self->_lastSuccessMs) <= STALE_DATA_MS;
+                    AnemometerModel::applyReadFailure(self->_data, self->_lastSuccessMs, now, STALE_DATA_MS);
                 }
                 xSemaphoreGive(self->_dataMutex);
             } else {
@@ -86,17 +83,25 @@ public:
         if (_dataMutex) vSemaphoreDelete(_dataMutex);
     }
 
-    void begin() {
+    bool begin() {
+        if (_taskHandle != nullptr)
+            return true;
+        if (_dataMutex == nullptr)
+            return false;
         RS485Bus::getInstance().begin();
-        xTaskCreatePinnedToCore(taskWorker, "AnemTask", TASK_STACK_BYTES, this, TASK_PRIORITY, &_taskHandle, TASK_CORE);
+        BaseType_t created = xTaskCreatePinnedToCore(taskWorker, "AnemTask", TASK_STACK_BYTES, this, TASK_PRIORITY, &_taskHandle, TASK_CORE);
+        if (created != pdPASS)
+        {
+            _taskHandle = nullptr;
+            return false;
+        }
+        return true;
     }
 
     bool getData(AnemometerData& output) {
         bool success = false;
         if (xSemaphoreTake(_dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            if (_lastSuccessMs == 0 || (millis() - _lastSuccessMs) > STALE_DATA_MS) {
-                _data.valid = false;
-            }
+            AnemometerModel::refreshValidity(_data, _lastSuccessMs, millis(), STALE_DATA_MS);
             output = _data;
             success = _data.valid;
             xSemaphoreGive(_dataMutex);

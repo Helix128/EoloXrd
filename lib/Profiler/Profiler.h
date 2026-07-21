@@ -5,7 +5,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "Config.h"
+#include "Utility/Log.h"
 
 #ifndef PROFILE_ENABLED
 #define PROFILE_ENABLED 1

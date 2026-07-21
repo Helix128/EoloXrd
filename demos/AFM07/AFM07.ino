@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ModbusMaster.h>
+#include <Eolo/Core/Sensors/AFM07Model.h>
 
 #if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
     !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
@@ -8,13 +9,7 @@
 #include "../EoloDemoPinout.h"
 
 /*
-  Demo independiente AFM07 por RS485/Modbus RTU usando ModbusMaster.
-
-  No depende de archivos de src ni del RS485Bus del proyecto.
-  Abrir esta carpeta/sketch en Arduino IDE y seleccionar una placa ESP32.
-
-  Libreria necesaria en Arduino IDE:
-    - ModbusMaster
+  Demo PlatformIO AFM07 por RS485/Modbus RTU usando el modelo de EoloCore.
 
   Conexiones usadas segun EOLO_MODEL_* en ../EoloDemoPinout.h.
 
@@ -82,7 +77,7 @@ void loop() {
 
   if (result == ModbusMaster::ku8MBSuccess) {
     uint16_t rawFlow = afm07.getResponseBuffer(0);
-    float flowLpm = rawFlow / 10.0f;
+    float flowLpm = AFM07Model::flowFromRaw(rawFlow, 10.0f);
     Serial.printf("AFM07 OK | raw=%u | flujo=%.2f L/min\n", rawFlow, flowLpm);
   } else {
     Serial.printf("AFM07 sin lectura valida | codigo=0x%02X (%s)\n", result, modbusErrorText(result));

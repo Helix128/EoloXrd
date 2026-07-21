@@ -10,7 +10,7 @@ struct FakeSession
 #if defined(FEATURE_FLOW_PID)
 struct FakePidStatus
 {
-    bool discovering = false;
+    bool kickActive = false;
 };
 
 struct FakeMotorCapture
@@ -69,8 +69,8 @@ void test_capture_state_text()
     FakeContext ctx;
     TEST_ASSERT_EQUAL_STRING("Capturando", LogSchema::captureState(ctx));
 #if defined(FEATURE_FLOW_PID)
-    ctx.motorCapture.status.discovering = true;
-    TEST_ASSERT_EQUAL_STRING("Calibrando", LogSchema::captureState(ctx));
+    ctx.motorCapture.status.kickActive = true;
+    TEST_ASSERT_EQUAL_STRING("Arrancando", LogSchema::captureState(ctx));
 #endif
 }
 

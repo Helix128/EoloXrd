@@ -68,11 +68,11 @@ namespace HeadlessSetup
     return true;
   }
 
-  inline void applyToSession(const HeadlessSetupConfig &config, Session &session, const DateTime &now)
+  inline void applyToSession(const HeadlessSetupConfig &config, Session &session, uint32_t nowUnix)
   {
     session.usePlantower = false;
     session.targetFlow = config.flowSectionCount > 0 ? config.flowSections[0].targetFlow : config.targetFlow;
-    session.startDate = DateTime(now.unixtime() + config.waitSeconds);
+    session.startUnix = nowUnix + config.waitSeconds;
     session.duration = config.durationSeconds;
     session.elapsedTime = 0;
     session.lastLog = 0;

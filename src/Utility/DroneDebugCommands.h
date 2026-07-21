@@ -109,7 +109,7 @@ private:
       return "pausada";
     if (_ctx->isCapturing)
       return "capturando";
-    if (_ctx->session.startDate.unixtime() > now.unixtime())
+    if (_ctx->session.startUnix > now.unixtime())
       return "esperando";
 #ifdef FEATURE_NEOPIXEL
     if (_ctx->components.statusLed.pattern() == StatusLedPattern::Setup)
@@ -121,7 +121,7 @@ private:
   String captureLine(const DateTime &now) const
   {
     uint32_t nowTs = now.unixtime();
-    uint32_t startTs = _ctx->session.startDate.unixtime();
+    uint32_t startTs = _ctx->session.startUnix;
     String line = "Captura: ";
 
     if (_ctx->isCapturing)
@@ -399,6 +399,8 @@ public:
     DateTime now = _ctx->components.rtc.now();
     FlowData flowData;
     bool flowOk = _ctx->components.flowSensor.getData(flowData);
+    BME280Data bmeData;
+    bool bmeOk = _ctx->components.bme.getData(bmeData);
 
     NTCData ntcData;
     bool ntcOk = false;
@@ -427,10 +429,12 @@ public:
       out.printf("%.1f C", ntcData.temperature);
     else
       out.print("N/D");
-    out.printf(" | BME %.1f C %.1f%% %.1f hPa\n",
-               _ctx->components.bme.temperature,
-               _ctx->components.bme.humidity,
-               _ctx->components.bme.pressure);
+    out.printf(" | BME ");
+    if (bmeOk)
+      out.printf("%.1f C %.1f%% %.1f hPa\n",
+                 bmeData.temperature, bmeData.humidity, bmeData.pressure);
+    else
+      out.println("N/D");
 
     out.printf("Motor: %d%% pwm %d/%d modo %s\n",
                _ctx->components.motor.getPowerPct(),
@@ -460,12 +464,12 @@ public:
                  _ctx->isCapturing ? "si" : "no",
                  _ctx->isPaused ? "si" : "no",
                  _ctx->isEnd ? "si" : "no",
-                 _ctx->logActive ? "si" : "no",
-                 _ctx->uploadPending ? "si" : "no",
-                 _ctx->uploadActive ? "si" : "no");
+                 _ctx->logActive.load() ? "si" : "no",
+                 _ctx->uploadPending.load() ? "si" : "no",
+                 _ctx->uploadActive.load() ? "si" : "no");
       out.printf("  SD: ready=%s enum=%d\n", _ctx->isSdReady ? "si" : "no", (int)_ctx->sdStatus);
       out.printf("  session: start=%s elapsed=%lu duration=%u target=%.2f volume=%.3f L\n",
-                 _ctx->session.startDate.timestamp().c_str(),
+                 DateTime(_ctx->session.startUnix).timestamp().c_str(),
                  _ctx->session.elapsedTime,
                  _ctx->session.duration,
                  _ctx->session.targetFlow,

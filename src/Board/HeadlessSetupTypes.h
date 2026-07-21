@@ -2,7 +2,7 @@
 #define HEADLESS_SETUP_TYPES_H
 
 #include <Arduino.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include <Eolo/Types/HeadlessSetupTypes.h>
 
 namespace HeadlessSetup

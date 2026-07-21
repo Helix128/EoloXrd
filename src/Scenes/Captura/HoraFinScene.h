@@ -23,7 +23,7 @@ public:
     void enter(Context &ctx) override
     {   
         isEndTime = true;
-        DateTime now = DateTime(ctx.session.startDate.unixtime()+ctx.session.duration);
+        DateTime now = DateTime(ctx.session.startUnix+ctx.session.duration);
         int nowUnix = now.unixtime();
         targetMinute = now.minute();
         targetHour = now.hour();
@@ -76,9 +76,9 @@ public:
             if (isEndTime)
             {
             DateTime newTimeAdjusted(now.year(), now.month(), now.day() + newDay, newHour, newMinute, 0);
-            if (newTimeAdjusted.unixtime() <= ctx.session.startDate.unixtime())
+            if (newTimeAdjusted.unixtime() <= ctx.session.startUnix)
             {
-                DateTime minTime = DateTime(ctx.session.startDate.unixtime() + 60);
+                DateTime minTime = DateTime(ctx.session.startUnix + 60);
                 newDay = minTime.day() - now.day();
                 newHour = minTime.hour();
                 newMinute = minTime.minute();
@@ -112,7 +112,7 @@ public:
             if (isEndTime)
             {   
                 ctx.components.input.resetCounter();
-                ctx.session.duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
+                ctx.session.duration = targetTime.unixtime() - ctx.session.startUnix;
                 LOG_OUT("Hora de fin establecida:");
                 LOG_LN(targetTime.timestamp());
                 ctx.saveSession();
@@ -120,7 +120,7 @@ public:
             }
             else
             {
-                ctx.session.startDate = targetTime;
+                ctx.session.startUnix = targetTime.unixtime();
                 isEndTime = true;
                 enter(ctx);
             }
@@ -160,7 +160,7 @@ public:
         {
             DateTime now = ctx.components.rtc.now();
             DateTime targetTime(now.year(), now.month(), now.day() + targetDay, targetHour, targetMinute, 0);
-            long duration = targetTime.unixtime() - ctx.session.startDate.unixtime();
+            long duration = targetTime.unixtime() - ctx.session.startUnix;
             
             int durationHours = duration / 3600;
             int durationMinutes = (duration % 3600) / 60;

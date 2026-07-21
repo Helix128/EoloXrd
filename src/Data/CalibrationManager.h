@@ -1,7 +1,7 @@
 #ifndef CALIBRATION_MANAGER_H
 #define CALIBRATION_MANAGER_H
 
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "../Effectors/Motor.h"
 #include "Components.h"
 #include "Profiler.h"

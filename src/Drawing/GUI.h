@@ -3,7 +3,7 @@
 
 #include <U8g2lib.h>
 #include "../Data/Context.h" 
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "Profiler.h" 
 // Helper para dibujar elementos comunes en la UI
 class GUI
@@ -33,8 +33,11 @@ public:
         int cursorX = 126;
         bool isDC = snapshot.power.poweredByDc;
         uint8_t activeMosfet = snapshot.power.activeBattery;
-        drawBatteryIcon(ctx, cursorX - 9, 3, (int)snapshot.power.batteryPct1, !isDC && activeMosfet == 2);
-        drawBatteryIcon(ctx, cursorX - 20, 3, (int)snapshot.power.batteryPct0, !isDC && activeMosfet == 1);
+        bool batteryDataValid = snapshot.power.valid;
+        drawBatteryIcon(ctx, cursorX - 9, 3, batteryDataValid ? (int)snapshot.power.batteryPct1 : -1,
+                        batteryDataValid && !isDC && activeMosfet == 3);
+        drawBatteryIcon(ctx, cursorX - 20, 3, batteryDataValid ? (int)snapshot.power.batteryPct0 : -1,
+                        batteryDataValid && !isDC && activeMosfet == 2);
         if (isDC)
             drawDcText(ctx, cursorX - 27, 11);
 #ifdef FEATURE_MODEM
@@ -143,7 +146,19 @@ private:
 
     static void drawBatteryIcon(Context &ctx, int x, int y, int pct, bool active)
     {
-        if (pct < 0) pct = 0;
+        bool unknown = pct < 0;
+        if (unknown)
+        {
+            const int w = 8;
+            const int h = 9;
+            ctx.u8g2.drawFrame(x, y, w, h);
+            ctx.u8g2.drawBox(x + w, y + 3, 1, 3);
+            ctx.u8g2.drawLine(x + 1, y + 1, x + w - 2, y + h - 2);
+            ctx.u8g2.drawLine(x + w - 2, y + 1, x + 1, y + h - 2);
+            if (active)
+                ctx.u8g2.drawHLine(x, y + h + 1, w);
+            return;
+        }
         if (pct > 100) pct = 100;
 
         const int w = 8;

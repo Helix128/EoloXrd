@@ -48,6 +48,11 @@ DEMO_CONFIG = {
         "models": ["dron"],
         "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],
     },
+    "AFM07ProfPins": {"models": ["express"], "lib_deps": []},
+    "AFM07Scan": {"models": ["express"], "lib_deps": []},
+    "I2CDisplayDiag": {"models": ["express"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
+    "MotorDirDiag": {"models": ["express"], "lib_deps": []},
+    "SPIStandardDisplayDiag": {"models": ["standard"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
 }
 
 

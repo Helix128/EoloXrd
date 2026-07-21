@@ -11,7 +11,7 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "../Utility/RS485Monitor.h"
 #include "../Utility/RS485PatternValidator.h"
 
@@ -30,6 +30,16 @@ struct RS485Request {
     TaskHandle_t callerTask;  // Tarea a notificar al terminar
 };
 
+// Diagnóstico acumulado por esclavo. Los tiempos son valores de millis(), para
+// que la consola pueda mostrarlos como edades relativas al instante actual.
+struct RS485SlaveStats {
+    uint32_t successes = 0;
+    uint32_t failures = 0;
+    uint32_t lastSuccessMs = 0;
+    uint32_t lastFailureMs = 0;
+    uint8_t lastErrorCode = ModbusMaster::ku8MBSuccess;
+};
+
 class RS485Bus {
 private:
     SoftwareSerial _serial;
@@ -38,6 +48,8 @@ private:
     std::atomic<bool> _initialized;
     static RS485Bus* _activeBus;
     uint8_t _consecutiveFailures = 0;
+    RS485SlaveStats _slaveStats[2]; // 0: anemómetro (0x01), 1: AFM07 (0x02)
+    portMUX_TYPE _statsMux = portMUX_INITIALIZER_UNLOCKED;
 
     TaskHandle_t _busTaskHandle = nullptr;
     QueueHandle_t _requestQueue = nullptr;
@@ -79,6 +91,29 @@ private:
             case ModbusMaster::ku8MBInvalidCRC: return "CRC Invalido (Ruido en el bus)";
             default: return "Error Desconocido";
         }
+    }
+
+    static int trackedSlaveIndex(uint8_t slaveId) {
+        if (slaveId == 0x01) return 0;
+        if (slaveId == 0x02) return 1;
+        return -1;
+    }
+
+    void recordSlaveResult(uint8_t slaveId, bool success, uint8_t errorCode, uint32_t nowMs) {
+        const int index = trackedSlaveIndex(slaveId);
+        if (index < 0) return;
+
+        portENTER_CRITICAL(&_statsMux);
+        RS485SlaveStats& stats = _slaveStats[index];
+        if (success) {
+            ++stats.successes;
+            stats.lastSuccessMs = nowMs;
+        } else {
+            ++stats.failures;
+            stats.lastFailureMs = nowMs;
+            stats.lastErrorCode = errorCode;
+        }
+        portEXIT_CRITICAL(&_statsMux);
     }
 
     static void _preTransmission() {
@@ -155,6 +190,7 @@ private:
                 self->_processRequest(&request, success, errorCode);
                 uint32_t transactionMs = millis() - transactionStartMs;
 
+                self->recordSlaveResult(request.slaveId, success, errorCode, millis());
                 RS485Monitor::getInstance().recordRequestCompleted(success, errorCode, request.slaveId, transactionMs);
                 RS485Monitor::getInstance().recordQueueDepth(uxQueueMessagesWaiting(self->_requestQueue));
             }
@@ -366,6 +402,51 @@ private:
     uint32_t getPendingRequests() {
         if (!_requestQueue) return 0;
         return uxQueueMessagesWaiting(_requestQueue);
+    }
+
+    RS485SlaveStats getSlaveStats(uint8_t slaveId) {
+        RS485SlaveStats copy;
+        const int index = trackedSlaveIndex(slaveId);
+        if (index < 0) return copy;
+
+        portENTER_CRITICAL(&_statsMux);
+        copy = _slaveStats[index];
+        portEXIT_CRITICAL(&_statsMux);
+        return copy;
+    }
+
+    void resetSlaveStats() {
+        portENTER_CRITICAL(&_statsMux);
+        _slaveStats[0] = RS485SlaveStats();
+        _slaveStats[1] = RS485SlaveStats();
+        portEXIT_CRITICAL(&_statsMux);
+    }
+
+    void printStatus(Print& out) {
+        const uint32_t nowMs = millis();
+        out.printf("RS485: %lu solicitud(es) en cola\\n", (unsigned long)getPendingRequests());
+        printSlaveStatus(out, 0x01, "Anemometro", getSlaveStats(0x01), nowMs);
+        printSlaveStatus(out, 0x02, "AFM07", getSlaveStats(0x02), nowMs);
+    }
+
+private:
+    static void printRelativeTime(Print& out, uint32_t eventMs, uint32_t nowMs) {
+        if (eventMs == 0) {
+            out.print("nunca");
+            return;
+        }
+        out.printf("hace %lus", (unsigned long)((nowMs - eventMs) / 1000UL));
+    }
+
+    static void printSlaveStatus(Print& out, uint8_t slaveId, const char* name,
+                                 const RS485SlaveStats& stats, uint32_t nowMs) {
+        out.printf("  ID 0x%02X (%s): ok=%lu fallo=%lu, ultimo error=%s (0x%02X), ultimo ok=",
+                   slaveId, name, (unsigned long)stats.successes, (unsigned long)stats.failures,
+                   getErrorString(stats.lastErrorCode), stats.lastErrorCode);
+        printRelativeTime(out, stats.lastSuccessMs, nowMs);
+        out.print(", ultimo fallo=");
+        printRelativeTime(out, stats.lastFailureMs, nowMs);
+        out.println();
     }
 };
 

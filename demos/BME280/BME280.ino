@@ -12,7 +12,7 @@
   Demo independiente BME280 por I2C.
 
   No depende de archivos de src.
-  Librerias necesarias en Arduino IDE:
+  Dependencias declaradas para el ambiente PlatformIO:
     - Adafruit BME280 Library
     - Adafruit Unified Sensor
 

@@ -1,12 +1,13 @@
 #ifndef CALIBRATION_SCENE_H
 #define CALIBRATION_SCENE_H
 
-#include "../../Config.h"
+#include "../../Config/Legacy.h"
 #include "../IScene.h"
 #include "../../Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/Renderer.h"
+#include <math.h>
 
 class CalibrationScene : public IScene
 {
@@ -16,6 +17,7 @@ private:
         INIT,
         DISCOVERY_STABILIZE,
         DISCOVERY_SAMPLE,
+        RAMP_KICK,
         RAMP_STABILIZE,
         RAMP_SAMPLE,
         SAVING,
@@ -36,31 +38,57 @@ private:
     int sampleCount = 0;
     int sampleAttempts = 0;
     float sumFlow = 0.0f;
+    float sumSqFlow = 0.0f;
     unsigned long lastSampleTime = 0;
+    unsigned long lastFreshSourceTime = 0;
     unsigned long stateStartTime = 0;
 
     // Stabilization state
     float lastFlowForStab = -1.0f;
+    float lastAcceptedRampFlow = -1.0f;
     int stableCount = 0;
     int unstablePoints = 0;
+    int rejectedPoints = 0;
     unsigned long lastStabCheckTime = 0;
 
-    static const int SAMPLES_PER_POINT = 5;
-    static const int MAX_SAMPLE_ATTEMPTS = 35;
-    static const int SAMPLE_INTERVAL_MS = 350;
-    static const int STAB_CHECK_INTERVAL_MS = 25;
-    static const int MAX_STABILIZE_TIME_MS = 2500;
-    static const int REQUIRED_STABLE_READINGS = 10;
-    constexpr static const float STAB_TOLERANCE = 0.025f;
+    static const int SAMPLES_PER_POINT = 4;
+    static const int MAX_SAMPLE_ATTEMPTS = 28;
+    static const int SAMPLE_INTERVAL_MS = 200;
+    static const int STAB_CHECK_INTERVAL_MS = 100;
+    static const int MAX_STABILIZE_TIME_MS = 4500;
+    static const int REQUIRED_STABLE_READINGS = 3;
+    static const int MAX_ACCEPT_SAMPLE_AGE_MS = 250;
+    static const int KICK_TIME_MS = 350;
+    static const int KICK_PWM = MAX_PWM;
+    static const int KICK_BELOW_PWM = MAX_PWM / 4;
+    constexpr static const float STAB_TOLERANCE = 0.05f;
+    constexpr static const float MIN_VALID_FLOW = 0.05f;
+    constexpr static const float MIN_FLOW_DELTA = 0.04f;
+    constexpr static const float MAX_FLOW_STDDEV = 0.15f;
     static const int DISCOVERY_PWM = MAX_PWM / 2;
+
+    int basePwmStep(int pwm) const
+    {
+        if (pwm < MAX_PWM / 4)
+            return max(1, MAX_PWM / 90);
+        if (pwm < MAX_PWM / 2)
+            return max(1, MAX_PWM / 50);
+        return max(1, MAX_PWM / 28);
+    }
+
+    int getPwmStep(int pwm, float flowDelta) const
+    {
+        int step = basePwmStep(pwm);
+        if (flowDelta >= 0.0f && flowDelta < MIN_FLOW_DELTA * 1.5f)
+            step *= 2;
+        else if (flowDelta > 0.25f)
+            step = max(1, step / 2);
+        return constrain(step, max(1, MAX_PWM / 160), max(1, MAX_PWM / 14));
+    }
 
     int getPwmStep(int pwm) const
     {
-        if (pwm < MAX_PWM / 4)
-            return 10;
-        if (pwm < MAX_PWM / 2)
-            return 30;
-        return 60;
+        return getPwmStep(pwm, -1.0f);
     }
 
     void resetSampling()
@@ -68,7 +96,9 @@ private:
         sampleCount = 0;
         sampleAttempts = 0;
         sumFlow = 0.0f;
+        sumSqFlow = 0.0f;
         lastSampleTime = millis();
+        lastFreshSourceTime = 0;
         stableCount = 0;
         lastFlowForStab = -1.0f;
         lastStabCheckTime = millis();
@@ -77,6 +107,24 @@ private:
 
     int weakMotor() const { return discoveryFlow[0] <= discoveryFlow[1] ? 0 : 1; }
     int strongMotor() const { return 1 - weakMotor(); }
+
+    bool readFreshFlow(Context &ctx, FlowData &fd)
+    {
+        if (!ctx.components.flowSensor.getData(fd) || !fd.valid || fd.stale)
+            return false;
+        if (fd.ageMs > (uint32_t)MAX_ACCEPT_SAMPLE_AGE_MS)
+            return false;
+
+        unsigned long sourceTime = millis() - fd.ageMs;
+        if (lastFreshSourceTime != 0)
+        {
+            unsigned long delta = sourceTime > lastFreshSourceTime ? sourceTime - lastFreshSourceTime : lastFreshSourceTime - sourceTime;
+            if (delta < (unsigned long)STAB_CHECK_INTERVAL_MS)
+                return false;
+        }
+        lastFreshSourceTime = sourceTime;
+        return true;
+    }
 
     void applyMotorsForCurrentPoint(Context &ctx)
     {
@@ -97,10 +145,57 @@ private:
         }
     }
 
-    void recordPoint(Context &ctx, float measuredFlow)
+    bool shouldKickCurrentPoint() const
+    {
+        return currentPwm > 0 && currentPwm < KICK_BELOW_PWM;
+    }
+
+    void applyKickForCurrentPoint(Context &ctx)
+    {
+        int weak = weakMotor();
+        int strong = strongMotor();
+        if (!rampingStrong)
+        {
+            ctx.components.motor.setMotorPwm(weak, KICK_PWM);
+            ctx.components.motor.setMotorPwm(strong, 0);
+        }
+        else
+        {
+            ctx.components.motor.setMotorPwm(weak, MAX_PWM);
+            ctx.components.motor.setMotorPwm(strong, KICK_PWM);
+        }
+    }
+
+    void startRampPoint(Context &ctx)
+    {
+        if (shouldKickCurrentPoint())
+        {
+            applyKickForCurrentPoint(ctx);
+            stateStartTime = millis();
+            state = RAMP_KICK;
+            return;
+        }
+        applyMotorsForCurrentPoint(ctx);
+        resetSampling();
+        state = RAMP_STABILIZE;
+    }
+
+    bool recordPoint(Context &ctx, float measuredFlow, float stddev)
     {
         if (ctx.calibration.numPoints >= CalibrationManager::MAX_POINTS)
-            return;
+            return false;
+        if (measuredFlow < MIN_VALID_FLOW || stddev > MAX_FLOW_STDDEV)
+        {
+            rejectedPoints++;
+            LOG_F("Punto rechazado: flujo %.3f sd %.3f\n", measuredFlow, stddev);
+            return false;
+        }
+        if (lastAcceptedRampFlow >= 0.0f && measuredFlow - lastAcceptedRampFlow < MIN_FLOW_DELTA)
+        {
+            rejectedPoints++;
+            LOG_F("Punto rechazado: delta %.3f L/min\n", measuredFlow - lastAcceptedRampFlow);
+            return false;
+        }
 
         int weak = weakMotor();
         int strong = strongMotor();
@@ -120,9 +215,39 @@ private:
         }
         ctx.calibration.flows[idx] = measuredFlow;
         ctx.calibration.numPoints++;
+        lastAcceptedRampFlow = measuredFlow;
 
-        LOG_F("Punto %d: pwm[%d,%d] -> %.3f L/min\n",
-              idx, ctx.calibration.pwm0[idx], ctx.calibration.pwm1[idx], measuredFlow);
+        LOG_F("Punto %d: pwm[%d,%d] -> %.3f L/min sd %.3f\n",
+              idx, ctx.calibration.pwm0[idx], ctx.calibration.pwm1[idx], measuredFlow, stddev);
+        return true;
+    }
+
+    void compactCalibration(Context &ctx)
+    {
+        int write = 0;
+        float previousFlow = -1.0f;
+        int previousTotalPwm = -1;
+        for (int read = 0; read < ctx.calibration.numPoints; read++)
+        {
+            int totalPwm = ctx.calibration.pwm0[read] + ctx.calibration.pwm1[read];
+            if (previousFlow >= 0.0f && ctx.calibration.flows[read] - previousFlow < MIN_FLOW_DELTA)
+                continue;
+            if (previousTotalPwm >= 0 && totalPwm < previousTotalPwm)
+                continue;
+            if (write != read)
+            {
+                ctx.calibration.pwm0[write] = ctx.calibration.pwm0[read];
+                ctx.calibration.pwm1[write] = ctx.calibration.pwm1[read];
+                ctx.calibration.flows[write] = ctx.calibration.flows[read];
+            }
+            previousFlow = ctx.calibration.flows[write];
+            previousTotalPwm = totalPwm;
+            write++;
+        }
+        int removed = ctx.calibration.numPoints - write;
+        ctx.calibration.numPoints = write;
+        if (removed > 0)
+            LOG_F("Calibración: %d puntos compactados por monotonía\n", removed);
     }
 
     float getOverallProgress() const
@@ -165,11 +290,13 @@ private:
 public:
     static constexpr const char *Name = "calibration";
 
-    uint16_t frameIntervalMs() const override { return 250; }
+    uint16_t frameIntervalMs() const override { return 100; }
 
     void enter(Context &ctx) override
     {
         unstablePoints = 0;
+        rejectedPoints = 0;
+        lastAcceptedRampFlow = -1.0f;
         discoveryMotor = 0;
         discoveryFlow[0] = discoveryFlow[1] = 0;
         rampingStrong = false;
@@ -260,7 +387,7 @@ public:
             if (millis() - lastStabCheckTime >= (unsigned long)STAB_CHECK_INTERVAL_MS)
             {
                 FlowData fd;
-                if (ctx.components.flowSensor.getData(fd) && fd.valid)
+                if (readFreshFlow(ctx, fd))
                 {
                     if (lastFlowForStab >= 0.0f)
                     {
@@ -285,9 +412,10 @@ public:
             if (millis() - lastSampleTime >= (unsigned long)SAMPLE_INTERVAL_MS)
             {
                 FlowData fd;
-                if (ctx.components.flowSensor.getData(fd) && fd.valid)
+                if (readFreshFlow(ctx, fd))
                 {
                     sumFlow += fd.flow;
+                    sumSqFlow += fd.flow * fd.flow;
                     sampleCount++;
                 }
                 sampleAttempts++;
@@ -319,11 +447,21 @@ public:
 
                         rampingStrong = false;
                         currentPwm = 0;
-                        applyMotorsForCurrentPoint(ctx);
-                        resetSampling();
-                        state = RAMP_STABILIZE;
+                        lastAcceptedRampFlow = -1.0f;
+                        startRampPoint(ctx);
                     }
                 }
+            }
+            break;
+        }
+
+        case RAMP_KICK:
+        {
+            if (millis() - stateStartTime >= (unsigned long)KICK_TIME_MS)
+            {
+                applyMotorsForCurrentPoint(ctx);
+                resetSampling();
+                state = RAMP_STABILIZE;
             }
             break;
         }
@@ -340,7 +478,7 @@ public:
             if (millis() - lastStabCheckTime >= (unsigned long)STAB_CHECK_INTERVAL_MS)
             {
                 FlowData fd;
-                if (ctx.components.flowSensor.getData(fd) && fd.valid)
+                if (readFreshFlow(ctx, fd))
                 {
                     if (lastFlowForStab >= 0.0f)
                     {
@@ -365,9 +503,10 @@ public:
             if (millis() - lastSampleTime >= (unsigned long)SAMPLE_INTERVAL_MS)
             {
                 FlowData fd;
-                if (ctx.components.flowSensor.getData(fd) && fd.valid)
+                if (readFreshFlow(ctx, fd))
                 {
                     sumFlow += fd.flow;
+                    sumSqFlow += fd.flow * fd.flow;
                     sampleCount++;
                 }
                 sampleAttempts++;
@@ -375,14 +514,21 @@ public:
 
                 if (sampleCount >= SAMPLES_PER_POINT || sampleAttempts >= MAX_SAMPLE_ATTEMPTS)
                 {
+                    float flowDelta = -1.0f;
                     if (sampleCount > 0)
                     {
                         float measuredFlow = sumFlow / sampleCount;
-                        recordPoint(ctx, measuredFlow);
+                        float variance = (sumSqFlow / sampleCount) - (measuredFlow * measuredFlow);
+                        if (variance < 0.0f)
+                            variance = 0.0f;
+                        float stddev = sqrtf(variance);
+                        if (lastAcceptedRampFlow >= 0.0f)
+                            flowDelta = measuredFlow - lastAcceptedRampFlow;
+                        recordPoint(ctx, measuredFlow, stddev);
                     }
 
                     // Avanzar PWM
-                    currentPwm += getPwmStep(currentPwm);
+                    currentPwm += getPwmStep(currentPwm, flowDelta);
 
                     if (currentPwm > MAX_PWM)
                     {
@@ -401,9 +547,7 @@ public:
                         }
                     }
 
-                    applyMotorsForCurrentPoint(ctx);
-                    resetSampling();
-                    state = RAMP_STABILIZE;
+                    startRampPoint(ctx);
                 }
             }
             break;
@@ -413,11 +557,12 @@ public:
         {
             ctx.components.motor.setPwm(0);
             ctx.calibration.sortByFlow();
+            compactCalibration(ctx);
             ctx.calibration.save();
             ctx.calibration.isLoaded = ctx.calibration.validate();
 
-            LOG_F("Calibración: %d puntos, %d inestables\n",
-                  ctx.calibration.numPoints, unstablePoints);
+            LOG_F("Calibración: %d puntos, %d inestables, %d rechazados\n",
+                  ctx.calibration.numPoints, unstablePoints, rejectedPoints);
 
             if (!ctx.calibration.isLoaded)
             {
