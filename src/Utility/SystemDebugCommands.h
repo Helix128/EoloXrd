@@ -8,6 +8,7 @@
 #include "Profiler.h"
 #include "RS485Monitor.h"
 #include "../Board/RTCManager.h"
+#include "../Board/RS485Bus.h"
 
 class SystemDebugCommands : public ConsoleCommandHandler {
 private:
@@ -19,6 +20,7 @@ private:
         out.println("  h/?/help          ayuda");
         out.println("  p/profile         resumen del profiler");
         out.println("  r/reset           reiniciar el profiler y las estadísticas de RS485");
+        out.println("  rs485 status      diagnóstico por esclavo RS485 (IDs 0x01 y 0x02)");
         out.println("  v/verbose [on|off|status|toggle]  alternar logs verbosos y alertas");
         out.println("  time              mostrar hora RTC");
         out.println("  time set YYYY-MM-DD HH:MM:SS");
@@ -170,7 +172,18 @@ public:
         if (line == "r" || line == "reset") {
             ProfilerRegistry::getInstance().reset();
             RS485Monitor::getInstance().reset();
+            RS485Bus::getInstance().resetSlaveStats();
             out.println("Estadísticas de depuración reiniciadas");
+            return true;
+        }
+
+        if (line == "rs485 status") {
+            RS485Bus::getInstance().printStatus(out);
+            return true;
+        }
+
+        if (line == "rs485" || line.startsWith("rs485 ")) {
+            out.println("Uso: rs485 status");
             return true;
         }
 

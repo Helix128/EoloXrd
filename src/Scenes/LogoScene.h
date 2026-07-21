@@ -13,7 +13,6 @@ private:
     enum SceneState
     {
         BOOT_WAIT,
-        EOLO_SWEEP_UP,
         FADING_IN,
         FADING_OUT,
         DONE
@@ -22,15 +21,12 @@ private:
     SceneState currentState;
     unsigned long phaseStartTime;
 
-    static const unsigned long EOLO_SLIDE_DURATION = 1200;
-    static const unsigned long SWEEP_UP_DURATION   = 1000;
-    static const unsigned long ANIM_DURATION       = 2200;
+    static const unsigned long BOOT_LAYOUT_DURATION = 900;
+    static const unsigned long ANIM_DURATION        = 2200;
     static const unsigned long FADE_DURATION       = 2200;
     static const unsigned long FADE_OUT_DURATION   = 900;
     static const int MAX_PIXEL_SIZE = 3;
 
-    static const int EOLO_START_Y = 60;
-    static const int EOLO_REST_Y  = 40;
 
 public:
     static constexpr const char *Name = "splash";
@@ -42,22 +38,14 @@ public:
     {
         phaseStartTime = millis();
         currentState = BOOT_WAIT;
-        // I2C más rápido durante el splash para maximizar framerate
-        ctx.u8g2.setBusClock(400000);
+        // Clock I2C fijo (I2C_CLOCK, seteado en initDisplay). No reconfigurar
+        // en caliente: el bus lo comparten el render, sensores y la tarea de log.
     }
 
     float smootherstep(float t)
     {
         t = constrain(t, 0.0f, 1.0f);
         return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
-    }
-
-    // Back ease-out: overshoots ~10% then snaps to rest — no trig
-    float springOut(float t)
-    {
-        t = constrain(t, 0.0f, 1.0f);
-        float s = t - 1.0f;
-        return s * s * (2.70158f * s + 1.70158f) + 1.0f;
     }
 
     int smoothstep_pos(int start, int end, unsigned long t)
@@ -161,75 +149,35 @@ public:
         return smootherstep(constrain((slideT - start) / (end - start), 0.0f, 1.0f));
     }
 
-    // slideT controla la aparición escalonada del contenido debajo de EOLO.
-    // Cada elemento tiene su propio rango para efecto cascada natural.
-    // No llama sendBuffer.
-    void drawBootWaitContent(Context &ctx, int eoloY, float slideT)
+    void drawBootWaitContent(Context &ctx, float layoutT)
     {
         ctx.u8g2.clearBuffer();
-
-        ctx.u8g2.setFont(u8g2_font_helvB24_tf);
-        centerText(ctx, "EOLO", eoloY);
-
-        // Fase: sube suavemente desde 14px abajo
-        float textT = rangeT(slideT, 0.70f, 0.92f);
-        if (textT < 0.01f) return;
+        ctx.u8g2.setBitmapMode(1);
 
         const char *phaseText = "Iniciando...";
-        float progress = 0.0f;
-        uint32_t phaseElapsed = millis() - ctx.bootPhaseStartMs;
-
-        switch (ctx.bootPhase)
+        switch (ctx.bootPhase.load())
         {
         case Context::BootPhase::Idle:
-            progress = 0.0f;
             break;
 #ifdef FEATURE_MODEM
         case Context::BootPhase::StartingModem:
-        {
             phaseText = "Iniciando modem...";
-            // El modem tarda ~22s; la barra avanza hasta 70% en ese tiempo
-            float t  = constrain((float)phaseElapsed / 22000.0f, 0.0f, 1.0f);
-            progress = t * 0.70f;
             break;
-        }
-        case Context::BootPhase::InitSD:
-        {
-            phaseText = "Leyendo SD...";
-            float t  = constrain((float)phaseElapsed / 2000.0f, 0.0f, 1.0f);
-            progress = 0.70f + t * 0.28f;
-            break;
-        }
-#else
-        case Context::BootPhase::InitSD:
-        {
-            phaseText = "Leyendo SD...";
-            float t  = constrain((float)phaseElapsed / 2000.0f, 0.0f, 1.0f);
-            progress = t * 0.95f;
-            break;
-        }
 #endif
+        case Context::BootPhase::InitSD:
+            phaseText = "Leyendo SD...";
+            break;
         case Context::BootPhase::Done:
             phaseText = "Listo";
-            progress  = 1.0f;
             break;
         }
 
+        float textT = rangeT(layoutT, 0.55f, 1.0f);
+        ctx.u8g2.setDrawColor(0);
+        ctx.u8g2.drawBox(0, 54, 128, 10);
+        ctx.u8g2.setDrawColor(1);
         ctx.u8g2.setFont(FONT_REGULAR_S);
-        centerText(ctx, phaseText, 50 + (int)((1.0f - textT) * 14));
 
-        // Barra: arranca un poco después del texto, sube desde 10px abajo
-        float barT = rangeT(slideT, 0.76f, 0.96f);
-        if (barT > 0.01f)
-        {
-            const int barW = 90, barH = 3;
-            const int barX = (128 - barW) / 2;
-            const int barY = 56 + (int)((1.0f - barT) * 10);
-            ctx.u8g2.drawFrame(barX, barY, barW, barH);
-            int filled = (int)(progress * barT * (float)(barW - 2));
-            if (filled > 0)
-                ctx.u8g2.drawBox(barX + 1, barY + 1, filled, barH - 2);
-        }
     }
 
     void update(Context &ctx) override
@@ -240,34 +188,13 @@ public:
         {
         case BOOT_WAIT:
         {
-            float rawT   = constrain((float)elapsedTime / EOLO_SLIDE_DURATION, 0.0f, 1.0f);
-            float slideT = smootherstep(rawT);
-            float springT = springOut(rawT);
-            int eoloY    = (int)(EOLO_START_Y + (EOLO_REST_Y - EOLO_START_Y) * springT);
+            float rawT = constrain((float)elapsedTime / BOOT_LAYOUT_DURATION, 0.0f, 1.0f);
+            float layoutT = smootherstep(rawT);
 
-            drawBootWaitContent(ctx, eoloY, slideT);
+            drawBootWaitContent(ctx, layoutT);
             ctx.u8g2.sendBuffer();
 
-            if (ctx.bootInitComplete)
-            {
-                currentState = EOLO_SWEEP_UP;
-                phaseStartTime = millis();
-            }
-            return;
-        }
-
-        case EOLO_SWEEP_UP:
-        {
-            float t  = smootherstep(constrain((float)elapsedTime / SWEEP_UP_DURATION, 0.0f, 1.0f));
-            int eoloY = (int)(EOLO_REST_Y + (-40 - EOLO_REST_Y) * t);
-
-            // El contenido baja levemente mientras EOLO sube y se disuelve todo
-            float exitSlideT = 1.0f - t * 0.6f;
-            drawBootWaitContent(ctx, eoloY, exitSlideT);
-            applyDitherMask(ctx, 1.0f - t);
-            ctx.u8g2.sendBuffer();
-
-            if (elapsedTime >= SWEEP_UP_DURATION)
+            if (ctx.bootInitComplete.load())
             {
                 currentState = FADING_IN;
                 phaseStartTime = millis();
@@ -312,7 +239,6 @@ public:
         }
 
         case DONE:
-            ctx.u8g2.setBusClock(I2C_CLOCK);
             SceneManager::setScene("inicio", ctx);
             return;
         }

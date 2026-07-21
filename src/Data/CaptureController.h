@@ -32,7 +32,7 @@ public:
 
 #include "Context.h"
 #include "Session.h"
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include <Eolo/Core/Flow/FlowSchedule.h>
 
 #ifndef FEATURE_HEADLESS
@@ -141,14 +141,14 @@ inline void CaptureController::update(Context &ctx)
 
     unsigned long now = ctx.getUnixTime();
     bool infiniteDuration = ctx.session.duration == DRONE_DURATION_INFINITE;
-    if (now >= ctx.session.startDate.unixtime())
-        ctx.session.elapsedTime = now - ctx.session.startDate.unixtime();
+    if (now >= ctx.session.startUnix)
+        ctx.session.elapsedTime = now - ctx.session.startUnix;
     else
         ctx.session.elapsedTime = 0;
 
     if (!infiniteDuration)
     {
-        DateTime endTime = DateTime(ctx.session.startDate.unixtime() + ctx.session.duration);
+        DateTime endTime = DateTime(ctx.session.startUnix + ctx.session.duration);
         if (now >= endTime.unixtime())
         {
             LOG_LN("Duración de captura alcanzada.");
@@ -188,7 +188,10 @@ inline void CaptureController::update(Context &ctx)
         }
 
 #if !BAREBONES
-        ctx.components.bme.readData();
+        // BME280 se sondea en el worker I2C; aquí solo se consume el último
+        // snapshot para no bloquear el ciclo de captura/UI.
+        BME280Data bmeData;
+        (void)ctx.components.bme.getData(bmeData);
         FlowData flowData;
         if (ctx.components.flowSensor.getData(flowData))
         {
@@ -204,6 +207,12 @@ inline void CaptureController::update(Context &ctx)
             LOG_LN("Registrando datos...");
         }
         ctx.enqueueLogData();
+#ifdef FEATURE_MODEM
+        // El registro ya viaja como DTO en la cola de SD. El envío remoto se
+        // dispara desde el composition root para que el worker de logging no
+        // tenga que conocer Context ni el módem.
+        ctx.uploadData();
+#endif
     }
 }
 

@@ -1,6 +1,7 @@
 #ifndef EOLO_CORE_SENSORS_ANEMOMETER_MODEL_H
 #define EOLO_CORE_SENSORS_ANEMOMETER_MODEL_H
 
+#include <math.h>
 #include <stdint.h>
 #include <Eolo/Types/AnemometerData.h>
 
@@ -14,7 +15,7 @@ public:
 
     static float kphFromMetersPerSecond(float speed)
     {
-        return speed * 3.6f;
+        return isfinite(speed) ? speed * 3.6f : -1.0f;
     }
 
     static void applyReadSuccess(AnemometerData &data, uint32_t &lastSuccessMs, int rawSpeed, int direction, uint32_t nowMs)
@@ -22,7 +23,7 @@ public:
         data.speed = speedFromRaw(rawSpeed);
         data.windKph = kphFromMetersPerSecond(data.speed);
         data.direction = direction;
-        data.valid = true;
+        data.valid = rawSpeed >= 0 && isfinite(data.speed) && isfinite(data.windKph);
         lastSuccessMs = nowMs;
     }
 

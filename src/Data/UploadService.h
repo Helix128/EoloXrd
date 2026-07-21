@@ -1,7 +1,11 @@
 #ifndef EOLO_UPLOAD_SERVICE_H
 #define EOLO_UPLOAD_SERVICE_H
 
+#include <atomic>
+#include <Eolo/Types/TelemetrySnapshot.h>
+
 struct Context;
+class SensorAPI;
 
 namespace ApiId
 {
@@ -35,7 +39,12 @@ namespace ApiId
 class UploadService
 {
 public:
-    bool uploadActive = false;
+    // Written by upload task/call path, read by main loop/drone controller.
+    std::atomic_bool uploadActive{false};
+    bool collectSnapshot(Context &ctx, TelemetrySnapshot &snapshot);
+    // Publicador desacoplado: recibe el DTO completo y el adaptador de API,
+    // sin volver a recorrer Context ni consultar sensores.
+    void publishSnapshot(SensorAPI &api, const TelemetrySnapshot &snapshot);
     void uploadData(Context &ctx);
 };
 
@@ -46,7 +55,7 @@ public:
 #define EOLO_UPLOAD_SERVICE_IMPL_DONE
 
 #include "Context.h"
-#include "../Config.h"
+#include "../Config/Legacy.h"
 
 inline void UploadService::uploadData(Context &ctx)
 {
@@ -54,51 +63,90 @@ inline void UploadService::uploadData(Context &ctx)
     PROFILE_SCOPE("context.upload");
     uploadActive = true;
     ctx.markUiDirty();
-    ctx.components.api.begin();
-#ifdef FEATURE_ANEMOMETER
-    AnemometerData anemoData;
-    (void)ctx.components.anemometer.getData(anemoData);
-    ctx.components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, anemoData.speed);
-    ctx.components.api.addData(ApiId::WindSensor, ApiId::WindDirection, anemoData.direction);
-#else
-    ctx.components.api.addData(ApiId::WindSensor, ApiId::WindSpeed, -1);
-    ctx.components.api.addData(ApiId::WindSensor, ApiId::WindDirection, -1);
-#endif
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Temperature, -69);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Humidity, -420);
-#ifdef FEATURE_PLANTOWER
-    PlantowerData ptowerData;
-    (void)ctx.components.plantower.getData(ptowerData);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, ptowerData.pm1_0);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, ptowerData.pm2_5);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, ptowerData.pm10_0);
-#else
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm1, -1);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm25, -1);
-    ctx.components.api.addData(ApiId::PlantowerSensor, ApiId::Pm10, -1);
-#endif
-    ctx.components.api.addData(ApiId::BmeSensor, ApiId::Temperature, ctx.components.bme.temperature);
-    ctx.components.api.addData(ApiId::BmeSensor, ApiId::Humidity, ctx.components.bme.humidity);
-    ctx.components.api.addData(ApiId::BmeSensor, ApiId::Pressure, ctx.components.bme.pressure);
-    ctx.components.api.addData(ApiId::FlowSensor, ApiId::TargetFlow, ctx.session.targetFlow);
-    ctx.components.api.addData(ApiId::FlowSensor, ApiId::CapturedVolume, ctx.session.capturedVolume);
-    FlowData flowData;
-    if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
-        flowData.flow = -1.0;
-    ctx.components.api.addData(ApiId::FlowSensor, ApiId::MeasuredFlow, flowData.flow);
-    ctx.components.api.addData(ApiId::AmbientTemperatureSensor, ApiId::Temperature, ctx.components.bme.temperature);
-    ctx.components.api.addData(ApiId::BatterySensor, ApiId::BatteryVoltage, ctx.components.battery.getVoltage());
-    ctx.components.api.addData(ApiId::GpsSensor, ApiId::Latitude, -1);
-    ctx.components.api.addData(ApiId::GpsSensor, ApiId::Longitude, -1);
-    ctx.components.api.addData(ApiId::GpsSensor, ApiId::SignalStrength, -1);
-    ctx.components.api.addData(ApiId::GpsSensor, ApiId::GpsSpeed, -1);
-    ctx.components.api.addData(ApiId::GpsSensor, ApiId::Satellites, -1);
-    ctx.components.api.send();
+
+    TelemetrySnapshot snapshot;
+    collectSnapshot(ctx, snapshot);
+    publishSnapshot(ctx.components.api, snapshot);
     uploadActive = false;
     ctx.markUiDirty();
 #else
     (void)ctx;
 #endif
+}
+
+inline void UploadService::publishSnapshot(SensorAPI &api, const TelemetrySnapshot &snapshot)
+{
+#ifdef FEATURE_MODEM
+    api.begin();
+#ifdef FEATURE_ANEMOMETER
+    api.addData(ApiId::WindSensor, ApiId::WindSpeed,
+                snapshot.anemometer.valid ? snapshot.anemometer.speed : -1);
+    api.addData(ApiId::WindSensor, ApiId::WindDirection,
+                snapshot.anemometer.valid ? snapshot.anemometer.direction : -1);
+#else
+    api.addData(ApiId::WindSensor, ApiId::WindSpeed, -1);
+    api.addData(ApiId::WindSensor, ApiId::WindDirection, -1);
+#endif
+    // Estos dos campos históricos no representan datos Plantower y deben
+    // conservar sus sentinelas para no cambiar el payload remoto.
+    api.addData(ApiId::PlantowerSensor, ApiId::Temperature, -69);
+    api.addData(ApiId::PlantowerSensor, ApiId::Humidity, -420);
+#ifdef FEATURE_PLANTOWER
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm1,
+                snapshot.plantower.valid ? snapshot.plantower.pm1_0 : -1);
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm25,
+                snapshot.plantower.valid ? snapshot.plantower.pm2_5 : -1);
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm10,
+                snapshot.plantower.valid ? snapshot.plantower.pm10_0 : -1);
+#else
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm1, -1);
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm25, -1);
+    api.addData(ApiId::PlantowerSensor, ApiId::Pm10, -1);
+#endif
+    api.addData(ApiId::BmeSensor, ApiId::Temperature, snapshot.environment.temperature);
+    api.addData(ApiId::BmeSensor, ApiId::Humidity, snapshot.environment.humidity);
+    api.addData(ApiId::BmeSensor, ApiId::Pressure, snapshot.environment.pressure);
+    api.addData(ApiId::FlowSensor, ApiId::TargetFlow, snapshot.targetFlow);
+    api.addData(ApiId::FlowSensor, ApiId::CapturedVolume, snapshot.capturedVolume);
+    api.addData(ApiId::FlowSensor, ApiId::MeasuredFlow,
+                snapshot.flow.valid ? snapshot.flow.flow : -1.0f);
+    api.addData(ApiId::AmbientTemperatureSensor, ApiId::Temperature,
+                snapshot.environment.temperature);
+    api.addData(ApiId::BatterySensor, ApiId::BatteryVoltage, snapshot.batteryVoltage);
+    api.addData(ApiId::GpsSensor, ApiId::Latitude, snapshot.latitude);
+    api.addData(ApiId::GpsSensor, ApiId::Longitude, snapshot.longitude);
+    api.addData(ApiId::GpsSensor, ApiId::SignalStrength, snapshot.signalStrength);
+    api.addData(ApiId::GpsSensor, ApiId::GpsSpeed, snapshot.gpsSpeed);
+    api.addData(ApiId::GpsSensor, ApiId::Satellites, snapshot.satellites);
+    api.send();
+#else
+    (void)api;
+    (void)snapshot;
+#endif
+}
+
+inline bool UploadService::collectSnapshot(Context &ctx, TelemetrySnapshot &snapshot)
+{
+    snapshot = TelemetrySnapshot();
+    snapshot.timestampUnix = ctx.getUnixTime();
+    snapshot.targetFlow = ctx.session.targetFlow;
+    snapshot.capturedVolume = ctx.session.capturedVolume;
+    BME280Data bmeData;
+    bool bmeValid = ctx.components.bme.getData(bmeData);
+    snapshot.environment.temperature = bmeValid ? bmeData.temperature : -1.0f;
+    snapshot.environment.humidity = bmeValid ? bmeData.humidity : -1.0f;
+    snapshot.environment.pressure = bmeValid ? bmeData.pressure : -1.0f;
+    snapshot.environment.valid = bmeValid;
+    snapshot.batteryVoltage = ctx.components.battery.getVoltage();
+
+#ifdef FEATURE_ANEMOMETER
+    (void)ctx.components.anemometer.getData(snapshot.anemometer);
+#endif
+#ifdef FEATURE_PLANTOWER
+    (void)ctx.components.plantower.getData(snapshot.plantower);
+#endif
+    (void)ctx.components.flowSensor.getData(snapshot.flow);
+    return snapshot.flow.valid || snapshot.environment.valid || snapshot.anemometer.valid || snapshot.plantower.valid;
 }
 
 #endif

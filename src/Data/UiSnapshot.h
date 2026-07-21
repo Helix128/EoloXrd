@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <RTClib.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 
 struct FlowSnapshot
 {
@@ -18,9 +18,10 @@ struct FlowSnapshot
 struct EnvironmentSnapshot
 {
     bool enabled = true;
-    float temperature = 0.0f;
-    float humidity = 0.0f;
-    float pressure = 0.0f;
+    bool valid = false;
+    float temperature = -1.0f;
+    float humidity = -1.0f;
+    float pressure = -1.0f;
     bool ntcValid = false;
     float ntcTemperature = -99.0f;
     bool motorOverheat = false;
@@ -40,15 +41,18 @@ struct AirQualitySnapshot
 struct PowerSnapshot
 {
     bool dualBattery = false;
+    bool valid = false;
+    bool stale = false;
+    uint32_t ageMs = 0;
     bool poweredByDc = false;
     uint8_t activeBattery = 0;
-    float batteryPct = 0.0f;
-    float batteryPct0 = 0.0f;
-    float batteryPct1 = 0.0f;
-    float batteryVoltage = 0.0f;
-    float batteryVoltage0 = 0.0f;
-    float batteryVoltage1 = 0.0f;
-    float dcVoltage = 0.0f;
+    float batteryPct = -1.0f;
+    float batteryPct0 = -1.0f;
+    float batteryPct1 = -1.0f;
+    float batteryVoltage = -1.0f;
+    float batteryVoltage0 = -1.0f;
+    float batteryVoltage1 = -1.0f;
+    float dcVoltage = -1.0f;
 };
 
 struct WindSnapshot

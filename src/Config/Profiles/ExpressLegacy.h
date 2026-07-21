@@ -1,0 +1,6 @@
+#ifndef EOLO_CONFIG_PROFILE_EXPRESS_LEGACY_H
+#define EOLO_CONFIG_PROFILE_EXPRESS_LEGACY_H
+
+#include "Express.h"
+
+#endif

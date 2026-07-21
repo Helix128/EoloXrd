@@ -2,7 +2,7 @@
 #include <unity.h>
 #include "Sensors/AFM07.h"
 #include "Effectors/Motor.h"
-#include "Config.h"
+#include "Config/Legacy.h"
 
 // Hacer el sensor global para que la tarea de FreeRTOS persista entre tests
 AFM07 sensor;

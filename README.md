@@ -23,7 +23,7 @@ Este repositorio contiene firmware, manuales y definiciones de pinout para la fa
 | --- | --- |
 | [Manuales EOLO](docs/README.md) | Índice de manuales de usuario por modelo. |
 | [Pinouts](pinouts/README.md) | GPIO reales extraídos del firmware para cada variante. |
-| [Demos independientes](demos/README.md) | Sketches para probar sensores y componentes aislados. |
+| [Demos de hardware](demos/README.md) | Demos PlatformIO para probar sensores y componentes aislados. |
 | [Calibración](Calibración.md) | Notas y recursos de calibración. |
 
 ## Requisitos de desarrollo
@@ -48,6 +48,8 @@ python3 -m pip install platformio
 | `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
 | `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
 | `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
+
+La configuración de compilación y perfiles de hardware está documentada en [Configuración de compilación](docs/configuracion-compilacion.md).
 
 Comandos básicos:
 

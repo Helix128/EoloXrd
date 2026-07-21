@@ -23,7 +23,7 @@
   #pragma message("Sensor de flujo legacy: FS3000")
 #endif
 
-#include "Config.h"
+#include "Config/Legacy.h"
 
 #ifdef FEATURE_HEADLESS
 #include <esp_sleep.h>
@@ -35,6 +35,7 @@
 #else
 // Librerías para display
 #include <U8g2lib.h>
+#include <SPI.h>
 #endif
 
 // Módulos principales
@@ -50,7 +51,23 @@
 
 // Instancias globales
 #ifndef FEATURE_HEADLESS
+
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+DisplayModel u8g2(U8G2_R0,
+                  EoloConfig::board.displayCsPin,
+                  EoloConfig::board.displayDcPin,
+                  EoloConfig::board.displayResetPin);
+#elif EOLO_DISPLAY_SPI
+DisplayModel u8g2(U8G2_R0,
+                  EoloConfig::board.displayClockPin,
+                  EoloConfig::board.displayMosiPin,
+                  EoloConfig::board.displayCsPin,
+                  EoloConfig::board.displayDcPin,
+                  EoloConfig::board.displayResetPin);
+#else
 DisplayModel u8g2(U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN);
+#endif
+
 Context ctx(u8g2); // Aquí se procesa toda la lógica
 #else
 Context ctx;
@@ -63,8 +80,17 @@ DebugConsole debugConsole;
 
 #ifndef FEATURE_HEADLESS
 static void reinitDisplay() {
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+    SPIBus::Guard spiGuard;
+    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
     u8g2.begin();
+    u8g2.setBusClock(EoloConfig::board.displaySpiClockHz);
+#else
+    u8g2.begin();
+#if !EOLO_DISPLAY_SPI
     u8g2.setBusClock(I2C_CLOCK);
+#endif
+#endif
 }
 #endif
 
@@ -107,7 +133,7 @@ static void updateDroneStatusLed()
   }
 
   if (droneState == DroneBootState::Capturing &&
-      (ctx.logActive || ctx.uploadPending || ctx.uploadActive))
+      (ctx.logActive.load() || ctx.uploadPending.load() || ctx.uploadActive.load()))
   {
     setDroneLed(StatusLedPattern::Busy);
     return;
@@ -140,7 +166,7 @@ static void updateDroneStatusLed()
 static void startDroneConfiguredCapture(const HeadlessSetupConfig &config)
 {
   DateTime now = ctx.components.rtc.now();
-  HeadlessSetup::applyToSession(config, ctx.session, now);
+  HeadlessSetup::applyToSession(config, ctx.session, now.unixtime());
   ctx.clearSession();
   ctx.saveSession();
 
@@ -191,7 +217,7 @@ static void configureDroneCapture()
   }
 
   DateTime now = ctx.components.rtc.now();
-  ctx.session.startDate = DateTime(now.unixtime() + selection.waitSeconds);
+  ctx.session.startUnix = now.unixtime() + selection.waitSeconds;
   ctx.session.duration = selection.durationSeconds;
   ctx.session.elapsedTime = 0;
   ctx.session.lastLog = 0;
@@ -255,7 +281,7 @@ static void updateDroneController()
       return;
     }
     uint32_t now = ctx.getUnixTime();
-    if (now >= ctx.session.startDate.unixtime())
+    if (now >= ctx.session.startUnix)
     {
       LOG_LN("Drone: espera cumplida, iniciando captura.");
       ctx.beginCapture();
@@ -276,7 +302,7 @@ static void updateDroneController()
   {
 #ifdef FEATURE_MODEM
     if (!ctx.logsIdle() ||
-        ctx.uploadPending || ctx.uploadActive ||
+        ctx.uploadPending.load() || ctx.uploadActive.load() ||
         ctx.components.modemService.pendingCount() > 0)
     {
       ctx.components.modemService.shutdownWhenIdle();
@@ -311,12 +337,15 @@ void setup()
   pinMode(PPH_PWR_PIN,OUTPUT); // perifericos
   digitalWrite(PPH_PWR_PIN, HIGH); // Encender perifericos (I2C, display) lo antes posible
 #endif
+  // El gestor de energia y el ProMini del Eolo MP necesitan varios segundos
+  // para estabilizarse tras el N-FET. El worker I2C cuenta desde este punto y
+  // mantiene libre el loop/UI durante el warmup.
+  I2CBus::getInstance().setWarmupFromNow(I2C_WARMUP_MS);
 #ifdef FEATURE_MODEM
-#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
-  Modem::configurePowerPinOn();
-#else
-  Modem::configurePowerPinOff();
-#endif
+  if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+    Modem::configurePowerPinOn();
+  else
+    Modem::configurePowerPinOff();
 #else
 #if MODEM_PWR_PIN >= 0
   pinMode(MODEM_PWR_PIN,OUTPUT); // modem
@@ -341,11 +370,6 @@ void setup()
 #endif
   RS485Monitor::getInstance(); // Inicializar monitor RS485
   LOG_LN("RS485 Monitor inicializado");
-
-  /*
-  I2CBus::getInstance().begin();
-  I2CBus::getInstance().scan();
-  */
 
 #ifndef FEATURE_HEADLESS
   // Registrar todas las escenas (SceneRegistry) 
@@ -402,7 +426,12 @@ void loop()
 
   // Actualizar el contexto de la app y la escena actual
   bool externalDirty = ctx.update();
-  SceneManager::update(ctx, externalDirty);
+  {
+    // El OLED actual usa SPI; las lecturas I2C viven en EoloI2CTask y el
+    // render no debe esperar al bus.
+    SPIBus::Guard spiGuard;
+    SceneManager::update(ctx, externalDirty);
+  }
 
   unsigned long frameExecutionMs = millis() - frameStartMs;
   PROFILE_MARK("loop.frame", frameExecutionMs * 1000UL);

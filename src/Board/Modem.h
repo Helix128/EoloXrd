@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <RTClib.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -19,7 +19,7 @@ public:
   static constexpr uint8_t PowerOnLevel = HIGH;
   static constexpr uint8_t PowerOffLevel = LOW;
   static constexpr uint32_t PowerOnSettleMs = 15000;
-  static constexpr const char *DefaultApn = "gigsky-02";
+  static constexpr const char *DefaultApn = MODEM_DEFAULT_APN;
   const char *apn = DefaultApn;
 
   Modem() {}

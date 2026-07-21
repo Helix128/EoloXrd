@@ -1,12 +1,14 @@
 #ifndef EOLO_CORE_SENSORS_FS3000_FLOW_MODEL_H
 #define EOLO_CORE_SENSORS_FS3000_FLOW_MODEL_H
 
+#include <math.h>
+
 class FS3000FlowModel
 {
 public:
     static float flowFromVelocity(float speed)
     {
-        if (speed <= 0.0f)
+        if (!isfinite(speed) || speed <= 0.0f)
             return -1.0f;
 
         static constexpr float velocityPoints[] = {0.06f, 0.34f, 0.7f, 1.06f, 1.42f, 1.74f, 2.02f, 2.30f, 2.60f, 2.80f, 3.00f, 3.33f};

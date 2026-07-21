@@ -12,13 +12,13 @@ def emit_env(demo_name, sketch_path, model, model_macro, lib_deps):
     rel_sketch = sketch_path.as_posix()
     lines = [
         f"[env:{env_name(demo_name, model)}]",
-        "extends = env",
+        "extends = embedded",
         "build_src_filter = -<*>",
         "extra_scripts =",
         "\tpre:scripts/platformio_build_demo.py",
         "\tpost:scripts/platformio_demo_targets.py",
         "build_flags =",
-        "\t${env.build_flags}",
+        "\t${embedded.build_flags}",
         f"\t-D{model_macro}",
         f"custom_demo_src = {rel_sketch}",
         f"custom_demo_name = {demo_name}",

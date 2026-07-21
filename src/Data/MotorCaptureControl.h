@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 #include <math.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "../Effectors/Motor.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
+#include <Eolo/Core/Thermal/ThermalProtectionModel.h>
 
 struct Context;
 
@@ -85,12 +86,14 @@ inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
     NTCData ntcData;
     motorThermalSensorValid = ctx.components.ntc.getData(ntcData);
     motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
-    motorOverheatActive = NTC::motorOverheatLatched(
-        motorOverheatActive,
-        motorThermalSensorValid,
-        motorThermalTemperature,
-        NTC_MOTOR_OVERHEAT_HIGH_C,
-        NTC_MOTOR_OVERHEAT_LOW_C);
+    ThermalProtectionInput thermalInput;
+    thermalInput.latched = motorOverheatActive;
+    thermalInput.sensorValid = motorThermalSensorValid;
+    thermalInput.temperature = motorThermalTemperature;
+    thermalInput.highThreshold = NTC_MOTOR_OVERHEAT_HIGH_C;
+    thermalInput.lowThreshold = NTC_MOTOR_OVERHEAT_LOW_C;
+    const ThermalProtectionOutput thermalOutput = ThermalProtectionModel::update(thermalInput);
+    motorOverheatActive = thermalOutput.latched;
 
     uint32_t nowMs = millis();
     if (motorOverheatActive)

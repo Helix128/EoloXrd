@@ -1,24 +1,25 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "../Config.h"
+#include "../Config/Legacy.h"
 
 #if SERIAL_INPUT == false
 
 #include <Arduino.h>
 #include "I2CBus.h"
 #include "Profiler.h" 
+#include <atomic>
 
 // Clase para manejar el input del encoder con botón
 class Input
 {
 public:
 
-  bool buttonPressed = false;
-  bool prevButtonPressed = false;
-  int encoderDelta = 0;
+  std::atomic_bool buttonPressed{false};
+  std::atomic_bool prevButtonPressed{false};
+  std::atomic_int encoderDelta{0};
   bool isReady = false;
-  bool hasChanged = false;
+  std::atomic_bool hasChanged{false};
   
   // Constructor
   Input() {}
@@ -62,11 +63,9 @@ public:
       return;
     }
 
-    I2CBus::getInstance().begin();
     LOG_LN("Encoder inicializado");
-    delay(100);
-    resetButton();
-    resetCounter();
+    resetButtonHardware();
+    resetCounterHardware();
     readEncoderData(); // Leer estado inicial
 
     // Inicializar estados previos para detección de cambios
@@ -77,36 +76,36 @@ public:
     isReady = true;
   }
 
-  // Actualizar lecturas desde el driver
+  // El loop de UI conserva esta API por compatibilidad, pero ya no toca I2C.
+  // Las lecturas las realiza Components::i2cWorker en core 0.
   void poll()
   {
+    // No-op intencional.
+  }
+
+  bool pollHardware()
+  {
     PROFILE_SCOPE("input.poll");
-    readEncoderData();
-    debounce();  
+    serviceCommands();
+    bool ok = readEncoderData();
+    if (!ok)
+      return false;
+    debounce();
+    return true;
   }
 
   // Reiniciar valor del encoder via driver
   bool resetCounter()
   {
-    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_COUNTER);
-    if (ok)
-    {
-      rawCounter = 0;
-      prevRawCounter = 0;
-    }
-    return ok;
+    _pendingCommands.fetch_or(CMD_COUNTER_PENDING);
+    return true;
   }
 
   // Reiniciar botón del encoder via driver
   bool resetButton()
   {
-    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_BUTTON);
-    if (ok)
-    {
-      rawButton = false;
-      prevButtonRaw = false;
-    }
-    return ok;
+    _pendingCommands.fetch_or(CMD_BUTTON_PENDING);
+    return true;
   }
 
 private:
@@ -120,11 +119,44 @@ private:
   volatile bool rawButton = false; // Estado del botón (raw)
   volatile bool prevButtonRaw = false;
 
-  const bool FLIP_ENCODER = true; // Poner a true si el encoder va invertido
+  static constexpr uint8_t CMD_COUNTER_PENDING = 0x01;
+  static constexpr uint8_t CMD_BUTTON_PENDING = 0x02;
+  std::atomic<uint8_t> _pendingCommands{0};
+
+  const bool FLIP_ENCODER = ENCODER_INVERTED;
   const int BUTTON_DEBOUNCE_MS = 150; 
   const int ENCODER_DEBOUNCE_MS = 50;
   unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
+
+  bool resetCounterHardware()
+  {
+    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_COUNTER, false);
+    if (ok) {
+      rawCounter = 0;
+      prevRawCounter = 0;
+    }
+    return ok;
+  }
+
+  bool resetButtonHardware()
+  {
+    bool ok = I2CBus::getInstance().writeCommand(ATTINY_ADDRESS, CMD_RESET_BUTTON, false);
+    if (ok) {
+      rawButton = false;
+      prevButtonRaw = false;
+    }
+    return ok;
+  }
+
+  void serviceCommands()
+  {
+    uint8_t pending = _pendingCommands.exchange(0);
+    if (pending & CMD_BUTTON_PENDING)
+      resetButtonHardware();
+    if (pending & CMD_COUNTER_PENDING)
+      resetCounterHardware();
+  }
 
   void debounce(){
     encoderDelta = 0;
@@ -133,11 +165,11 @@ private:
       unsigned long currentMs = millis();
       if(currentMs - lastButtonMs > BUTTON_DEBOUNCE_MS){
         prevButtonRaw = rawButton;
-        prevButtonPressed = buttonPressed;
+        prevButtonPressed = buttonPressed.load();
         buttonPressed = rawButton;
         lastButtonMs = currentMs;
         if (EoloDebug::verboseLogsEnabled()) {
-          LOG_F("Botón cambiado a: %d\n", buttonPressed);
+          LOG_F("Botón cambiado a: %d\n", buttonPressed.load());
         }
       }
     }
@@ -161,14 +193,14 @@ private:
         
         lastEncoderMs = currentMs;
         if (EoloDebug::verboseLogsEnabled()) {
-          LOG_F("Encoder cambiado a: %d\n", encoderDelta);
+          LOG_F("Encoder cambiado a: %d\n", encoderDelta.load());
         }
       }
     }
   }
     
   // Función interna para leer datos del encoder desde el ATTiny
-  void readEncoderData()
+  bool readEncoderData()
   {     
     uint8_t buffer[3];
     bool readOk = I2CBus::getInstance().readBytes(ATTINY_ADDRESS, buffer, sizeof(buffer), false);
@@ -204,7 +236,9 @@ private:
         }
         hasChanged = true;
       }
+      return true;
     }
+    return false;
   }
 };
 #else

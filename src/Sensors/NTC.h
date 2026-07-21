@@ -2,7 +2,7 @@
 #define NTC_SENSOR_H
 
 #include <Arduino.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include <Eolo/Core/Sensors/NtcThermistor.h>
 #include <Eolo/Types/NTCData.h>
 

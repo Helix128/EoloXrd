@@ -3,8 +3,9 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 #include "../Effectors/Motor.h"
+#include <Eolo/Core/Calibration/MotorCalibrationModel.h>
 
 struct Context;
 
@@ -243,34 +244,42 @@ inline bool HeadlessMotorCalibration::save(Context &ctx)
 
 inline bool HeadlessMotorCalibration::storeCurrentPoint()
 {
-    if (_sampleCount == 0)
+    MotorCalibrationSampleStats stats;
+    stats.count = _sampleCount;
+    stats.sum = _sampleSum;
+    stats.squareSum = _sampleSqSum;
+
+    MotorCalibrationPoint point;
+    MotorCalibrationPoint previousPoint;
+    const MotorCalibrationPoint *previous = nullptr;
+    if (_pointCount > 0)
+    {
+        previousPoint.pwm = _points[_pointCount - 1].pwm;
+        previousPoint.flow = _points[_pointCount - 1].flow;
+        previousPoint.stddev = _points[_pointCount - 1].stddev;
+        previousPoint.samples = _points[_pointCount - 1].samples;
+        previous = &previousPoint;
+    }
+    if (_pointCount >= MaxPoints ||
+        !MotorCalibrationModel::makePoint(stats, _currentPwm,
+                                          _config.minValidFlow,
+                                          _config.minFlowDelta,
+                                          _config.maxFlowStddev,
+                                          previous, point))
         return false;
 
-    float mean = _sampleSum / _sampleCount;
-    float variance = (_sampleSqSum / _sampleCount) - (mean * mean);
-    if (variance < 0.0f)
-        variance = 0.0f;
-    float stddev = sqrtf(variance);
-
-    if (mean < _config.minValidFlow || stddev > _config.maxFlowStddev)
-        return false;
-    if (_pointCount > 0 && mean - _points[_pointCount - 1].flow < _config.minFlowDelta)
-        return false;
-    if (_pointCount >= MaxPoints)
-        return false;
-
-    _points[_pointCount].pwm = _currentPwm;
-    _points[_pointCount].flow = mean;
-    _points[_pointCount].stddev = stddev;
-    _points[_pointCount].samples = _sampleCount;
+    _points[_pointCount].pwm = point.pwm;
+    _points[_pointCount].flow = point.flow;
+    _points[_pointCount].stddev = point.stddev;
+    _points[_pointCount].samples = point.samples;
     _pointCount++;
 
     LOG_OUT("Calibracion punto: PWM ");
     LOG_OUT(_currentPwm);
     LOG_OUT(" -> ");
-    LOG_OUT(mean, 2);
+    LOG_OUT(point.flow, 2);
     LOG_OUT(" L/min sd ");
-    LOG_OUT_LN(stddev, 3);
+    LOG_OUT_LN(point.stddev, 3);
     return true;
 }
 

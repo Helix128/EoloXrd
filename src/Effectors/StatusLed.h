@@ -2,7 +2,7 @@
 #define STATUS_LED_H
 
 #include <Arduino.h>
-#include "../Config.h"
+#include "../Config/Legacy.h"
 
 #ifdef FEATURE_NEOPIXEL
 #include <Adafruit_NeoPixel.h>

@@ -75,13 +75,14 @@ public:
 
     if (createdWorker) setState(ModemServiceState::Off);
 
-#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
-    if (!ensureAlwaysOn())
+    if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
     {
-      setState(ModemServiceState::Error);
-      return false;
+      if (!ensureAlwaysOn())
+      {
+        setState(ModemServiceState::Error);
+        return false;
+      }
     }
-#endif
 
     setLastError("OK");
     return true;
@@ -118,10 +119,12 @@ public:
 
   void shutdownWhenIdle()
   {
-#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
-    _shutdownWhenIdle = false;
-    return;
-#else
+    if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+    {
+      _shutdownWhenIdle = false;
+      return;
+    }
+
     _shutdownWhenIdle = true;
     if (_activeId == 0 && pendingCount() == 0)
     {
@@ -130,7 +133,6 @@ public:
       clearSignalQuality();
       setState(ModemServiceState::Off);
     }
-#endif
   }
 
   ModemServiceState state() const
@@ -334,15 +336,14 @@ private:
         uint32_t now = millis();
         if (_idleSinceMs == 0) _idleSinceMs = now;
         refreshSignalQualityIfDue(now);
-#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
-        continue;
-#else
+        if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+          continue;
+
         if ((uint32_t)(now - _idleSinceMs) < IdlePowerOffMs) continue;
         _driver.end();
         _shutdownWhenIdle = false;
         clearSignalQuality();
         setState(ModemServiceState::Off);
-#endif
       }
     }
   }
@@ -409,14 +410,17 @@ private:
 
     if (_shutdownWhenIdle && pendingCount() == 0)
     {
-#if MODEM_POWER_MODE == MODEM_POWER_ALWAYS_ON
-      _shutdownWhenIdle = false;
-#else
-      _driver.end();
-      _shutdownWhenIdle = false;
-      clearSignalQuality();
-      setState(ModemServiceState::Off);
-#endif
+      if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+      {
+        _shutdownWhenIdle = false;
+      }
+      else
+      {
+        _driver.end();
+        _shutdownWhenIdle = false;
+        clearSignalQuality();
+        setState(ModemServiceState::Off);
+      }
     }
 
     if (job->callback != nullptr)

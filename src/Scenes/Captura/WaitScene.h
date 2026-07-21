@@ -5,7 +5,7 @@
 #include "../../Data/Context.h"
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
-#include "../../Config.h"
+#include "../../Config/Legacy.h"
 
 class WaitScene : public IScene
 {
@@ -34,7 +34,7 @@ public:
             return;
         }
         unsigned long int nowUnix = ctx.getUnixTime();
-        if(nowUnix >= ctx.session.startDate.unixtime()){
+        if(nowUnix >= ctx.session.startUnix){
              
             ctx.components.input.resetCounter();
             SceneManager::setScene("captura",ctx);
@@ -76,14 +76,14 @@ public:
         ctx.u8g2.drawHLine(0, 35, 128);
 
         char timeStr[20];
-        DateTime startTime = ctx.session.startDate;
+        DateTime startTime(ctx.session.startUnix);
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d",
             startTime.hour(),
             startTime.minute()
         );
 
         // Mostrar tiempo faltante
-        int secondsLeft = ctx.session.startDate.unixtime() - nowUnix;
+        int secondsLeft = ctx.session.startUnix - nowUnix;
         int hoursLeft = secondsLeft / 3600;
         int minutesLeft = (secondsLeft % 3600) / 60;
         int secondsLeftRemainder = secondsLeft % 60;

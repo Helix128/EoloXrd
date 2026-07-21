@@ -1,7 +1,6 @@
 #ifndef EOLO_TYPES_SESSION_H
 #define EOLO_TYPES_SESSION_H
 
-#include <RTClib.h>
 #include <stdint.h>
 
 static constexpr uint8_t MaxFlowSections = 8;
@@ -13,7 +12,7 @@ struct FlowSection
 };
 
 typedef struct Session{
-    DateTime startDate;
+    uint32_t startUnix = 0;
     unsigned int duration = 0;
     unsigned long elapsedTime = 0;
     unsigned long lastLog = 0;
