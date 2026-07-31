@@ -11,6 +11,10 @@ public:
     // Llamado al entrar en la escena (para inicialización única)
     virtual void enter(Context &ctx) {}
 
+    // Se llama antes de abandonar la escena. Las escenas que accionan
+    // hardware deben detenerlo aquí; SceneManager garantiza la invocación.
+    virtual void exit(Context &ctx) { (void)ctx; }
+
     // Llamado en cada ciclo de actualización
     virtual void update(Context &ctx) = 0;
 

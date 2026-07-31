@@ -70,6 +70,8 @@ private:
         out.println("Comandos I2C:");
         out.println("  i2c scan       escanear bus I2C, listar dispositivos");
         out.println("  i2c reset      encolar recuperación del bus I2C");
+        out.println("  i2c reboot     explicar reinicio de recuperación");
+        out.println("  i2c reboot confirm  apagar periféricos y reiniciar ESP32");
         out.println("  i2c status     mostrar estadisticas y warmup del bus");
     }
 
@@ -102,6 +104,9 @@ public:
         } else if (args == "status") {
             I2CBus &bus = I2CBus::getInstance();
             I2CBus::Stats stats = bus.getStats();
+            out.printf("backend=%s timeout=%lu ms\n",
+                        EOLO_I2C_DIRECT_DRIVERS ? "directo" : "librerias",
+                        (unsigned long)I2C_TRANSACTION_TIMEOUT_MS);
             out.printf("Bus=%s warmup=%s restante=%lu ms\n",
                         bus.isReady() ? "OK" : "NO",
                         bus.warmupComplete() ? "completo" : "activo",
@@ -169,6 +174,18 @@ public:
                             : "No se pudo encolar el reset I2C (cola llena).");
             if (_displayReinitFn != nullptr)
                 out.println("La pantalla SPI no requiere reinicialización por reset I2C.");
+        } else if (args == "reboot") {
+            out.println("Este comando corta IO4 durante 250 ms y reinicia el ESP32.");
+            out.println("Confirma con: i2c reboot confirm");
+        } else if (args == "reboot confirm") {
+            out.println("Recuperación manual I2C: reiniciando equipo...");
+            Serial.flush();
+#if PPH_PWR_PIN >= 0
+            pinMode(PPH_PWR_PIN, OUTPUT);
+            digitalWrite(PPH_PWR_PIN, LOW);
+            delay(250);
+#endif
+            ESP.restart();
         } else {
             out.println("Comando i2c desconocido. Usa: i2c help");
         }

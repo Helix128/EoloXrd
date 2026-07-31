@@ -14,6 +14,16 @@
 #define DisplayModel EOLO_DISPLAY_MODEL
 #define I2C_CLOCK (EoloConfig::board.i2cClockHz)
 #define I2C_WARMUP_MS (EoloConfig::board.i2cWarmupMs)
+#if defined(EOLO_TARGET_STANDARD)
+  // La demo secuencial estable usa 50 ms. Los ProMini del bus pueden hacer
+  // clock stretching y 20 ms resultó demasiado agresivo en Standard.
+  #define I2C_TRANSACTION_TIMEOUT_MS 50UL
+#else
+  #define I2C_TRANSACTION_TIMEOUT_MS 20UL
+#endif
+#ifndef EOLO_I2C_DIRECT_DRIVERS
+  #define EOLO_I2C_DIRECT_DRIVERS 0
+#endif
 #define ATTINY_ADDRESS (EoloConfig::board.attinyAddress)
 #define ENCODER_INVERTED (EoloConfig::board.encoderInverted)
 #define CMD_RESET_COUNTER 0x01

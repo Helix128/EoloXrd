@@ -115,8 +115,9 @@
   #define RS485_DE_RE_PIN 26
 
   // Mapa probado en la demo Eolo Grande: libera GPIO27 para OLED CS.
-  #define MOTOR_PWM_PIN_0 14
-  #define MOTOR_PWM_PIN_1 25
+  // Orden físico Standard: Motor 0 en GPIO25 y Motor 1 en GPIO14.
+  #define MOTOR_PWM_PIN_0 25
+  #define MOTOR_PWM_PIN_1 14
   #define MOTOR_PWM_PIN_COUNT 2
   #define MOTOR_FG_PIN EOLO_PIN_UNUSED
   #define MOTOR_POWER_PIN EOLO_PIN_UNUSED

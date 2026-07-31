@@ -5,6 +5,7 @@
 #include "Adafruit_BME280.h"
 #include "../Config/Legacy.h"
 #include "../Board/I2CBus.h"
+#include "DirectBME280.h"
 #include <Eolo/Types/BME280Data.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -15,6 +16,7 @@ class BME280
 {
 private:
     Adafruit_BME280 bme;
+    DirectBME280 directBme;
     SemaphoreHandle_t _dataMutex = nullptr;
     bool _hasData = false;
 
@@ -36,12 +38,16 @@ public:
 
         LOG_LN("Iniciando BME280...");
         bool sensorReady = false;
+#if EOLO_I2C_DIRECT_DRIVERS
+        sensorReady = directBme.begin();
+#else
         {
             I2CBus::Guard guard;
             if (guard.acquired())
                 sensorReady = bme.begin(0x76) || bme.begin(0x77);
         }
         I2CBus::getInstance().applyProfile();
+#endif
         if (!sensorReady)
         {
             LOG_LN("Fallo al inicializar BME280");
@@ -78,12 +84,22 @@ public:
     {
         if (!isReady.load())
             return false;
+        float nextTemperature = NAN;
+        float nextHumidity = NAN;
+        float nextPressure = NAN;
+#if EOLO_I2C_DIRECT_DRIVERS
+        if (!directBme.readData(nextTemperature, nextHumidity, nextPressure)) {
+            isReady = false;
+            return false;
+        }
+#else
         I2CBus::Guard guard;
         if (!guard.acquired())
             return false;
-        float nextTemperature = bme.readTemperature();
-        float nextHumidity = bme.readHumidity();
-        float nextPressure = bme.readPressure() / 100.0F; // Pa -> hPa
+        nextTemperature = bme.readTemperature();
+        nextHumidity = bme.readHumidity();
+        nextPressure = bme.readPressure() / 100.0F; // Pa -> hPa
+#endif
         bool valid = isfinite(nextTemperature) && isfinite(nextHumidity) &&
                      isfinite(nextPressure);
         if (!valid) {

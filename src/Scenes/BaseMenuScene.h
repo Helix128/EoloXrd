@@ -46,7 +46,6 @@ public:
         }
 
         if (ctx.components.input.isButtonPressed()) {
-            ctx.components.input.resetCounter();
             if (_selectIndex >= 0 && _selectIndex < _optionCount) {
                 if (_options[_selectIndex].action)
                     _options[_selectIndex].action(ctx);

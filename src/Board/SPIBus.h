@@ -21,10 +21,11 @@ public:
         return instance;
     }
 
-    void lock()
+    bool lock(TickType_t timeoutTicks = portMAX_DELAY)
     {
-        if (_mutex != nullptr)
-            xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+        if (_mutex == nullptr)
+            return true;
+        return xSemaphoreTakeRecursive(_mutex, timeoutTicks) == pdTRUE;
     }
 
     void unlock()
@@ -35,11 +36,20 @@ public:
 
     class Guard
     {
+        bool _acquired = false;
+
     public:
-        Guard() { SPIBus::getInstance().lock(); }
-        ~Guard() { SPIBus::getInstance().unlock(); }
+        explicit Guard(TickType_t timeoutTicks = portMAX_DELAY)
+            : _acquired(SPIBus::getInstance().lock(timeoutTicks)) {}
+        ~Guard()
+        {
+            if (_acquired)
+                SPIBus::getInstance().unlock();
+        }
         Guard(const Guard &) = delete;
         Guard &operator=(const Guard &) = delete;
+
+        bool acquired() const { return _acquired; }
     };
 };
 

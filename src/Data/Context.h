@@ -74,14 +74,19 @@ typedef struct Context
 
     enum class BootPhase : uint8_t {
         Idle,
-        StartingModem,
+        StartingServices,
         InitSD,
-        Done
+        WaitingI2C,
+        Ready
     };
     // Written by boot init task (core 0), read by splash UI/main loop (core 1).
     std::atomic<BootPhase> bootPhase{BootPhase::Idle};
     // Written by boot init task (core 0), read by splash UI/main loop (core 1).
     std::atomic_uint32_t bootPhaseStartMs{0};
+    // Revision used to ensure that a phase which precedes a blocking
+    // peripheral operation was rendered at least once by the UI.
+    std::atomic_uint32_t bootPhaseRevision{0};
+    std::atomic_uint32_t bootPhaseRenderedRevision{0};
     const char *rtcAdjustReturnScene = "inicio";
 
     using RTCNetworkSyncStatus = ::RTCNetworkSyncStatus;
@@ -126,30 +131,84 @@ public:
         calibration.load();
         startLogTask();
         updateUiSnapshot(true);
+#ifdef FEATURE_HEADLESS
+        // Headless targets have no splash frame that can start the boot task.
         startBootInitTask();
+#endif
+    }
+
+    void setBootPhase(BootPhase phase)
+    {
+        bootPhase = phase;
+        bootPhaseStartMs = millis();
+        uint32_t revision = bootPhaseRevision.load() + 1UL;
+        bootPhaseRevision = revision;
+        markUiDirty();
+    }
+
+    uint32_t currentBootPhaseRevision() const
+    {
+        return bootPhaseRevision.load();
+    }
+
+    void acknowledgeBootPhaseRendered()
+    {
+        bootPhaseRenderedRevision = bootPhaseRevision.load();
+    }
+
+    void waitForBootPhaseRendered(uint32_t revision, uint32_t timeoutMs = 250UL)
+    {
+#ifndef FEATURE_HEADLESS
+        uint32_t started = millis();
+        while (bootPhaseRenderedRevision.load() < revision &&
+               (uint32_t)(millis() - started) < timeoutMs)
+        {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+#else
+        (void)revision;
+        (void)timeoutMs;
+#endif
     }
 
     static void bootInitWorker(void *arg)
     {
         Context *self = static_cast<Context *>(arg);
+        uint32_t bootStarted = millis();
         self->bootInitRunning = true;
 
+        self->setBootPhase(BootPhase::StartingServices);
 #ifdef FEATURE_MODEM
-        self->bootPhase = BootPhase::StartingModem;
-        self->bootPhaseStartMs = millis();
-        self->markUiDirty();
-        self->components.modemService.begin();
+        // begin() only starts the service/worker. The modem's long power-on
+        // and AT handshake continue independently of local boot readiness.
+        bool modemServiceStarted = self->components.modemService.begin();
+        LOG_F("Boot: servicio modem %s; arranque en segundo plano\n",
+              modemServiceStarted ? "iniciado" : "no disponible");
 #endif
 
-        self->bootPhase = BootPhase::InitSD;
-        self->bootPhaseStartMs = millis();
-        self->markUiDirty();
-        self->initSD();
+        self->setBootPhase(BootPhase::InitSD);
+        uint32_t sdPhaseRevision = self->currentBootPhaseRevision();
+        self->waitForBootPhaseRendered(sdPhaseRevision);
+        uint32_t sdStarted = millis();
+        bool sdReady = self->initSD();
+        LOG_F("Boot: SD %s en %lu ms\n",
+              sdReady ? "lista" : "no disponible",
+              (unsigned long)(millis() - sdStarted));
 
-        self->bootPhase = BootPhase::Done;
+        self->setBootPhase(BootPhase::WaitingI2C);
+        I2CBus &i2c = I2CBus::getInstance();
+        uint32_t i2cStarted = millis();
+        while (!i2c.warmupComplete())
+            vTaskDelay(pdMS_TO_TICKS(10));
+        LOG_F("Boot: warm-up I2C completo en %lu ms\n",
+              (unsigned long)(millis() - i2cStarted));
+
+        self->setBootPhase(BootPhase::Ready);
         self->bootInitComplete = true;
         self->bootInitRunning = false;
         self->markUiDirty();
+        LOG_F("Boot: interfaz local lista en %lu ms; modem continúa en segundo plano\n",
+              (unsigned long)(millis() - bootStarted));
         self->bootTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }

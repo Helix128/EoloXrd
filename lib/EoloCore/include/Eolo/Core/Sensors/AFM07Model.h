@@ -32,6 +32,7 @@ public:
         data.fresh = true;
         data.stale = false;
         data.ageMs = 0;
+        ++data.sampleId;
         lastSuccessMs = nowMs;
     }
 

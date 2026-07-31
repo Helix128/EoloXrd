@@ -1,6 +1,7 @@
 /*
  * ============================================================
- *  EOLO MP (Codename Eolo Grande) — Demo Secuencial  v24
+ *  EOLO MP (Codename Eolo Standard) — Demo Secuencial  v24
+ *  NO MODIFICAR! Uso referencial
  * ============================================================
  *  Plataforma : ESP32 WROOM32D
  *

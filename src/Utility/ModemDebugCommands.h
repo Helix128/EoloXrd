@@ -159,7 +159,9 @@ public:
         }
 
         if (args == "begin") {
-            out.println(_modem->begin() ? "Servicio modem listo" : _modem->lastErrorText());
+            out.println(_modem->begin()
+                            ? "Arranque de modem solicitado (use m status para ver el estado)"
+                            : _modem->lastErrorText());
         } else if (args == "end") {
             _modem->shutdownNow();
             out.println("Modem cerrado");

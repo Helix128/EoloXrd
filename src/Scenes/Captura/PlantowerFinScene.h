@@ -33,7 +33,6 @@ public:
 
         if(ctx.components.input.isButtonPressed()){
              
-            ctx.components.input.resetCounter();
             ctx.session.usePlantower = enablePM;
             ctx.saveSession();  
             SceneManager::setScene("captura",ctx);

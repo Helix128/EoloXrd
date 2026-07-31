@@ -21,7 +21,9 @@ private:
         RAMP_STABILIZE,
         RAMP_SAMPLE,
         SAVING,
-        COMPLETE
+        COMPLETE,
+        PAUSED,
+        FAILED
     };
 
     CalibrationState state = INIT;
@@ -49,6 +51,9 @@ private:
     int stableCount = 0;
     int unstablePoints = 0;
     int rejectedPoints = 0;
+    int plateauCount = 0;
+    bool pauseCancelSelected = false;
+    CalibrationManager previousCalibration;
     unsigned long lastStabCheckTime = 0;
 
     static const int SAMPLES_PER_POINT = 4;
@@ -292,6 +297,11 @@ public:
 
     uint16_t frameIntervalMs() const override { return 100; }
 
+    void exit(Context &ctx) override
+    {
+        ctx.components.motor.setPwmImmediate(0);
+    }
+
     void enter(Context &ctx) override
     {
         unstablePoints = 0;
@@ -301,6 +311,9 @@ public:
         discoveryFlow[0] = discoveryFlow[1] = 0;
         rampingStrong = false;
         currentPwm = 0;
+        plateauCount = 0;
+        pauseCancelSelected = false;
+        previousCalibration = ctx.calibration;
 
         LOG_LN("Iniciando calibración: discovery + rampa continua");
         ctx.calibration.isLoaded = false;
@@ -313,6 +326,38 @@ public:
 
     void update(Context &ctx) override
     {
+        // El botón durante el barrido siempre corta las bombas de inmediato.
+        // El siguiente toque confirma continuar/cancelar en vez de perder una
+        // curva previamente guardada.
+        if (state != COMPLETE && state != PAUSED && state != FAILED && ctx.components.input.isButtonPressed())
+        {
+            ctx.components.motor.setPwmImmediate(0);
+            state = PAUSED;
+            return;
+        }
+        if (state == PAUSED)
+        {
+            if (ctx.components.input.getEncoderDelta() != 0) pauseCancelSelected = !pauseCancelSelected;
+            if (ctx.components.input.isButtonPressed())
+            {
+                if (pauseCancelSelected)
+                {
+                    ctx.calibration = previousCalibration;
+                    SceneManager::setScene("inicio", ctx);
+                }
+                else
+                {
+                    applyMotorsForCurrentPoint(ctx);
+                    resetSampling();
+                    state = RAMP_STABILIZE;
+                }
+            }
+            ctx.u8g2.clearBuffer(); GUI::displayHeader(ctx);
+            Renderer::centeredText(ctx.u8g2, "Calibracion pausada", 64, 25, FONT_BOLD_S);
+            Renderer::centeredText(ctx.u8g2, pauseCancelSelected ? "Cancelar" : "Continuar", 64, 45, FONT_REGULAR);
+            ctx.u8g2.sendBuffer();
+            return;
+        }
         // === RENDER ===
         Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
@@ -530,6 +575,14 @@ public:
                     // Avanzar PWM
                     currentPwm += getPwmStep(currentPwm, flowDelta);
 
+                    if (flowDelta >= 0.0f && flowDelta < MIN_FLOW_DELTA * 1.5f) ++plateauCount;
+                    else plateauCount = 0;
+                    if ((lastAcceptedRampFlow >= 8.5f && lastAcceptedRampFlow > 0.0f) || plateauCount >= 3)
+                    {
+                        state = SAVING;
+                        break;
+                    }
+
                     if (currentPwm > MAX_PWM)
                     {
                         if (!rampingStrong)
@@ -558,8 +611,7 @@ public:
             ctx.components.motor.setPwm(0);
             ctx.calibration.sortByFlow();
             compactCalibration(ctx);
-            ctx.calibration.save();
-            ctx.calibration.isLoaded = ctx.calibration.validate();
+            ctx.calibration.isLoaded = ctx.calibration.validate() && ctx.calibration.save();
 
             LOG_F("Calibración: %d puntos, %d inestables, %d rechazados\n",
                   ctx.calibration.numPoints, unstablePoints, rejectedPoints);
@@ -567,6 +619,9 @@ public:
             if (!ctx.calibration.isLoaded)
             {
                 LOG_LN("Calibración NO válida (curva no cumple mínimos).");
+                ctx.calibration = previousCalibration;
+                state = FAILED;
+                break;
             }
 
             state = COMPLETE;
@@ -576,8 +631,15 @@ public:
 
         case COMPLETE:
         {
-            if (millis() - stateStartTime >= 2000)
-                ESP.restart();
+            if (ctx.components.input.isButtonPressed())
+                SceneManager::setScene("inicio", ctx);
+            break;
+        }
+
+        case FAILED:
+        {
+            if (ctx.components.input.isButtonPressed())
+                SceneManager::setScene("inicio", ctx);
             break;
         }
         }

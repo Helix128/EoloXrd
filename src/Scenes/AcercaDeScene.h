@@ -15,14 +15,12 @@ public:
 
     void enter(Context &ctx) override
     {
-        ctx.components.input.resetCounter();
     }
 
     void update(Context &ctx) override
     {
         if (ctx.components.input.isButtonPressed())
         {
-            ctx.components.input.resetCounter();
             SceneManager::setScene("inicio", ctx);
             return;
         }

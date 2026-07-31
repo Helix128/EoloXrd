@@ -130,6 +130,7 @@ public:
         flow = nextFlow;
         _hasData = true;
         _lastSuccessMs = millis();
+        ++_sampleId;
         if (_dataMutex)
             xSemaphoreGive(_dataMutex);
         return isfinite(nextFlow) && nextFlow >= 0.0f;
@@ -149,6 +150,7 @@ public:
         output.ageMs = _hasData ? millis() - _lastSuccessMs : 0;
         output.fresh = output.valid && output.ageMs <= 50UL;
         output.stale = output.valid && output.ageMs > 5000UL;
+        output.sampleId = _sampleId;
         if (_dataMutex)
             xSemaphoreGive(_dataMutex);
         return output.valid;
@@ -161,6 +163,7 @@ private:
     SemaphoreHandle_t _dataMutex = nullptr;
     bool _hasData = false;
     uint32_t _lastSuccessMs = 0;
+    uint32_t _sampleId = 0;
     
     FS3000 sensor;
 };

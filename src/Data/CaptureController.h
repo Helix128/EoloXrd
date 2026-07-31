@@ -70,7 +70,6 @@ inline void CaptureController::begin(Context &ctx)
 inline void CaptureController::pause(Context &ctx)
 {
 #ifndef FEATURE_HEADLESS
-    ctx.components.input.resetCounter();
 #endif
     if (!isCapturing || isPaused)
         return;
@@ -82,7 +81,6 @@ inline void CaptureController::pause(Context &ctx)
 inline void CaptureController::resume(Context &ctx)
 {
 #ifndef FEATURE_HEADLESS
-    ctx.components.input.resetCounter();
 #endif
     if (!isCapturing || !isPaused)
         return;
@@ -105,7 +103,6 @@ inline void CaptureController::end(Context &ctx)
     ctx.components.modemService.shutdownWhenIdle();
 #endif
 #ifndef FEATURE_HEADLESS
-    ctx.components.input.resetCounter();
     SceneManager::setScene("end", ctx);
     ctx.enableDisplay();
 #endif
@@ -122,7 +119,6 @@ inline void CaptureController::reset(Context &ctx)
     ctx.components.modemService.shutdownWhenIdle();
 #endif
 #ifndef FEATURE_HEADLESS
-    ctx.components.input.resetCounter();
 #endif
     ctx.session.elapsedTime = 0;
     LOG_LN("Estado de captura reiniciado.");

@@ -4,6 +4,7 @@
 #include <Eolo/Core/Capture/CaptureControllerModel.h>
 #include <Eolo/Core/Calibration/MotorCalibrationModel.h>
 #include <Eolo/Core/Flow/FlowSchedule.h>
+#include <Eolo/Core/Flow/DualMotorFlowController.h>
 #include <Eolo/Core/Sensors/AFM07Model.h>
 #include <Eolo/Core/Sensors/AnemometerModel.h>
 #include <Eolo/Core/Sensors/FS3000FlowModel.h>
@@ -229,6 +230,43 @@ static void test_battery_protocol_rejects_corruption()
     TEST_ASSERT_FALSE(BatteryProtocol::decode(raw, sizeof(raw) - 1, packet));
 }
 
+static FlowPidConfig dual_flow_config()
+{
+    FlowPidConfig c = {};
+    c.intervalMs = 100; c.deadband = 0.08f; c.kp = 10.0f; c.ki = 1.0f;
+    c.integralLimit = 30.0f; c.maxStep = 32; c.filterAlpha = 0.3f;
+    c.minActive = 0.2f; c.kd = 0.0f; c.maxDtMs = 1000; c.sensorStaleMs = 1200;
+    c.kickPwm = 700; c.kickMs = 100; c.stallFlowLpm = 0.0f;
+    c.restallCooldownMs = 1000; c.stallConfirmMs = 100;
+    return c;
+}
+
+static void test_dual_flow_virtual_mapping_and_sensor_grace()
+{
+    int primary = 0, secondary = 0;
+    DualMotorFlowController::motorsFromVirtual(1300, 1000, primary, secondary);
+    TEST_ASSERT_EQUAL_INT(1000, primary);
+    TEST_ASSERT_EQUAL_INT(300, secondary);
+    TEST_ASSERT_EQUAL_INT(1300, DualMotorFlowController::virtualFromMotors(1000, 300, 1000));
+
+    DualMotorFlowController controller;
+    DualMotorFlowInput input;
+    input.nowMs = 0; input.targetFlow = 4.0f; input.maxPwm = 1000;
+    input.primaryMotor = 1; input.hasFeedForward = true;
+    input.feedForwardPrimary = 1000; input.feedForwardSecondary = 250;
+    DualMotorFlowOutput output = controller.update(input, dual_flow_config());
+    TEST_ASSERT_EQUAL_INT(250, output.motor0Pwm);
+    TEST_ASSERT_EQUAL_INT(1000, output.motor1Pwm);
+    input.nowMs = 5999;
+    output = controller.update(input, dual_flow_config());
+    TEST_ASSERT_TRUE(output.sensorGraceActive);
+    input.nowMs = 6001;
+    output = controller.update(input, dual_flow_config());
+    TEST_ASSERT_TRUE(output.stoppedForSensorFault);
+    TEST_ASSERT_EQUAL_INT(0, output.motor0Pwm);
+    TEST_ASSERT_EQUAL_INT(0, output.motor1Pwm);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -244,5 +282,6 @@ int main(int, char **)
     RUN_TEST(test_thermal_protection_dto);
     RUN_TEST(test_battery_protocol_real_frame);
     RUN_TEST(test_battery_protocol_rejects_corruption);
+    RUN_TEST(test_dual_flow_virtual_mapping_and_sensor_grace);
     return UNITY_END();
 }

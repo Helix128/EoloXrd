@@ -31,7 +31,6 @@ public:
 
         if(ctx.components.input.isButtonPressed()){
              
-            ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
             ctx.session.startUnix = ctx.components.rtc.now().unixtime();
             ctx.session.duration = 3600;
