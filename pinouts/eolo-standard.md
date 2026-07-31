@@ -33,6 +33,29 @@ este controlador.
 | Módem | TX | `GPIO17` | `MODEM_TX_PIN` |
 | LED estado | NeoPixel | `EOLO_PIN_UNUSED` | `NEOPIXEL_PIN` |
 
+## RS485 compartido
+
+El Standard comparte un único transceptor entre los dos instrumentos. Ambos
+usan Modbus RTU a **4800 8N1** y el firmware conserva las direcciones físicas:
+
+| Esclavo | ID | Consulta | Prioridad | Periodicidad nominal |
+| --- | ---: | --- | --- | ---: |
+| AFM07 | `0x02` | Holding `0x0000`, 1 registro | Crítica | 800 ms |
+| Anemómetro | `0x01` | Holding `0x0000`, 2 registros | Opcional | 1100 ms |
+
+`RS485Scheduler` es el único propietario del UART y de `DE/RE`. Antes de cada
+consulta exige 8 ms de silencio continuo, transmite con `DE` activo y vuelve a
+recepción al terminar el último bit. El AFM07 gana cualquier empate; el
+anemómetro sólo ocupa una ventana si su transacción (hasta 450 ms, incluyendo
+la recuperación de un bus ocupado) termina antes del próximo vencimiento del
+AFM07. Un anemómetro ausente se reintenta
+cada 5 s, sin desplazar la ventana crítica del AFM07.
+
+No se cambia automáticamente el ID de ningún instrumento. Si el AFM07 no está
+en `0x02`, corrija su configuración física antes de diagnosticar el bus. Use
+`rs485 status` en la consola para revisar estado, latencia, huecos entre
+intentos, bytes tardíos, tramas inesperadas y recuperaciones del transceptor.
+
 ## Funciones no usadas en este target
 
 | Función | Define | Valor |

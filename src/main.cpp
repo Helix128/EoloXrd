@@ -45,7 +45,6 @@
 #include "Drawing/SceneRegistry.h"
 #endif
 #include "Utility/RS485Monitor.h"
-#include "Utility/RS485PatternValidator.h"
 #include "Utility/DebugConsole.h"
 #include "Profiler.h"
 
@@ -410,7 +409,6 @@ void loop()
   PROFILE_MARK("loop.frame", frameExecutionMs * 1000UL);
   RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);
   RS485Monitor::getInstance().checkAndReportViolations();
-  RS485PatternValidator::getInstance().reportViolations();
   return;
 #else
   if(SceneManager::getSceneIndex()<=1){
@@ -441,8 +439,5 @@ void loop()
   PROFILE_MARK("loop.frame", frameExecutionMs * 1000UL);
   RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);
   RS485Monitor::getInstance().checkAndReportViolations();
-
-  // Validar patrones de uso
-  RS485PatternValidator::getInstance().reportViolations();
 #endif
 }

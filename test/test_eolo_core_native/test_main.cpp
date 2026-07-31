@@ -14,6 +14,7 @@
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
 #include <Eolo/Core/Power/BatteryProtocol.h>
+#include <Eolo/Core/Communication/RS485Protocol.h>
 
 static void test_rtc_parser_is_calendar_aware()
 {
@@ -76,6 +77,58 @@ static void test_anemometer_conversion_and_expiry()
     TEST_ASSERT_EQUAL_INT(270, data.direction);
     TEST_ASSERT_TRUE(AnemometerModel::refreshValidity(data, lastSuccess, 16000, 15000));
     TEST_ASSERT_FALSE(AnemometerModel::refreshValidity(data, lastSuccess, 16001, 15000));
+}
+
+static void test_rs485_requests_and_response_validation()
+{
+    uint8_t request[8] = {};
+    TEST_ASSERT_TRUE(EoloCore::ModbusRtuProtocol::buildReadHolding(0x01, 0x0000, 2,
+                                                                    request, sizeof(request)));
+    const uint8_t expectedAnemRequest[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC4, 0x0B};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expectedAnemRequest, request, sizeof(request));
+
+    TEST_ASSERT_TRUE(EoloCore::ModbusRtuProtocol::buildReadHolding(0x02, 0x0000, 1,
+                                                                    request, sizeof(request)));
+    const uint8_t expectedAfmRequest[8] = {0x02, 0x03, 0x00, 0x00, 0x00, 0x01, 0x84, 0x39};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expectedAfmRequest, request, sizeof(request));
+
+    uint8_t response[9] = {0x01, 0x03, 0x04, 0x00, 0xFA, 0x01, 0x0E, 0x00, 0x00};
+    uint16_t crc = EoloCore::ModbusRtuProtocol::crc16(response, 7);
+    response[7] = static_cast<uint8_t>(crc);
+    response[8] = static_cast<uint8_t>(crc >> 8);
+    uint16_t registers[2] = {};
+    EoloCore::ModbusReadResult parsed =
+        EoloCore::ModbusRtuProtocol::parseReadResponse(response, sizeof(response), 0x01, 2, registers);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(EoloCore::ModbusReadStatus::Ok),
+                          static_cast<int>(parsed.status));
+    TEST_ASSERT_EQUAL_HEX16(0x00FA, registers[0]);
+    TEST_ASSERT_EQUAL_HEX16(0x010E, registers[1]);
+
+    response[8] ^= 0xFF;
+    parsed = EoloCore::ModbusRtuProtocol::parseReadResponse(response, sizeof(response), 0x01, 2, registers);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(EoloCore::ModbusReadStatus::InvalidCrc),
+                          static_cast<int>(parsed.status));
+
+    uint8_t exception[5] = {0x02, 0x83, 0x02, 0x00, 0x00};
+    crc = EoloCore::ModbusRtuProtocol::crc16(exception, 3);
+    exception[3] = static_cast<uint8_t>(crc);
+    exception[4] = static_cast<uint8_t>(crc >> 8);
+    parsed = EoloCore::ModbusRtuProtocol::parseReadResponse(exception, sizeof(exception), 0x02, 1, nullptr);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(EoloCore::ModbusReadStatus::Exception),
+                          static_cast<int>(parsed.status));
+    TEST_ASSERT_EQUAL_UINT8(0x02, parsed.exceptionCode);
+}
+
+static void test_rs485_schedule_reserves_afm07()
+{
+    using Timing = EoloCore::RS485TimingModel;
+    TEST_ASSERT_TRUE(Timing::kAnemometerSlotBudgetMs < Timing::kAfmIntervalMs);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(1199, Timing::kAfmIntervalMs);
+    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(100, 600, true, 450));
+    TEST_ASSERT_FALSE(Timing::optionalFitsBeforeCritical(100, 549, true, 450));
+    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(600, 100, true, 450));
+    TEST_ASSERT_EQUAL_UINT32(1300, Timing::nextPeriodicDue(1000, 1150, 300));
+    TEST_ASSERT_EQUAL_UINT32(0x2CU, Timing::nextPeriodicDue(0xFFFFFF00U, 0xFFFFFFF0U, 100));
 }
 
 static void test_plantower_frame_and_checksum()
@@ -276,6 +329,8 @@ int main(int, char **)
     RUN_TEST(test_fs3000_conversion_boundaries);
     RUN_TEST(test_afm07_fresh_stale_contract);
     RUN_TEST(test_anemometer_conversion_and_expiry);
+    RUN_TEST(test_rs485_requests_and_response_validation);
+    RUN_TEST(test_rs485_schedule_reserves_afm07);
     RUN_TEST(test_plantower_frame_and_checksum);
     RUN_TEST(test_capture_state_machine_actions);
     RUN_TEST(test_motor_calibration_model);

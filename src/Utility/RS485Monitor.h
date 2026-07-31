@@ -14,11 +14,11 @@ struct RS485Stats {
     uint32_t failedReads = 0;
     uint32_t timeoutErrors = 0;
     uint32_t crcErrors = 0;
+    uint32_t malformedErrors = 0;
+    uint32_t exceptionErrors = 0;
+    uint32_t busBusyErrors = 0;
+    uint32_t unexpectedFrameErrors = 0;
     uint32_t slaveTimeouts[256] = {0};
-    
-    uint32_t maxQueueDepth = 0;
-    uint32_t totalQueueOverflows = 0; // Veces que la cola se lleno
-    uint32_t queueDepthWarnings = 0;
 
     uint32_t lastTransactionMs = 0;
     uint32_t maxTransactionMs = 0;
@@ -45,7 +45,6 @@ private:
     RS485Stats _stats;
     SemaphoreHandle_t _statsMutex;
     bool _verboseAlerts = false;
-    const uint32_t QUEUE_WARNING_THRESHOLD = 3;
     const uint32_t LOOP_JITTER_THRESHOLD_MS = 5; // Alerta si jitter > 5ms
     const uint32_t ALERT_INTERVAL_MS = 10000;
 
@@ -63,7 +62,10 @@ public:
 
     // Registrar una solicitud completada
     void recordRequestCompleted(bool success, uint8_t errorCode, uint8_t slaveId, uint32_t transactionMs) {
-        if (xSemaphoreTake(_statsMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // El task RS485 no puede quedar bloqueado por la consola o por una
+        // copia de estadísticas; perder una métrica es preferible a perder
+        // una ventana de sondeo del AFM07.
+        if (xSemaphoreTake(_statsMutex, 0) == pdTRUE) {
             _stats.totalRequests++;
             _stats.lastTransactionMs = transactionMs;
             PROFILE_MARK("rs485.tx", transactionMs * 1000UL);
@@ -79,31 +81,14 @@ public:
                     _stats.slaveTimeouts[slaveId]++;
                 } else if (errorCode == 0xE3) { // ku8MBInvalidCRC
                     _stats.crcErrors++;
-                }
-            }
-            xSemaphoreGive(_statsMutex);
-        }
-    }
-
-    void recordQueueOverflow() {
-        if (xSemaphoreTake(_statsMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            _stats.totalQueueOverflows++;
-            xSemaphoreGive(_statsMutex);
-        }
-    }
-
-    // Registrar profundidad de la cola
-    void recordQueueDepth(uint32_t depth) {
-        if (xSemaphoreTake(_statsMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (depth > _stats.maxQueueDepth) {
-                _stats.maxQueueDepth = depth;
-            }
-            if (depth >= QUEUE_WARNING_THRESHOLD) {
-                _stats.queueDepthWarnings++;
-                if (_verboseAlerts && millis() - _stats.lastViolationTime > ALERT_INTERVAL_MS) {
-                    LOG_F("RS485 Monitor: Cola en profundidad %d (umbral: %d)\n", 
-                          depth, QUEUE_WARNING_THRESHOLD);
-                    _stats.lastViolationTime = millis();
+                } else if (errorCode == 0xE4) {
+                    _stats.malformedErrors++;
+                } else if (errorCode == 0xE5) {
+                    _stats.busBusyErrors++;
+                } else if (errorCode == 0xE6) {
+                    _stats.exceptionErrors++;
+                } else if (errorCode == 0xE0 || errorCode == 0xE1 || errorCode == 0xE7) {
+                    _stats.unexpectedFrameErrors++;
                 }
             }
             xSemaphoreGive(_statsMutex);

@@ -17,7 +17,7 @@ public:
     static const int MAX_POINTS = CalibrationModel::MaxPoints;
     static const int MIN_POINTS = CalibrationModel::MinPoints;
     static constexpr float MIN_FLOW_RANGE = CalibrationModel::MinFlowRange;
-
+    
     int numPoints = 0;
     int pwm0[MAX_POINTS];   // PWM del motor 0 en cada punto
     int pwm1[MAX_POINTS];   // PWM del motor 1 en cada punto
