@@ -59,6 +59,8 @@ public:
         {
             if (strcmp(sceneEntries[i].name, name) == 0)
             {
+                if (currentScene != nullptr && currentScene != sceneEntries[i].scene)
+                    currentScene->exit(ctx);
                 currentScene = sceneEntries[i].scene;
                 currentSceneName = sceneEntries[i].name;
                 currentSceneIndex = (int)i;

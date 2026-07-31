@@ -8,6 +8,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <Eolo/Types/ModemTypes.h>
+#include <atomic>
 
 class ModemService
 {
@@ -47,13 +48,20 @@ public:
       }
     }
 
-    bool createdWorker = false;
     if (_worker == nullptr)
     {
       // Prio 1 (servicio de fondo): cede CPU a sensores y bus RS485 (prio 2).
       // Stack 8192: AT command parsing de TinyGSM requiere buffers de respuesta amplios.
       static const UBaseType_t kTaskPriority = 1;
       static const uint32_t kTaskStack = 8192;
+      // Public callers must be able to request the service without waiting
+      // for the modem's power-on and AT handshake.
+      if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+      {
+        _startupRequested = true;
+        setState(ModemServiceState::Booting);
+      }
+
       BaseType_t created = xTaskCreatePinnedToCore(
         workerEntry,
         "ModemService",
@@ -70,21 +78,28 @@ public:
         setState(ModemServiceState::Error);
         return false;
       }
-      createdWorker = true;
     }
-
-    if (createdWorker) setState(ModemServiceState::Off);
-
-    if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+    else if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
     {
-      if (!ensureAlwaysOn())
+      ModemServiceState current = state();
+      if (current == ModemServiceState::Off || current == ModemServiceState::Error)
       {
-        setState(ModemServiceState::Error);
-        return false;
+        _startupRequested = true;
+        setState(ModemServiceState::Booting);
+
+        // A null queue entry is a private wake-up request. If the queue is
+        // full, the worker will still observe _startupRequested before it
+        // processes the next real job.
+        Job *wakeRequest = nullptr;
+        xQueueSend(_queue, &wakeRequest, 0);
       }
     }
 
-    setLastError("OK");
+    ModemServiceState resultingState = state();
+    if (resultingState == ModemServiceState::Booting)
+      setLastError("arranque en curso");
+    else if (resultingState == ModemServiceState::Off)
+      setLastError("OK");
     return true;
   }
 
@@ -247,6 +262,7 @@ private:
   char _activeTag[32] = "";
   char _lastError[96] = "OK";
   bool _shutdownWhenIdle = false;
+  std::atomic_bool _startupRequested{false};
   bool _signalKnown = false;
   uint8_t _signalCsq = 99;
   uint8_t _signalBer = 99;
@@ -298,7 +314,8 @@ private:
       return 0;
     }
 
-    setState(ModemServiceState::IdleWaitingPowerOff);
+    if (state() != ModemServiceState::Booting)
+      setState(ModemServiceState::IdleWaitingPowerOff);
     _idleSinceMs = 0;
     _shutdownWhenIdle = false;
     return job->id;
@@ -318,13 +335,49 @@ private:
     static_cast<ModemService *>(arg)->workerLoop();
   }
 
+  bool runStartupIfRequested()
+  {
+    if (!_startupRequested.exchange(false))
+      return true;
+
+    if constexpr (EoloConfig::board.modemPowerMode != EoloConfig::ModemPowerMode::AlwaysOn)
+    {
+      return true;
+    }
+
+    uint32_t started = millis();
+    bool ready = ensureAlwaysOn();
+    LOG_F("Modem: arranque %s en %lu ms\n",
+          ready ? "completo" : "fallo",
+          (unsigned long)(millis() - started));
+
+    if (ready)
+    {
+      setLastError("OK");
+      return true;
+    }
+
+    setState(ModemServiceState::Error);
+    return false;
+  }
+
   void workerLoop()
   {
     Job *job = nullptr;
+    runStartupIfRequested();
     while (true)
     {
-      if (xQueueReceive(_queue, &job, pdMS_TO_TICKS(SignalPollMs)) == pdTRUE && job != nullptr)
+      if (xQueueReceive(_queue, &job, pdMS_TO_TICKS(SignalPollMs)) == pdTRUE)
       {
+        if (job == nullptr)
+        {
+          runStartupIfRequested();
+          continue;
+        }
+
+        // A job may have been queued while the modem was Off/Error. Bring
+        // the always-on service back before touching the driver.
+        runStartupIfRequested();
         processJob(job);
         freeJob(job);
         job = nullptr;

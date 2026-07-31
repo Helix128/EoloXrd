@@ -30,6 +30,7 @@ inline constexpr const SafetyConfig &safety = Profile::kSafety;
 inline constexpr const ServiceDefaults &services = Profile::kServices;
 inline constexpr const SensorConfig &sensors = Profile::kSensors;
 inline constexpr const FlowPidConfig &flowPid = Profile::kFlowPid;
+inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
 }
 
 static_assert(EoloConfig::safety.motorOverheatLowC < EoloConfig::safety.motorOverheatHighC,

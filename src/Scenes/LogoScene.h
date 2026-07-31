@@ -10,238 +10,217 @@
 class LogoScene : public IScene
 {
 private:
-    enum SceneState
+    enum SceneState : uint8_t
     {
-        BOOT_WAIT,
-        FADING_IN,
-        FADING_OUT,
+        PREPARING,
+        READY_HOLD,
         DONE
     };
 
-    SceneState currentState;
-    unsigned long phaseStartTime;
+    SceneState currentState = PREPARING;
+    uint32_t phaseStartTime = 0;
+    bool bootTaskStarted = false;
 
-    static const unsigned long BOOT_LAYOUT_DURATION = 900;
-    static const unsigned long ANIM_DURATION        = 2200;
-    static const unsigned long FADE_DURATION       = 2200;
-    static const unsigned long FADE_OUT_DURATION   = 900;
-    static const int MAX_PIXEL_SIZE = 3;
+    static constexpr uint32_t MIN_VISIBLE_MS = 900UL;
+    static constexpr uint32_t READY_HOLD_MS = 300UL;
 
+    static const char *bootPhaseText(Context::BootPhase phase)
+    {
+        switch (phase)
+        {
+        case Context::BootPhase::InitSD:
+            return "Revisando SD...";
+        case Context::BootPhase::WaitingI2C:
+            return "Estabilizando I2C...";
+        case Context::BootPhase::Ready:
+            return "Listo";
+        case Context::BootPhase::StartingServices:
+        case Context::BootPhase::Idle:
+        default:
+            return "Preparando equipo...";
+        }
+    }
+
+    void drawSpinner(Context &ctx, int cx, int cy)
+    {
+        static const int8_t points[8][2] = {
+            {0, -5}, {4, -4}, {6, 0}, {4, 4},
+            {0, 5}, {-4, 4}, {-6, 0}, {-4, -4}
+        };
+        uint8_t head = (uint8_t)((millis() / 120UL) & 7U);
+        for (uint8_t i = 0; i < 5; ++i)
+        {
+            uint8_t index = (uint8_t)((head + 8U - i) & 7U);
+            int x = cx + points[index][0];
+            int y = cy + points[index][1];
+            if (i < 2)
+                ctx.u8g2.drawBox(x - 1, y - 1, 3, 3);
+            else
+                ctx.u8g2.drawPixel(x, y);
+        }
+    }
+
+    void drawCentered(Context &ctx, const char *text, int baseline, const uint8_t *font)
+    {
+        ctx.u8g2.setFont(font);
+        int width = ctx.u8g2.getStrWidth(text);
+        ctx.u8g2.drawStr((128 - width) / 2, baseline, text);
+    }
+
+    bool bitmapPixel(const unsigned char *bitmap, int width, int x, int y)
+    {
+        const int bytesPerRow = (width + 7) / 8;
+        uint8_t value = pgm_read_byte(bitmap + y * bytesPerRow + x / 8);
+        return (value & (1U << (x & 7))) != 0;
+    }
+
+    void drawLogo(Context &ctx)
+    {
+        // cmas es un bitmap 128x64. El isotipo completo ocupa x=6..58,
+        // y=7..54 (las tres formas y el signo +); no hay que tomar solo la
+        // primera franja vertical porque eso deja el logo recortado.
+        static constexpr int SourceX = 6;
+        static constexpr int SourceY = 7;
+        static constexpr int SourceWidth = 53;
+        static constexpr int SourceHeight = 48;
+        static constexpr int DestX = 3;
+        static constexpr int DestY = 0;
+        static constexpr int DestWidth = 28;
+        static constexpr int DestHeight = 25;
+
+        for (int dy = 0; dy < DestHeight; ++dy)
+        {
+            int sourceY = SourceY + (dy * (SourceHeight - 1)) / (DestHeight - 1);
+            for (int dx = 0; dx < DestWidth; ++dx)
+            {
+                int sourceX = SourceX + (dx * (SourceWidth - 1)) / (DestWidth - 1);
+                // OR de los cuatro píxeles vecinos evita perder trazos finos
+                // al reducir el bitmap y conserva también sus bordes.
+                bool on = bitmapPixel(cmas, 128, sourceX, sourceY) ||
+                          bitmapPixel(cmas, 128, min(sourceX + 1, SourceX + SourceWidth - 1), sourceY) ||
+                          bitmapPixel(cmas, 128, sourceX, min(sourceY + 1, SourceY + SourceHeight - 1)) ||
+                          bitmapPixel(cmas, 128, min(sourceX + 1, SourceX + SourceWidth - 1),
+                                      min(sourceY + 1, SourceY + SourceHeight - 1));
+                if (on)
+                    ctx.u8g2.drawPixel(DestX + dx, DestY + dy);
+            }
+        }
+
+        ctx.u8g2.setFont(FONT_BOLD_S);
+        ctx.u8g2.drawStr(39, 16, "EOLO");
+    }
+
+    void drawDetail(Context &ctx, Context::BootPhase phase)
+    {
+        char detail[32];
+        switch (phase)
+        {
+        case Context::BootPhase::InitSD:
+            snprintf(detail, sizeof(detail), "Acceso a tarjeta local");
+            break;
+        case Context::BootPhase::WaitingI2C:
+        {
+            I2CBus &bus = I2CBus::getInstance();
+            uint32_t seconds = (bus.warmupRemainingMs() + 999UL) / 1000UL;
+            snprintf(detail, sizeof(detail), "%lus restantes", (unsigned long)seconds);
+            break;
+        }
+        case Context::BootPhase::Ready:
+            switch (ctx.sdStatus)
+            {
+            case SD_MISSING:
+                snprintf(detail, sizeof(detail), "SD sin tarjeta");
+                break;
+            case SD_ERROR:
+                snprintf(detail, sizeof(detail), "SD con error");
+                break;
+            case SD_OK:
+                snprintf(detail, sizeof(detail), "SD lista");
+                break;
+            default:
+                snprintf(detail, sizeof(detail), "Continuando...");
+                break;
+            }
+            break;
+        case Context::BootPhase::StartingServices:
+#ifdef FEATURE_MODEM
+            snprintf(detail, sizeof(detail), "Modem en segundo plano");
+#else
+            snprintf(detail, sizeof(detail), "Iniciando sensores");
+#endif
+            break;
+        case Context::BootPhase::Idle:
+        default:
+            snprintf(detail, sizeof(detail), "Iniciando...");
+            break;
+        }
+
+        drawCentered(ctx, detail, 54, FONT_REGULAR_S);
+    }
+
+    void drawBootScreen(Context &ctx)
+    {
+        ctx.u8g2.clearBuffer();
+
+        const Context::BootPhase phase = ctx.bootPhase.load();
+        ctx.u8g2.drawHLine(4, 26, 120); 
+        drawCentered(ctx, bootPhaseText(phase), 39, FONT_BOLD_S);
+        drawDetail(ctx, phase);
+        ctx.u8g2.setBitmapMode(1);
+        drawLogo(ctx);
+        if (phase != Context::BootPhase::Ready)
+            drawSpinner(ctx, 116, 11);
+        ctx.u8g2.sendBuffer();
+        ctx.acknowledgeBootPhaseRendered();
+    }
 
 public:
     static constexpr const char *Name = "splash";
 
-    // Render cada tick del loop — tope real lo pone el bus I2C
-    uint16_t frameIntervalMs() const override { return 1; }
+    uint16_t frameIntervalMs() const override { return 80; }
 
-    void enter(Context &ctx) override
+    void enter(Context &) override
     {
+        currentState = PREPARING;
         phaseStartTime = millis();
-        currentState = BOOT_WAIT;
-        // Clock I2C fijo (I2C_CLOCK, seteado en initDisplay). No reconfigurar
-        // en caliente: el bus lo comparten el render, sensores y la tarea de log.
-    }
-
-    float smootherstep(float t)
-    {
-        t = constrain(t, 0.0f, 1.0f);
-        return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
-    }
-
-    int smoothstep_pos(int start, int end, unsigned long t)
-    {
-        if (t > 1000) t = 1000;
-        long long tl = t;
-        int delta = end - start;
-        return (int)(start + (delta * tl * tl * (3000 - 2 * tl)) / 1000000000LL);
-    }
-
-    bool getPixelRaw(Context &ctx, int x, int y)
-    {
-        uint8_t *buf = ctx.u8g2.getBufferPtr();
-        if (x < 0 || x >= 128 || y < 0 || y >= 64) return false;
-        int index = x + (y / 8) * 128;
-        return (buf[index] & (1 << (y % 8))) != 0;
-    }
-
-    // t_norm=1 → visible, t_norm=0 → invisible
-    void applyDitherMask(Context &ctx, float t_norm)
-    {
-        float t = constrain(t_norm, 0.0f, 1.0f);
-        float thresholdLimit = t * 17.0f;
-        static const uint8_t bayer[4][4] = {
-            {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}
-        };
-        ctx.u8g2.setDrawColor(0);
-        for (int x = 0; x < 128; x++)
-            for (int y = 0; y < 64; y++)
-                if (bayer[x % 4][y % 4] >= thresholdLimit)
-                    ctx.u8g2.drawPixel(x, y);
-        ctx.u8g2.setDrawColor(1);
-    }
-
-    void applyPixelation(Context &ctx, int blockSize)
-    {
-        if (blockSize <= 1) return;
-        for (int y = 0; y < 64; y += blockSize)
-            for (int x = 0; x < 128; x += blockSize)
-            {
-                int sx = min(x + blockSize / 2, 127);
-                int sy = min(y + blockSize / 2, 63);
-                bool on = getPixelRaw(ctx, sx, sy);
-                ctx.u8g2.setDrawColor(on ? 1 : 0);
-                ctx.u8g2.drawBox(x, y, blockSize, blockSize);
-            }
-        ctx.u8g2.setDrawColor(1);
-    }
-
-    void drawFrame(Context &ctx, int xPos, float t_layout_norm, float t_dither_norm, int pixelSize)
-    {
-        ctx.u8g2.clearBuffer();
-        ctx.u8g2.setBitmapMode(1);
-        ctx.u8g2.drawXBM((int)xPos - 34, 0, 128, 64, cmas);
-        ctx.u8g2.drawXBM(30 - (int)xPos, 0, 128, 64, cmas);
-
-        ctx.u8g2.setFont(u8g2_font_helvB24_tf);
-        ctx.u8g2.drawStr(64 - xPos + 32, 30, "C+");
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        ctx.u8g2.drawStr(64 - xPos + 32 + (int)(32*(1-t_layout_norm)), 45, "Universidad");
-        ctx.u8g2.drawStr(64 - xPos + 32 + (int)(64*(1-t_layout_norm)), 55, "del Desarrollo");
-
-        {
-            int cx = 128 - 32 - xPos - 4;
-            int h  = (int)(1 + 47 * t_layout_norm);
-            ctx.u8g2.drawBox(cx, (64 - h) / 2, 2, h);
-        }
-
-        applyPixelation(ctx, pixelSize);
-        applyDitherMask(ctx, t_dither_norm);
-        ctx.u8g2.sendBuffer();
-    }
-
-    void centerText(Context &ctx, const char *text, int y)
-    {
-        int w = ctx.u8g2.getStrWidth(text);
-        ctx.u8g2.drawStr((128 - w) / 2, y, text);
-    }
-
-    void drawSnakeSpinner(Context &ctx, int cx, int cy)
-    {
-        static const int8_t pts[8][2] = {
-            {0,-6},{4,-4},{6,0},{4,4},{0,6},{-4,4},{-6,0},{-4,-4}
-        };
-        uint8_t head = (uint8_t)((millis() / 120) & 7);
-        for (uint8_t i = 0; i < 5; ++i)
-        {
-            uint8_t idx = (head + 8 - i) % 8;
-            bool big = i < 2;
-            int x = cx + pts[idx][0];
-            int y = cy + pts[idx][1];
-            if (big) ctx.u8g2.drawBox(x-1, y-1, 3, 3);
-            else     ctx.u8g2.drawPixel(x, y);
-        }
-    }
-
-    // Normaliza un rango de slideT a [0,1] con smootherstep.
-    float rangeT(float slideT, float start, float end)
-    {
-        return smootherstep(constrain((slideT - start) / (end - start), 0.0f, 1.0f));
-    }
-
-    void drawBootWaitContent(Context &ctx, float layoutT)
-    {
-        ctx.u8g2.clearBuffer();
-        ctx.u8g2.setBitmapMode(1);
-
-        const char *phaseText = "Iniciando...";
-        switch (ctx.bootPhase.load())
-        {
-        case Context::BootPhase::Idle:
-            break;
-#ifdef FEATURE_MODEM
-        case Context::BootPhase::StartingModem:
-            phaseText = "Iniciando modem...";
-            break;
-#endif
-        case Context::BootPhase::InitSD:
-            phaseText = "Leyendo SD...";
-            break;
-        case Context::BootPhase::Done:
-            phaseText = "Listo";
-            break;
-        }
-
-        float textT = rangeT(layoutT, 0.55f, 1.0f);
-        ctx.u8g2.setDrawColor(0);
-        ctx.u8g2.drawBox(0, 54, 128, 10);
-        ctx.u8g2.setDrawColor(1);
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-
+        bootTaskStarted = false;
     }
 
     void update(Context &ctx) override
     {
-        unsigned long elapsedTime = millis() - phaseStartTime;
+        uint32_t now = millis();
+        uint32_t elapsed = now - phaseStartTime;
 
-        switch (currentState)
+        if (currentState == PREPARING)
         {
-        case BOOT_WAIT:
-        {
-            float rawT = constrain((float)elapsedTime / BOOT_LAYOUT_DURATION, 0.0f, 1.0f);
-            float layoutT = smootherstep(rawT);
+            drawBootScreen(ctx);
 
-            drawBootWaitContent(ctx, layoutT);
-            ctx.u8g2.sendBuffer();
-
-            if (ctx.bootInitComplete.load())
+            // Arrancar el worker después del primer frame permite que el
+            // usuario vea el estado inicial antes de que SD tome el SPI.
+            if (!bootTaskStarted)
             {
-                currentState = FADING_IN;
-                phaseStartTime = millis();
+                ctx.startBootInitTask();
+                bootTaskStarted = true;
+            }
+
+            if (ctx.bootInitComplete.load() && elapsed >= MIN_VISIBLE_MS)
+            {
+                currentState = READY_HOLD;
+                phaseStartTime = now;
             }
             return;
         }
 
-        case FADING_IN:
+        if (currentState == READY_HOLD)
         {
-            float t       = smootherstep(constrain((float)elapsedTime / FADE_DURATION, 0.0f, 1.0f));
-            float pixFact = 1.0f - t;
-            int pixelSize = (int)(1.0f + (MAX_PIXEL_SIZE - 1) * pixFact);
-            float t_anim  = constrain((float)elapsedTime / ANIM_DURATION, 0.0f, 1.0f);
-            float t_layout = smootherstep(t_anim);
-            int xPos      = smoothstep_pos(-32, 32, (elapsedTime * 1000UL) / ANIM_DURATION);
-
-            if (elapsedTime > FADE_DURATION)
-            {
-                pixelSize = 1; t_layout = 1.0f; t = 1.0f; xPos = 32;
-                currentState = FADING_OUT;
-                phaseStartTime = millis();
-                ctx.components.input.resetCounter();
-            }
-
-            drawFrame(ctx, xPos, t_layout, t, pixelSize);
-            return;
-        }
-
-        case FADING_OUT:
-        {
-            float t       = smootherstep(constrain((float)elapsedTime / FADE_OUT_DURATION, 0.0f, 1.0f));
-            int pixelSize = (int)(1.0f + (MAX_PIXEL_SIZE - 1) * t);
-
-            if (elapsedTime > FADE_OUT_DURATION)
-            {
+            drawBootScreen(ctx);
+            if ((uint32_t)(now - phaseStartTime) >= READY_HOLD_MS)
                 currentState = DONE;
-                return;
-            }
-
-            drawFrame(ctx, 32, 1.0f, 1.0f - t, pixelSize);
             return;
         }
 
-        case DONE:
-            SceneManager::setScene("inicio", ctx);
-            return;
-        }
+        SceneManager::setScene("inicio", ctx);
     }
 };
+
 #endif

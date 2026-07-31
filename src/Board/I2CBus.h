@@ -74,7 +74,7 @@ private:
     uint32_t _queuedCommandDrops = 0;
     uint32_t _completedCommands = 0;
 
-    static constexpr uint32_t TRANSACTION_TIMEOUT_MS = 20;
+    static constexpr uint32_t TRANSACTION_TIMEOUT_MS = I2C_TRANSACTION_TIMEOUT_MS;
     static constexpr uint32_t LOCK_TIMEOUT_MS = 20;
 
     static Result resultFromTransmissionError(uint8_t error, uint32_t elapsedMs) {
@@ -587,13 +587,18 @@ public:
 
     bool writeThenRead(uint8_t addr, const uint8_t* tx, size_t txLen,
                        uint8_t* rx, size_t rxLen, bool logError = true) {
+        return writeThenReadResult(addr, tx, txLen, rx, rxLen, logError) == Result::Ok;
+    }
+
+    Result writeThenReadResult(uint8_t addr, const uint8_t* tx, size_t txLen,
+                               uint8_t* rx, size_t rxLen, bool logError = true) {
         if ((tx == nullptr && txLen != 0) || (rx == nullptr && rxLen != 0))
-            return false;
+            return Result::InvalidArgument;
         if (!begin())
-            return false;
+            return Result::NotReady;
         Guard guard(LOCK_TIMEOUT_MS);
         if (!guard.acquired())
-            return false;
+            return Result::Busy;
 
         uint32_t startMs = millis();
         Wire.beginTransmission(addr);
@@ -609,7 +614,7 @@ public:
                 LOG_F("I2C writeThenRead write fallo: addr=0x%02X, txLen=%u, error=%u\n",
                       addr, (unsigned int)txLen, error);
             }
-            return false;
+            return result;
         }
 
         size_t readCount = Wire.requestFrom(addr, rxLen);
@@ -625,12 +630,12 @@ public:
             }
             while (Wire.available())
                 Wire.read();
-            return false;
+            return result;
         }
         for (size_t i = 0; i < rxLen; ++i)
             rx[i] = Wire.read();
         recordResult(addr, Result::Ok, elapsedMs, rxLen, readCount);
-        return true;
+        return Result::Ok;
     }
 };
 

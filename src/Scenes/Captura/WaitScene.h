@@ -28,7 +28,6 @@ public:
         GUI::displayHeader(ctx);
 
         if(ctx.components.input.isButtonPressed()){
-            ctx.components.input.resetCounter();
             ctx.saveSession();
             SceneManager::setScene("inicio",ctx);
             return;
@@ -36,7 +35,6 @@ public:
         unsigned long int nowUnix = ctx.getUnixTime();
         if(nowUnix >= ctx.session.startUnix){
              
-            ctx.components.input.resetCounter();
             SceneManager::setScene("captura",ctx);
             ctx.u8g2.sendBuffer();
             return;

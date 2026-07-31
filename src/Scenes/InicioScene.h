@@ -29,7 +29,8 @@ public:
             SceneManager::setScene("rtc_adjust", ctx);
         });
         addOption("Calibrar bombas", [](Context& ctx) { SceneManager::setScene("calibration", ctx); });
-        addOption("Acerca de", [](Context& ctx) { SceneManager::setScene("acerca_de", ctx); });
+        addOption("Componentes", [](Context& ctx) { SceneManager::setScene("test_components", ctx); });
+       // addOption("Acerca de", [](Context& ctx) { SceneManager::setScene("acerca_de", ctx); });
     }
 };
 #endif

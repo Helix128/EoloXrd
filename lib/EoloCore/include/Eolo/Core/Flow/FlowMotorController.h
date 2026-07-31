@@ -228,6 +228,19 @@ public:
         _forceKick = true;
     }
 
+    // Arranca el lazo desde un mando externo (por ejemplo, feed-forward de
+    // calibración) sin sustituirlo por un kick. El siguiente update conserva
+    // el PID y corrige alrededor de este valor.
+    void seedRunning(int pwm)
+    {
+        _initialized = true;
+        _currentPwm = pwm < 0 ? 0 : pwm;
+        _ignPhase = IgnitionPhase::Run;
+        _lastUpdateMs = 0;
+        _fault = FLOW_PID_FAULT_NONE;
+        _smart.resetController(true);
+    }
+
     FlowMotorOutput update(const FlowMotorInput &input, const FlowPidConfig &config)
     {
         FlowMotorOutput output;

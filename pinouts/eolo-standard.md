@@ -23,8 +23,8 @@ este controlador.
 | RS485 | RX | `GPIO35` | `RS485_RX_PIN` |
 | RS485 | TX | `GPIO33` | `RS485_TX_PIN` |
 | RS485 | DE/RE | `GPIO26` | `RS485_DE_RE_PIN` |
-| Motor/bomba | PWM 0 | `GPIO14` | `MOTOR_PWM_PIN_0` |
-| Motor/bomba | PWM 1 | `GPIO25` | `MOTOR_PWM_PIN_1` |
+| Motor/bomba | PWM 0 | `GPIO25` | `MOTOR_PWM_PIN_0` |
+| Motor/bomba | PWM 1 | `GPIO14` | `MOTOR_PWM_PIN_1` |
 | Plantower | RX | `GPIO34` | `PT_RX` |
 | Plantower | TX | `GPIO32` | `PT_TX` |
 | Periféricos | Alimentación | `GPIO4` | `PPH_PWR_PIN` |

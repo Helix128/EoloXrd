@@ -67,5 +67,5 @@ Modelo de pinout:
 - Los pines estan en `EoloDemoPinout.h`.
 - EOLO Dron: RS485 RX `GPIO16`, TX `GPIO17`, DE/RE `GPIO4`; motor PWM `GPIO26`; FG `GPIO35`; DIP `GPIO32`, `GPIO33`, `GPIO14`, `GPIO13`.
 - EOLO Express: RS485 RX `GPIO27`, TX `GPIO25`, DE/RE `GPIO26`; Plantower RX `GPIO17`, TX `GPIO16`; bombas PWM `GPIO32/33`; alimentacion perifericos `GPIO4`.
-- EOLO Standard: RS485 RX `GPIO35`, TX `GPIO33`, DE/RE `GPIO26`; OLED SPI `CS27/DC15/RES2`; bombas PWM `GPIO14/25`; Plantower RX `GPIO34`, TX `GPIO32`; alimentacion perifericos `GPIO4`.
+- EOLO Standard: RS485 RX `GPIO35`, TX `GPIO33`, DE/RE `GPIO26`; OLED SPI `CS27/DC15/RES2`; Motor 0/PWM0 `GPIO25`, Motor 1/PWM1 `GPIO14`; Plantower RX `GPIO34`, TX `GPIO32`; alimentacion perifericos `GPIO4`.
 - EOLO Express Legacy: RS485 RX `GPIO35`, TX `GPIO33`, DE/RE `GPIO26`; OLED SPI `CS27/DC15/RES2`; bombas PWM `GPIO14/25`; Plantower RX `GPIO16`, TX `GPIO17`; alimentacion perifericos `GPIO4`.

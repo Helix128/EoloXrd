@@ -24,6 +24,9 @@ public:
         data.windKph = kphFromMetersPerSecond(data.speed);
         data.direction = direction;
         data.valid = rawSpeed >= 0 && isfinite(data.speed) && isfinite(data.windKph);
+        data.fresh = data.valid;
+        data.stale = !data.valid;
+        data.ageMs = 0;
         lastSuccessMs = nowMs;
     }
 
@@ -36,6 +39,16 @@ public:
     {
         if (lastSuccessMs == 0 || (nowMs - lastSuccessMs) > staleDataMs)
             data.valid = false;
+        return data.valid;
+    }
+
+    static bool refreshAge(AnemometerData &data, uint32_t lastSuccessMs, uint32_t nowMs,
+                           uint32_t freshDataMs, uint32_t staleDataMs)
+    {
+        data.ageMs = lastSuccessMs ? nowMs - lastSuccessMs : staleDataMs + 1;
+        data.fresh = lastSuccessMs && data.ageMs <= freshDataMs;
+        data.stale = !lastSuccessMs || data.ageMs > freshDataMs;
+        data.valid = lastSuccessMs && data.ageMs <= staleDataMs;
         return data.valid;
     }
 };

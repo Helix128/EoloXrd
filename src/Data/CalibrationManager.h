@@ -7,6 +7,8 @@
 #include "Profiler.h"
 #include <Preferences.h>
 #include <math.h>
+#include <stddef.h>
+#include <string.h>
 #include <Eolo/Core/Calibration/CalibrationModel.h>
 
 class CalibrationManager
@@ -24,6 +26,40 @@ public:
     int weakMotor = 0; // Índice del motor más débil (determinado en discovery)
     bool isLoaded = false;
 
+    // v4 usa dos registros completos. Se escribe primero el slot inactivo y
+    // solo se considera válido si su checksum y curva pasan la validación.
+    // Así un corte de energía nunca destruye la última curva buena.
+    struct CalibrationSlot {
+        uint32_t magic;
+        uint16_t version;
+        uint16_t points;
+        uint32_t generation;
+        int32_t weak;
+        int pwm0[MAX_POINTS];
+        int pwm1[MAX_POINTS];
+        float flow[MAX_POINTS];
+        uint32_t checksum;
+    };
+    static constexpr uint32_t SlotMagic = 0x454F4C34UL; // "EOL4"
+
+    static uint32_t checksum(const CalibrationSlot &slot)
+    {
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&slot);
+        const size_t count = offsetof(CalibrationSlot, checksum);
+        uint32_t value = 2166136261UL;
+        for (size_t i = 0; i < count; ++i) { value ^= bytes[i]; value *= 16777619UL; }
+        return value;
+    }
+
+    static bool validSlot(const CalibrationSlot &slot)
+    {
+        return slot.magic == SlotMagic && slot.version == 4 &&
+               slot.points > 0 && slot.points <= MAX_POINTS &&
+               (slot.weak == 0 || slot.weak == 1) &&
+               slot.checksum == checksum(slot) &&
+               CalibrationModel::validate(slot.points, slot.flow);
+    }
+
     void sortByFlow()
     {
         CalibrationModel::sortByFlow(numPoints, pwm0, pwm1, flows);
@@ -39,21 +75,38 @@ public:
         return CalibrationModel::getMotorPwms(isLoaded, numPoints, pwm0, pwm1, flows, targetFlow, outPwm0, outPwm1);
     }
 
-    void save()
+    bool save()
     {
+        if (!validate())
+        {
+            LOG_LN("Se rechazó guardar una calibración inválida");
+            return false;
+        }
         Preferences preferences;
         preferences.begin("eolo_calib", false);
 
-        preferences.putUChar("calVersion", 3);
-        preferences.putInt("numPoints", numPoints);
-        preferences.putInt("weakMotor", weakMotor);
-        preferences.putBytes("pwm0", pwm0, numPoints * sizeof(int));
-        preferences.putBytes("pwm1", pwm1, numPoints * sizeof(int));
-        preferences.putBytes("flows", flows, numPoints * sizeof(float));
+        CalibrationSlot a = {}, b = {};
+        preferences.getBytes("slot0", &a, sizeof(a));
+        preferences.getBytes("slot1", &b, sizeof(b));
+        const bool va = validSlot(a), vb = validSlot(b);
+        const uint32_t generation = va && vb ? (a.generation > b.generation ? a.generation : b.generation) + 1UL :
+                                    va ? a.generation + 1UL : vb ? b.generation + 1UL : 1UL;
+        const char *key = (!va || (vb && b.generation >= a.generation)) ? "slot0" : "slot1";
+        CalibrationSlot next = {};
+        next.magic = SlotMagic; next.version = 4; next.points = numPoints;
+        next.generation = generation; next.weak = weakMotor;
+        memcpy(next.pwm0, pwm0, numPoints * sizeof(int));
+        memcpy(next.pwm1, pwm1, numPoints * sizeof(int));
+        memcpy(next.flow, flows, numPoints * sizeof(float));
+        next.checksum = checksum(next);
+        const bool written = preferences.putBytes(key, &next, sizeof(next)) == sizeof(next);
 
+        CalibrationSlot verify = {};
+        const bool verified = written && preferences.getBytes(key, &verify, sizeof(verify)) == sizeof(verify) && validSlot(verify);
         preferences.end();
+        if (!verified) { LOG_LN("Error al verificar calibración v4"); return false; }
 
-        LOG_LN("Calibración v3 guardada en Flash:");
+        LOG_LN("Calibración v4 guardada transaccionalmente en Flash:");
         LOG_OUT(" Puntos: ");
         LOG_OUT_LN(numPoints);
         LOG_OUT(" Motor débil: ");
@@ -66,12 +119,30 @@ public:
             LOG_OUT(flows[numPoints - 1], 2);
             LOG_OUT_LN(" L/min");
         }
+        return true;
     }
 
     bool load()
     {
         Preferences preferences;
         preferences.begin("eolo_calib", true);
+
+        CalibrationSlot a = {}, b = {};
+        preferences.getBytes("slot0", &a, sizeof(a));
+        preferences.getBytes("slot1", &b, sizeof(b));
+        const bool va = validSlot(a), vb = validSlot(b);
+        if (va || vb)
+        {
+            const CalibrationSlot &best = (!vb || (va && a.generation >= b.generation)) ? a : b;
+            numPoints = best.points; weakMotor = best.weak;
+            memcpy(pwm0, best.pwm0, numPoints * sizeof(int));
+            memcpy(pwm1, best.pwm1, numPoints * sizeof(int));
+            memcpy(flows, best.flow, numPoints * sizeof(float));
+            preferences.end();
+            isLoaded = true;
+            LOG_F("Calibración v4 cargada (generación %lu, %d puntos)\n", (unsigned long)best.generation, numPoints);
+            return true;
+        }
 
         uint8_t calVersion = preferences.getUChar("calVersion", 0);
 
@@ -255,7 +326,6 @@ public:
             components.input.poll();
             delay(100);
         }
-        components.input.resetCounter();
 #endif
     }
 };

@@ -34,7 +34,7 @@ public:
         }
 
         bool syncRunning = status == Context::RTCNetworkSyncStatus::Running;
-        int delta = ctx.components.input.getEncoderDelta(1);
+        int delta = ctx.components.input.getEncoderDelta();
         bool pressed = ctx.components.input.isButtonPressed();
 
         if (syncRunning)
@@ -45,12 +45,6 @@ public:
             updateMain(ctx, delta, pressed);
         else if (state == ManualTime)
             updateManual(ctx, delta, pressed);
-
-        if (pressed || syncRunning)
-        {
-            ctx.components.input.resetCounter();
-            ctx.components.input.resetButton();
-        }
 
         draw(ctx);
     }
@@ -79,7 +73,7 @@ private:
 
         if (selected == 0)
         {
-            DateTime now = ctx.components.rtc.now();
+            DateTime now = ctx.components.rtc.timeForManualAdjustment();
             hour = now.hour();
             minute = now.minute();
             field = 0;
@@ -114,7 +108,7 @@ private:
             return;
         }
 
-        DateTime now = ctx.components.rtc.now();
+        DateTime now = ctx.components.rtc.timeForManualAdjustment();
         ctx.components.rtc.adjust(DateTime(now.year(), now.month(), now.day(), hour, minute, 0));
         SceneManager::setScene(ctx.rtcAdjustReturnScene, ctx);
     }

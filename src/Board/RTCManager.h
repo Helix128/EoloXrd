@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include "../Config/Legacy.h"
 #include "I2CBus.h"
+#include "DirectDS3231.h"
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -19,6 +20,7 @@ class RTCManager
 {
 private:
     RTC_DS3231 rtc;
+    DirectDS3231 directRtc;
     SemaphoreHandle_t _cacheMutex = nullptr;
     SemaphoreHandle_t _requestMutex = nullptr;
     uint32_t _cachedUnix = 0;
@@ -62,7 +64,14 @@ public:
         ok = true;
 
         bool rtcReady = false;
+        bool timeValid = false;
+        DateTime initial;
         I2CBus &bus = I2CBus::getInstance();
+#if EOLO_I2C_DIRECT_DRIVERS
+        bool initialPowerLost = false;
+        rtcReady = directRtc.begin(initialPowerLost, initial, timeValid);
+        powerLost = initialPowerLost;
+#else
         // RTClib/Adafruit BusIO vuelve a ejecutar Wire.begin() y realiza su
         // propio sondeo. Primero registramos el ACK/NACK mediante I2CBus;
         // así un DS3231 ausente no genera warnings repetidos ni queda fuera
@@ -76,10 +85,18 @@ public:
             }
         }
         bus.applyProfile();
+#endif
         ok = rtcReady;
 
-        if (ok.load())
+        // OSF o una fecha antigua no indican que el DS3231 esté ausente.
+        // Se conserva como disponible para que NTP/UI puedan ajustarlo sin
+        // volver a ejecutar rtc.begin() cada pocos segundos.
+        if (rtcReady && timeValid && isValid(initial))
+            updateCache(initial);
+#if !EOLO_I2C_DIRECT_DRIVERS
+        if (rtcReady)
             poll();
+#endif
 
     
 #if CHECK_SENSORS
@@ -87,6 +104,9 @@ public:
 #endif
         return ok.load();
     }
+
+    bool isPresent() const { return ok.load(); }
+    bool hasValidTime() { return isValid(now()); }
 
     void testRTC()
     {
@@ -171,16 +191,22 @@ public:
         if (hasPendingAdjust && !adjustHardware(pendingAdjust))
             LOG_LN("No se pudo aplicar el ajuste RTC encolado");
 
+        DateTime current;
+#if EOLO_I2C_DIRECT_DRIVERS
+        if (!directRtc.readTime(current)) {
+            ok = false;
+            return false;
+        }
+#else
         I2CBus::Guard guard;
-        if (!guard.acquired()) {
-            ok = false;
+        if (!guard.acquired())
             return false;
-        }
-        DateTime current = rtc.now();
-        if (!isValid(current)) {
-            ok = false;
-            return false;
-        }
+        current = rtc.now();
+#endif
+        // Hora inválida (por ejemplo 2000-01-01 tras OSF) no es un fallo de
+        // transporte: el RTC sigue presente y espera un ajuste.
+        if (!isValid(current))
+            return true;
         ok = true;
         updateCache(current);
         return true;
@@ -212,13 +238,21 @@ private:
         if (!isValid(time))
             return false;
 
+        DateTime written;
+#if EOLO_I2C_DIRECT_DRIVERS
+        if (!directRtc.adjust(time))
+            return false;
+        delay(5);
+        if (!directRtc.readTime(written))
+            return false;
+#else
         I2CBus::Guard guard;
         if (!guard.acquired())
             return false;
         rtc.adjust(time);
         delay(5);
-
-        DateTime written = rtc.now();
+        written = rtc.now();
+#endif
         uint32_t targetUnix = time.unixtime();
         uint32_t writtenUnix = written.unixtime();
         uint32_t diff = targetUnix > writtenUnix ? targetUnix - writtenUnix : writtenUnix - targetUnix;
@@ -276,6 +310,14 @@ public:
         return time.year() >= 2024 && time.year() <= 2099 &&
                time.month() >= 1 && time.month() <= 12 &&
                time.day() >= 1 && time.day() <= 31;
+    }
+
+    // Base segura para una edición manual cuando el RTC responde pero aún
+    // conserva su fecha de fábrica/OSF. Evita que la UI intente guardar 2000.
+    DateTime timeForManualAdjustment()
+    {
+        DateTime current = now();
+        return isValid(current) ? current : DateTime(__DATE__, __TIME__);
     }
 
     static bool parseDateTimeString(const char *text, DateTime &time)

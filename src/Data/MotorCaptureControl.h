@@ -5,15 +5,15 @@
 #include <math.h>
 #include "../Config/Legacy.h"
 #include "../Effectors/Motor.h"
-#include <Eolo/Core/Flow/FlowMotorController.h>
+#include <Eolo/Core/Flow/DualMotorFlowController.h>
 #include <Eolo/Core/Thermal/ThermalProtectionModel.h>
 
 struct Context;
 
 class MotorCaptureControl
 {
-#if defined(FEATURE_FLOW_PID)
-    FlowMotorController pid;
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
+    DualMotorFlowController pid;
 
     FlowPidConfig pidCfg = {
         FLOW_PID_INTERVAL_MS,
@@ -40,7 +40,7 @@ class MotorCaptureControl
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
 
-#if defined(FEATURE_FLOW_PID)
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     void updatePidMotors(Context &ctx);
 #endif
 
@@ -57,7 +57,7 @@ public:
     void resetFlowController();
     void updateMotors(Context &ctx);
 
-#if defined(FEATURE_FLOW_PID)
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     const FlowPidConfig &getPidConfig() const { return pidCfg; }
     void setPidConfig(const FlowPidConfig &config) { if (validatePidConfig(config)) pidCfg = config; }
     bool isPidTestRunning() const { return pidTestRunning; }
@@ -158,12 +158,12 @@ inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
 
 inline void MotorCaptureControl::resetFlowController()
 {
-#if defined(FEATURE_FLOW_PID)
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     pid.reset();
 #endif
 }
 
-#if defined(FEATURE_FLOW_PID)
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
 inline void MotorCaptureControl::stopPidTest(Context &ctx)
 {
     pidTestRunning = false;
@@ -180,8 +180,6 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
 {
     uint32_t nowMs = millis();
     float targetFlow = pidTestRunning ? pidTestTargetFlow : ctx.session.targetFlow;
-    int currentPwm = ctx.components.motor.getMotorPwm(0);
-
     FlowData flowData;
     if (!pidConfigLogged)
     {
@@ -222,18 +220,31 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     bool flowReadValid = ctx.components.flowSensor.getData(flowData) && flowData.valid;
     bool flowFresh = flowReadValid && flowData.ageMs <= pidCfg.sensorStaleMs;
 
-    FlowMotorInput input;
+    int seed0 = 0, seed1 = 0;
+    bool hasSeed = ctx.calibration.getMotorPwms(targetFlow, seed0, seed1);
+    const bool useCalibrationSeed = EoloConfig::useCalibrationSeed && hasSeed;
+    const int primaryMotor = useCalibrationSeed ? ctx.calibration.weakMotor : 0;
+
+    DualMotorFlowInput input;
     input.nowMs = nowMs;
-    input.currentPwm = currentPwm;
     input.targetFlow = targetFlow;
     input.measuredFlow = flowFresh ? flowData.flow : -1.0f;
     input.flowValid = flowReadValid;
     input.flowFresh = flowFresh;
     input.flowStale = flowReadValid && flowData.ageMs > pidCfg.sensorStaleMs;
     input.flowAgeMs = flowData.ageMs;
+    input.sampleId = flowData.sampleId;
     input.maxPwm = MAX_PWM;
+    input.primaryMotor = primaryMotor;
+    input.hasFeedForward = useCalibrationSeed || !EoloConfig::useCalibrationSeed;
+    input.feedForwardPrimary = useCalibrationSeed
+                                   ? (primaryMotor == 0 ? seed0 : seed1)
+                                   : FLOW_PID_BASE_PWM;
+    input.feedForwardSecondary = useCalibrationSeed
+                                     ? (primaryMotor == 0 ? seed1 : seed0)
+                                     : 0;
 
-    FlowMotorOutput output = pid.update(input, pidCfg);
+    DualMotorFlowOutput output = pid.update(input, pidCfg);
 
     // Log arranque/re-kick (una vez por evento)
     if (output.kickActive && output.kickCount > _lastLoggedKickCount)
@@ -251,6 +262,14 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
             LOG_OUT(output.kickCount);
             LOG_OUT_LN(")");
         }
+    }
+
+    // Aplicar también el mando retenido durante la gracia: ante una lectura
+    // inválida no se debe cambiar el PWM hasta que venza la ventana segura.
+    if (output.updated || output.sensorGraceActive)
+    {
+        ctx.components.motor.setMotorPwm(0, output.motor0Pwm);
+        ctx.components.motor.setMotorPwm(1, output.motor1Pwm);
     }
 
     // Log fault de sensor (con rate limit)
@@ -274,10 +293,6 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     if (!output.updated)
         return;
 
-    ctx.components.motor.setMotorPwm(0, output.pwm);
-    for (int i = 1; i < MotorManager::motorCount; i++)
-        ctx.components.motor.setMotorPwm(i, 0);
-
     // Log PID periódico (solo en Run, no durante kick)
     if (!output.kickActive)
     {
@@ -289,7 +304,7 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
             LOG_OUT(" filtrado ");
             LOG_OUT(output.smartStatus.fastFlow, 2);
             LOG_OUT(" L/min PWM ");
-            LOG_OUT(output.pwm);
+            LOG_OUT(output.virtualPwm);
             LOG_OUT(" P/I/D ");
             LOG_OUT(output.smartStatus.pTerm, 1);
             LOG_OUT("/");
@@ -317,36 +332,7 @@ inline void MotorCaptureControl::updateMotors(Context &ctx)
         return;
     }
 
-#if defined(FEATURE_FLOW_PID)
     updatePidMotors(ctx);
-#elif defined(FEATURE_FLOW_CALIBRATION)
-    static float lastTargetFlow = -1.0f;
-
-    int p0 = 0, p1 = 0;
-    if (ctx.calibration.getMotorPwms(ctx.session.targetFlow, p0, p1))
-    {
-        if (lastTargetFlow != ctx.session.targetFlow)
-        {
-            LOG_OUT("Flujo objetivo: ");
-            LOG_OUT(ctx.session.targetFlow, 2);
-            LOG_OUT(" L/min -> PWM[");
-            LOG_OUT(p0);
-            LOG_OUT(", ");
-            LOG_OUT(p1);
-            LOG_OUT_LN("]");
-            lastTargetFlow = ctx.session.targetFlow;
-        }
-
-        ctx.components.motor.setMotorPwm(0, p0);
-        ctx.components.motor.setMotorPwm(1, p1);
-    }
-    else
-    {
-        ctx.components.motor.setPwm(0);
-    }
-#else
-    ctx.components.motor.setPwm(0);
-#endif
 }
 
 #endif

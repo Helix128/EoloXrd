@@ -12,6 +12,12 @@
 class CapturaScene : public IScene
 {
 private:
+#ifdef FEATURE_ANEMOMETER
+    static constexpr int FooterPageCount = 7;
+#else
+    static constexpr int FooterPageCount = 6;
+#endif
+
 public:
     static constexpr const char *Name = "captura";
 
@@ -43,11 +49,9 @@ public:
 
         if (delta != 0)
         {
-            cycleFooter = (cycleFooter + delta);
+            cycleFooter = (cycleFooter + delta) % FooterPageCount;
             if (cycleFooter < 0)
-                cycleFooter = 5;
-            else if (cycleFooter > 5)
-                cycleFooter = 0;
+                cycleFooter += FooterPageCount;
         }
 
         if (button)
@@ -110,7 +114,6 @@ public:
         {
             if (!snapshot.airQuality.enabled)
             {
-                cycleFooter += ctx.components.input.getEncoderDelta();
                 break;
             }
 
@@ -226,6 +229,23 @@ public:
             ctx.u8g2.drawStr(endX, 60, endStr.c_str());
             break;
         }
+#ifdef FEATURE_ANEMOMETER
+        case 6:
+        {
+            if (!snapshot.wind.valid)
+            {
+                Renderer::metricRow(ctx.u8g2, "Velocidad", "--", "", "Direccion", "--", "");
+                break;
+            }
+
+            char speedStr[8];
+            char directionStr[5];
+            snprintf(speedStr, sizeof(speedStr), "%.1f", snapshot.wind.speed);
+            snprintf(directionStr, sizeof(directionStr), "%d", snapshot.wind.direction);
+            Renderer::metricRow(ctx.u8g2, "Velocidad", speedStr, "m/s", "Direccion", directionStr, "deg");
+            break;
+        }
+#endif
         }
     }
 };

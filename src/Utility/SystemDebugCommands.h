@@ -86,7 +86,7 @@ private:
             }
 
             if (_rtc->adjust(parsed)) {
-                out.printf("RTC ajustado: %s\n", _rtc->getTimeString().c_str());
+                out.println("Ajuste RTC encolado; verifica con 'time' en un segundo.");
             } else {
                 out.println("No se pudo ajustar RTC");
             }
@@ -118,7 +118,7 @@ private:
             }
 
             if (_rtc->adjust(parsed)) {
-                out.printf("RTC ajustado: %s\n", _rtc->getTimeString().c_str());
+                out.println("Ajuste RTC encolado; verifica con 'time' en un segundo.");
             } else {
                 out.println("No se pudo ajustar RTC");
             }

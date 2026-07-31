@@ -44,7 +44,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int delta = ctx.components.input.getEncoderDelta(5);
+        int delta = ctx.components.input.getEncoderDelta();
         if (delta != 0)
         {
             int newMinute = targetMinute + delta;
@@ -121,8 +121,6 @@ public:
             LOG_LN(targetUnix - nowUnix);
             if (isEndTime)
             {
-                ctx.components.input.resetCounter();
-                ctx.components.input.resetButton();
                 ctx.session.duration = targetTime.unixtime() - ctx.session.startUnix;
 
                 LOG_OUT("Duracion establecida: "); 

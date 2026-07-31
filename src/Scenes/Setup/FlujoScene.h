@@ -31,7 +31,6 @@ public:
 
         if(ctx.components.input.isButtonPressed()){
              
-            ctx.components.input.resetCounter();
             ctx.session.targetFlow = targetFlow;
             SceneManager::setScene("tiempo",ctx);
         }

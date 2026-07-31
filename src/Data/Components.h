@@ -89,6 +89,12 @@ private:
     I2CBus &bus = I2CBus::getInstance();
     bus.begin();
 
+#if defined(EOLO_TARGET_STANDARD)
+    static constexpr uint32_t InputPollIntervalMs = 20UL;
+#else
+    static constexpr uint32_t InputPollIntervalMs = 8UL;
+#endif
+
     uint32_t warmupLogMs = 0;
     while (!bus.warmupComplete()) {
       uint32_t now = millis();
@@ -108,9 +114,9 @@ private:
     uint32_t nextRtc = now + 100UL;
     uint32_t nextBattery = now + 650UL;
     uint32_t nextInputInit = now;
-    uint32_t nextFlowInit = now;
-    uint32_t nextBmeInit = now;
-    uint32_t nextRtcInit = now;
+    uint32_t nextFlowInit = now + 2UL;
+    uint32_t nextBmeInit = now + 350UL;
+    uint32_t nextRtcInit = now + 100UL;
 
     uint8_t inputFailures = 0;
     uint8_t flowFailures = 0;
@@ -177,14 +183,14 @@ private:
       if (!inputInitialized && (int32_t)(now - nextInputInit) >= 0) {
         input.begin();
         inputInitialized = true;
-        nextInput = now + 8UL;
+        nextInput = now + InputPollIntervalMs;
       }
       if (inputInitialized && (int32_t)(now - nextInput) >= 0) {
         bool success = input.pollHardware();
         if (success) inputFailures = 0;
         else if (inputFailures < 255) ++inputFailures;
         reportHealth("encoder", success, inputFailures, inputDegraded, inputLastLog);
-        nextInput = now + (success ? 8UL : retryDelayMs(inputFailures, 8UL));
+        nextInput = now + (success ? InputPollIntervalMs : retryDelayMs(inputFailures, InputPollIntervalMs));
         maybeRecoverBus();
       }
 #endif

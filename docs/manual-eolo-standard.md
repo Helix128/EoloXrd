@@ -32,6 +32,7 @@ El pinout real usado por el firmware de EOLO Standard está documentado en [`../
 | Captura rapida | Inicia una captura cercana al momento actual, con duracion por defecto de 1 hora. |
 | Ajustar reloj | Permite cambiar la hora manualmente o sincronizar por red. |
 | Calibrar bombas | Ejecuta la calibracion guiada de bombas y flujo. |
+| Probar componentes | Muestra sensores y permite probar cada motor por separado. |
 
 ## Nueva sesion
 
@@ -115,7 +116,7 @@ Procedimiento:
 1. Asegure que el circuito de aire este armado como se usara en terreno.
 2. Seleccione **Calibrar bombas**.
 3. El equipo mide cada motor, identifica el motor debil y genera rampas de calibracion.
-4. Espere hasta que el proceso termine y el equipo reinicie.
+4. Espere el resultado en pantalla; no es necesario reiniciar el equipo.
 5. Realice una captura corta de prueba.
 
 Referencia visual de calibracion de flujo:
@@ -127,3 +128,5 @@ Advertencias:
 - No obstruya el flujo durante la calibracion.
 - No desconecte sensores ni bombas durante el proceso.
 - Si la calibracion falla o el flujo queda inestable, revise fugas, filtros, mangueras y alimentacion antes de repetir.
+- La calibracion es opcional: sin curva, Motor 1 arranca primero y el control cerrado regula el caudal; una curva valida solo se usa como punto de partida.
+- Durante el barrido, el boton pausa con ambas bombas apagadas. Cancelar conserva la calibracion anterior.

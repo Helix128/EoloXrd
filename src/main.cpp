@@ -429,8 +429,12 @@ void loop()
   {
     // El OLED actual usa SPI; las lecturas I2C viven en EoloI2CTask y el
     // render no debe esperar al bus.
-    SPIBus::Guard spiGuard;
-    SceneManager::update(ctx, externalDirty);
+    // La SD comparte el bus SPI con el OLED. Durante una operación larga de
+    // SD se omite este frame para que el loop siga atendiendo sensores,
+    // entradas y tareas de fondo en vez de quedar bloqueado en el mutex.
+    SPIBus::Guard spiGuard(pdMS_TO_TICKS(1));
+    if (spiGuard.acquired())
+      SceneManager::update(ctx, externalDirty);
   }
 
   unsigned long frameExecutionMs = millis() - frameStartMs;

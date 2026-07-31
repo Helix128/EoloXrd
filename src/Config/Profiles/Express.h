@@ -7,6 +7,8 @@
 
 namespace EoloConfig::Profile
 {
+inline constexpr bool kUseCalibrationSeed = true;
+
 inline constexpr BoardConfig kBoard = {
     150000UL, 8000000UL, 8, false, 11, 0, 8UL, ModemPowerMode::AlwaysOn,
     27, 15, 2, 18, 23, 300, 0UL, false
