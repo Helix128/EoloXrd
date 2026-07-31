@@ -14,6 +14,13 @@ EOLO Standard se opera desde pantalla con encoder y boton. Permite programar ses
 
 El pinout real usado por el firmware de EOLO Standard está documentado en [`../pinouts/eolo-standard.md`](../pinouts/eolo-standard.md).
 
+AFM07 y anemómetro comparten ese único bus RS485: AFM07 debe permanecer en
+ID `0x02` y el anemómetro en ID `0x01`, ambos a 4800 8N1. El planificador reserva
+la ventana del AFM07 y relega un anemómetro ausente automáticamente. Para
+diagnóstico por consola, ejecute `rs485 status`; revise especialmente `maxokgap`
+del ID `0x02` (debe mantenerse por debajo de 1200 ms), además de `bus_busy`,
+`late_bytes` y `recoveries`.
+
 ## Controles e iconos
 
 - **Encoder:** gire para cambiar valores o moverse por menus.
