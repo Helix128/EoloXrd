@@ -15,6 +15,7 @@ def emit_env(demo_name, sketch_path, model, model_macro, lib_deps):
         "extends = embedded",
         "build_src_filter = -<*>",
         "extra_scripts =",
+        "\t${embedded.extra_scripts}",
         "\tpre:scripts/platformio_build_demo.py",
         "\tpost:scripts/platformio_demo_targets.py",
         "build_flags =",

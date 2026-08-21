@@ -86,60 +86,54 @@ void resetControllerState(bool preserveModel) {
 
 const char *modeName(SmartFlowMode mode) {
   switch (mode) {
-    case SMART_FLOW_INTERPOLATE: return "interp";
-    case SMART_FLOW_GAIN_PREDICT: return "gain";
-    case SMART_FLOW_MIN_ACTIVE_BOOST: return "boost";
-    case SMART_FLOW_PID_ONLY:
-    default: return "pid";
+    case SMART_FLOW_SEEK_CENTER: return "seek";
+    case SMART_FLOW_CENTER_LOCKED: return "locked";
+    case SMART_FLOW_RECENTER: return "recenter";
+    default: return "unknown";
   }
 }
 
 SmartFlowTune tunePreset(const String &name) {
   SmartFlowTune tune;
   if (name == "slow" || name == "suave") {
-    tune.kp = 12.0f;
-    tune.ki = 0.9f;
-    tune.kd = 8.0f;
-    tune.integralLimit = 12.0f;
-    tune.deadband = 0.12f;
-    tune.fastAlpha = 0.35f;
+    tune.kp = 10.0f;
+    tune.ki = 0.2f;
+    tune.kd = 0.0f;
+    tune.integralLimit = 8.0f;
+    tune.deadband = 0.15f;
+    tune.fastAlpha = 0.30f;
     tune.slowAlpha = 0.12f;
-    tune.feedForwardAlpha = 0.12f;
-    tune.minStep = 1;
-    tune.maxStep = 8;
-    tune.maxFeedForwardStep = 5;
+    tune.seekStep = 10;
+    tune.softTrimMax = 48;
+    tune.softStepLimit = 1;
+    tune.sensitivity = 0.6f;
   } else if (name == "fast" || name == "agresivo") {
-    tune.kp = 26.0f;
-    tune.ki = 2.0f;
-    tune.kd = 4.0f;
-    tune.integralLimit = 26.0f;
+    tune.kp = 20.0f;
+    tune.ki = 0.8f;
+    tune.kd = 0.0f;
+    tune.integralLimit = 20.0f;
     tune.deadband = 0.08f;
-    tune.fastAlpha = 0.55f;
-    tune.slowAlpha = 0.22f;
-    tune.feedForwardAlpha = 0.24f;
-    tune.minStep = 2;
-    tune.maxStep = 20;
-    tune.maxFeedForwardStep = 14;
+    tune.fastAlpha = 0.45f;
+    tune.slowAlpha = 0.20f;
+    tune.seekStep = 24;
+    tune.softTrimMax = 96;
+    tune.softStepLimit = 3;
+    tune.sensitivity = 1.4f;
   }
   return tune;
 }
 
 void printModel() {
-  Serial.printf("model valid=%s mode=%s gain=%.5f confidence=%.2f minFlowPwm=%d maxUsefulPwm=%d pwmFF=%d pid=%d step=%d fast=%.2f slow=%.2f dFlow=%.2f saturation=%s clamp=%s\n",
-                lastControlStatus.modelValid ? "yes" : "no",
+  Serial.printf("locked=%s mode=%s centerPwm=%d trimPwm=%d step=%d fast=%.2f slow=%.2f dFlow=%.2f saturation=%s\n",
+                lastControlStatus.centerFound ? "yes" : "no",
                 modeName(lastControlStatus.mode),
-                lastControlStatus.estimatedGain,
-                lastControlStatus.confidence,
-                lastControlStatus.minFlowPwm,
-                lastControlStatus.maxUsefulPwm,
-                lastControlStatus.pwmFF,
-                lastControlStatus.pidCorrection,
+                lastControlStatus.centerPwm,
+                lastControlStatus.trimPwm,
                 lastControlStatus.step,
                 lastControlStatus.fastFlow,
                 lastControlStatus.slowFlow,
                 lastControlStatus.derivativeFlow,
-                lastControlStatus.upperSaturation ? "yes" : "no",
-                lastControlStatus.lowerClamp ? "yes" : "no");
+                lastControlStatus.upperSaturation ? "yes" : "no");
 }
 
 void printStatus() {

@@ -9,8 +9,8 @@
 #include <Eolo/Types/LogTypes.h>
 #include <atomic>
 #include "../../Board/SPIBus.h"
-
-struct Context;
+#include "../../Config/Legacy.h"
+#include "LogSchema.h"
 
 class LogService
 {
@@ -45,34 +45,20 @@ public:
     // Written by log task (core 0), read by main loop/drone controller (core 1).
     std::atomic_bool logActive{false};
 
-    bool initSD(Context &ctx);
+    bool initSD();
     void markSdFailed();
-    void startLogTask(Context &ctx);
-    void enqueueLogData(Context &ctx);
+    void startLogTask();
+    bool hasLogQueue() const { return logQueue != nullptr; }
     bool enqueueLogRecord(const LogRecord &record, uint32_t sessionStartUnix,
                           bool includeState, bool includePlantower,
                           bool includeAnemometer, bool includeNtc,
                           bool kickActive = false);
     bool logsIdle() const;
-    void processCaptureSample(Context &ctx);
-    bool logData(Context &ctx);
-    bool logData(Context &ctx, const LogRecord &record);
     bool logData(const LogRecord &record, uint32_t sessionStartUnix,
                  bool includeState, bool includePlantower,
                  bool includeAnemometer, bool includeNtc,
                  const char *stateText = "Capturando");
-    bool buildLogRecord(Context &ctx, LogRecord &record);
 };
-
-#endif // EOLO_LOG_SERVICE_H
-
-
-#if defined(CONTEXT_CLASS_DEFINED) && !defined(EOLO_LOG_SERVICE_IMPL_DONE)
-#define EOLO_LOG_SERVICE_IMPL_DONE
-
-#include "../../Config/Legacy.h"
-#include "../Context.h"
-#include "LogSchema.h"
 
 inline void LogService::logTaskWorker(void *arg)
 {
@@ -94,9 +80,8 @@ inline void LogService::logTaskWorker(void *arg)
     }
 }
 
-inline bool LogService::initSD(Context &ctx)
+inline bool LogService::initSD()
 {
-    (void)ctx;
     SPIBus::Guard spiGuard;
     if (sdInitAttempted)
         return isSdReady;
@@ -204,37 +189,14 @@ inline void LogService::markSdFailed()
     isSdReady = false;
 }
 
-inline void LogService::startLogTask(Context &ctx)
+inline void LogService::startLogTask()
 {
-    (void)ctx;
     if (logQueue == nullptr)
         logQueue = xQueueCreate(4, sizeof(LogJob));
     if (logTaskHandle == nullptr && logQueue != nullptr)
         // Prio 1 (servicio de fondo): escritura SD asincrona; cede CPU a sensores y bus RS485.
         // Stack 8192: operaciones de archivo SD + formateo de log en buffer temporal.
         xTaskCreatePinnedToCore(logTaskWorker, "EoloLogTask", 8192, this, 1, &logTaskHandle, 0);
-}
-
-inline void LogService::enqueueLogData(Context &ctx)
-{
-    if (logQueue == nullptr)
-        startLogTask(ctx);
-
-    LogRecord record;
-    buildLogRecord(ctx, record);
-    ctx.saveSession();
-
-    enqueueLogRecord(record, ctx.session.startUnix,
-                     LogSchema::stateColumnEnabled(ctx),
-                     LogSchema::plantowerEnabled(ctx),
-                     LogSchema::anemometerEnabled(ctx),
-                     LogSchema::ntcEnabled(ctx),
-#ifdef FEATURE_FLOW_PID
-                     ctx.motorCapture.getPidStatus().kickActive
-#else
-                     false
-#endif
-    );
 }
 
 inline bool LogService::enqueueLogRecord(const LogRecord &record,
@@ -273,36 +235,6 @@ inline bool LogService::enqueueLogRecord(const LogRecord &record,
 inline bool LogService::logsIdle() const
 {
     return !logActive.load() && (logQueue == nullptr || uxQueueMessagesWaiting(logQueue) == 0);
-}
-
-inline void LogService::processCaptureSample(Context &ctx)
-{
-    enqueueLogData(ctx);
-#ifdef FEATURE_MODEM
-    ctx.uploadData();
-#endif
-}
-
-inline bool LogService::logData(Context &ctx)
-{
-    LogRecord record;
-    buildLogRecord(ctx, record);
-    return logData(ctx, record);
-}
-
-inline bool LogService::logData(Context &ctx, const LogRecord &record)
-{
-    return logData(record, ctx.session.startUnix,
-                   LogSchema::stateColumnEnabled(ctx),
-                   LogSchema::plantowerEnabled(ctx),
-                   LogSchema::anemometerEnabled(ctx),
-                   LogSchema::ntcEnabled(ctx),
-#ifdef FEATURE_FLOW_PID
-                   ctx.motorCapture.getPidStatus().kickActive ? "Arrancando" : "Capturando"
-#else
-                   "Capturando"
-#endif
-    );
 }
 
 inline bool LogService::logData(const LogRecord &record,
@@ -413,32 +345,4 @@ inline bool LogService::logData(const LogRecord &record,
     return true;
 }
 
-inline bool LogService::buildLogRecord(Context &ctx, LogRecord &record)
-{
-    record = LogRecord();
-    record.timestampUnix = ctx.getUnixTime();
-    record.elapsedSeconds = ctx.session.elapsedTime;
-    record.targetFlow = ctx.session.targetFlow;
-    record.capturedVolume = ctx.session.capturedVolume;
-    record.sessionActive = ctx.isCapturing;
-
-    BME280Data bmeData;
-    (void)ctx.components.bme.getData(bmeData);
-    record.environment = bmeData;
-
-    (void)ctx.components.flowSensor.getData(record.flow);
-#ifdef FEATURE_PLANTOWER
-    (void)ctx.components.plantower.getData(record.plantower);
-#endif
-#ifdef FEATURE_ANEMOMETER
-    (void)ctx.components.anemometer.getData(record.anemometer);
-#endif
-#ifdef FEATURE_NTC
-    (void)ctx.components.ntc.getData(record.ntc);
-#endif
-    record.batteryVoltage = ctx.components.battery.getVoltage();
-    record.batteryPercent = ctx.components.battery.getPct();
-    return record.flow.valid || record.environment.valid || record.plantower.valid || record.anemometer.valid;
-}
-
-#endif
+#endif // EOLO_LOG_SERVICE_H

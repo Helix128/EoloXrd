@@ -25,13 +25,13 @@ public:
 
     void enter(Context &ctx) override
     {
-        if (ctx.isPaused)
+        if (ctx.isCapturePaused())
         {
             LOG_LN("Resumiendo captura.");
             ctx.resumeCapture();
             LOG_LN("Captura reanudada.");
         }
-        else if (!ctx.isCapturing)
+        else if (!ctx.isCaptureActive())
         {
             LOG_LN("Iniciando captura.");
             ctx.beginCapture();

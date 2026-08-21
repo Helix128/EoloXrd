@@ -69,6 +69,16 @@ public:
         return true;
     }
 
+    bool readTemperature(float &temperatureC) const {
+        uint8_t reg = 0x11;
+        uint8_t raw[2] = {};
+        if (!I2CBus::getInstance().writeThenRead(Address, &reg, 1, raw, sizeof(raw), false))
+            return false;
+        int16_t quarterDegrees = (int16_t)((int8_t)raw[0]) * 4 + ((raw[1] >> 6) & 0x03);
+        temperatureC = quarterDegrees / 4.0f;
+        return isfinite(temperatureC) && temperatureC >= -55.0f && temperatureC <= 125.0f;
+    }
+
     static bool isCalendarValid(const DateTime &time) {
         uint16_t year = time.year();
         uint8_t month = time.month();

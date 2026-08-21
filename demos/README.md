@@ -12,6 +12,7 @@ una segunda implementación del firmware productivo.
 - `Plantower/Plantower.ino`: sensor PMS por UART.
 - `BME280/BME280.ino`: sensor ambiental por I2C.
 - `FS3000/FS3000.ino`: sensor de flujo por I2C.
+- `DIPSwitchDiag/DIPSwitchDiag.ino`: diagnóstico en tiempo real de los 4 switches DIP en EOLO Dron.
 - `SPIStandardDisplayDiag/SPIStandardDisplayDiag.ino`: patrón mínimo del OLED
   SSD1309 por VSPI para EOLO Standard; no inicializa motores, sensores ni SD.
 

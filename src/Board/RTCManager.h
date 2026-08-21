@@ -26,6 +26,9 @@ private:
     uint32_t _cachedUnix = 0;
     uint32_t _cachedAtMs = 0;
     bool _cacheValid = false;
+    float _cachedTemperatureC = -1.0f;
+    uint32_t _temperatureCachedAtMs = 0;
+    bool _temperatureCacheValid = false;
     bool _adjustPending = false;
     DateTime _pendingAdjust;
 
@@ -35,6 +38,16 @@ private:
         _cachedUnix = value.unixtime();
         _cachedAtMs = millis();
         _cacheValid = isValid(value);
+        if (_cacheMutex)
+            xSemaphoreGive(_cacheMutex);
+    }
+
+    void updateTemperatureCache(float value) {
+        if (_cacheMutex)
+            xSemaphoreTake(_cacheMutex, pdMS_TO_TICKS(5));
+        _cachedTemperatureC = value;
+        _temperatureCachedAtMs = millis();
+        _temperatureCacheValid = isfinite(value) && value >= -55.0f && value <= 125.0f;
         if (_cacheMutex)
             xSemaphoreGive(_cacheMutex);
     }
@@ -53,6 +66,17 @@ public:
 
     std::atomic_bool ok{false};
     std::atomic_bool powerLost{false};
+
+    static DateTime compileTime()
+    {
+        return DateTime(__DATE__, __TIME__);
+    }
+
+    static DateTime fallbackTime()
+    {
+        uint32_t compileUnix = compileTime().unixtime();
+        return DateTime(compileUnix + (millis() / 1000UL));
+    }
 
     RTCManager()
         : _cacheMutex(xSemaphoreCreateMutex()),
@@ -88,11 +112,21 @@ public:
 #endif
         ok = rtcReady;
 
-        // OSF o una fecha antigua no indican que el DS3231 esté ausente.
-        // Se conserva como disponible para que NTP/UI puedan ajustarlo sin
-        // volver a ejecutar rtc.begin() cada pocos segundos.
+        // Si el DS3231 responde con hora válida, inicializamos la caché.
+        // Si responde pero con fecha inválida/OSF, recuperamos el chip físico
+        // escribiendo el fallbackTime para que oscile en fecha moderna.
         if (rtcReady && timeValid && isValid(initial))
+        {
             updateCache(initial);
+        }
+        else if (rtcReady)
+        {
+            DateTime recovered = fallbackTime();
+            LOG_F("RTC perdió la memoria/hora al arrancar; recuperando chip físico con %s\n",
+                  recovered.timestamp().c_str());
+            adjustHardware(recovered);
+            powerLost = true;
+        }
 #if !EOLO_I2C_DIRECT_DRIVERS
         if (rtcReady)
             poll();
@@ -107,6 +141,19 @@ public:
 
     bool isPresent() const { return ok.load(); }
     bool hasValidTime() { return isValid(now()); }
+
+    // Lectura cacheada: nunca inicia una transacción I2C desde el publicador.
+    bool getTemperature(float &temperatureC) const
+    {
+        if (_cacheMutex && xSemaphoreTake(_cacheMutex, pdMS_TO_TICKS(5)) != pdTRUE)
+            return false;
+        bool valid = _temperatureCacheValid &&
+                     (uint32_t)(millis() - _temperatureCachedAtMs) <= 5000UL;
+        temperatureC = valid ? _cachedTemperatureC : -1.0f;
+        if (_cacheMutex)
+            xSemaphoreGive(_cacheMutex);
+        return valid;
+    }
 
     void testRTC()
     {
@@ -160,17 +207,17 @@ public:
     {
         if (_cacheMutex &&
             xSemaphoreTake(_cacheMutex, pdMS_TO_TICKS(5)) != pdTRUE)
-            return DateTime();
+            return fallbackTime();
         if (!_cacheValid) {
             if (_cacheMutex)
                 xSemaphoreGive(_cacheMutex);
-            return DateTime();
+            return fallbackTime();
         }
         uint32_t unixTime = _cachedUnix + ((millis() - _cachedAtMs) / 1000UL);
         bool valid = _cacheValid;
         if (_cacheMutex)
             xSemaphoreGive(_cacheMutex);
-        return valid ? DateTime(unixTime) : DateTime();
+        return valid ? DateTime(unixTime) : fallbackTime();
     }
 
     // Única lectura periódica del RTC físico; el resto del firmware usa now().
@@ -192,21 +239,40 @@ public:
             LOG_LN("No se pudo aplicar el ajuste RTC encolado");
 
         DateTime current;
+        float temperatureC = -1.0f;
+        bool temperatureValid = false;
 #if EOLO_I2C_DIRECT_DRIVERS
         if (!directRtc.readTime(current)) {
             ok = false;
             return false;
         }
+        temperatureValid = directRtc.readTemperature(temperatureC);
 #else
         I2CBus::Guard guard;
         if (!guard.acquired())
             return false;
         current = rtc.now();
+        temperatureC = rtc.getTemperature();
+        temperatureValid = isfinite(temperatureC) && temperatureC >= -55.0f && temperatureC <= 125.0f;
 #endif
-        // Hora inválida (por ejemplo 2000-01-01 tras OSF) no es un fallo de
-        // transporte: el RTC sigue presente y espera un ajuste.
+        if (temperatureValid)
+            updateTemperatureCache(temperatureC);
+
+        // Hora inválida (por ejemplo 2000-01-01 tras OSF o pérdida de batería).
+        // Si el chip físico perdió la hora, se auto-recupera escribiendo inmediatamente
+        // la fecha corregida (fallbackTime = compileTime + uptime) en los registros del chip
+        // para que empiece a oscilar en una fecha moderna, y se mantiene el aviso powerLost
+        // para que los diagnósticos y pantallas indiquen que la pila debe ser revisada.
         if (!isValid(current))
+        {
+            DateTime recovered = fallbackTime();
+            LOG_F("RTC perdió la memoria/hora (OSF detectado); recuperando chip físico con %s\n",
+                  recovered.timestamp().c_str());
+            adjustHardware(recovered);
+            powerLost = true;
             return true;
+        }
+
         ok = true;
         updateCache(current);
         return true;
@@ -413,10 +479,27 @@ public:
     bool ok = true;
     bool powerLost = false;
 
+    static DateTime compileTime()
+    {
+        return DateTime(__DATE__, __TIME__);
+    }
+
+    static DateTime fallbackTime()
+    {
+        uint32_t compileUnix = compileTime().unixtime();
+        return DateTime(compileUnix + (millis() / 1000UL));
+    }
+
     bool begin()
     {
         // El RTC interno no requiere inicialización especial; siempre retorna true.
         ok = true;
+        DateTime current = now();
+        if (!isValid(current))
+        {
+            adjust(fallbackTime());
+            powerLost = true;
+        }
 #if CHECK_SENSORS
         testRTC();
 #endif
@@ -473,9 +556,9 @@ public:
         time(&now);
         localtime_r(&now, &timeinfo);
 
-        DateTime dt = DateTime(timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600 +
-                               timeinfo.tm_mday * 86400 + (timeinfo.tm_mon + timeinfo.tm_year * 365) * 86400);
-        return dt;
+        DateTime dt = DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                               timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+        return isValid(dt) ? dt : fallbackTime();
     }
 
     bool adjust(const DateTime &time)

@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "Wire.h"
 #include "../Config/Legacy.h"
+#include "I2CRetryPolicy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -357,13 +358,8 @@ public:
                 address.observed = true;
                 if (address.consecutiveFailures < 255)
                     ++address.consecutiveFailures;
-                static constexpr uint32_t backoffs[] =
-                    {250UL, 500UL, 1000UL, 2000UL, 5000UL};
-                uint8_t index = address.consecutiveFailures == 0
-                                    ? 0
-                                    : (uint8_t)(address.consecutiveFailures - 1);
-                if (index >= 5) index = 4;
-                address.backoffMs = backoffs[index];
+                address.backoffMs = I2CRetryPolicy::delayForFailures(
+                    address.consecutiveFailures);
                 address.nextRetryMs = millis() + address.backoffMs;
                 address.lastFailureMs = millis();
                 address.lastResult = result;

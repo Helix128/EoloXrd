@@ -7,27 +7,32 @@
 
 struct SmartFlowTune
 {
-    float kp = 18.0f;
-    float ki = 1.4f;
-    float kd = 6.0f;
-    float integralLimit = 18.0f;
-    float deadband = 0.10f;
-    float minActive = 0.20f;
-    float fastAlpha = 0.45f;
-    float slowAlpha = 0.16f;
-    float gainAlpha = 0.15f;
-    float feedForwardAlpha = 0.18f;
-    float minGain = 0.0015f;
-    float maxGain = 0.0300f;
-    float minLearnDeltaFlow = 0.12f;
-    int minLearnDeltaPwm = 24;
-    int minStep = 1;
-    int maxStep = 14;
+    float kp = 14.0f;               // Soft proportional gain
+    float ki = 0.4f;                // Soft integral gain
+    float kd = 0.0f;                // Soft derivative gain
+    float integralLimit = 16.0f;    // Integral accumulation ceiling
+    float deadband = 0.10f;         // Deadband in L/min where trim is zero
+    float minActive = 0.20f;        // Minimum active flow setpoint
+    float fastAlpha = 0.35f;        // Fast EMA filter alpha
+    float slowAlpha = 0.15f;        // Slow EMA filter alpha
+    int seekStep = 16;              // Max PWM step during initial center seek
+    int softTrimMax = 64;           // Max +- PWM excursion from centerPwm
+    int softStepLimit = 2;          // Max PWM change per cycle in soft trim
+    float sensitivity = 1.0f;       // Post-center sensitivity multiplier
+    uint32_t recenterDelayMs = 4000;// Sustained drift time before recentering
+    int recenterStep = 1;           // PWM step size when shifting center
+    float breakoutThreshold = 2.0f; // Error threshold for re-seeking
+    // Backward-compatibility aliases
+    int maxStep = 16;
     int maxFeedForwardStep = 10;
 };
 
 enum SmartFlowMode : uint8_t
 {
+    SMART_FLOW_SEEK_CENTER = 0,     // Seeking target flow crossing / operating point
+    SMART_FLOW_CENTER_LOCKED = 1,   // Center found and locked; soft trimming active
+    SMART_FLOW_RECENTER = 2,        // Shifting center due to sustained drift
+    // Backward-compatibility aliases
     SMART_FLOW_PID_ONLY = 0,
     SMART_FLOW_GAIN_PREDICT = 1,
     SMART_FLOW_INTERPOLATE = 2,
@@ -37,10 +42,13 @@ enum SmartFlowMode : uint8_t
 struct SmartFlowStatus
 {
     int pwm = 0;
-    int pwmFF = 0;
-    int pidCorrection = 0;
+    int centerPwm = 0;
+    int trimPwm = 0;
+    int pwmFF = 0;                  // Alias to centerPwm / base
+    int pidCorrection = 0;          // Alias to trimPwm
     int step = 0;
-    SmartFlowMode mode = SMART_FLOW_PID_ONLY;
+    SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
+    bool centerFound = false;
     float rawFlow = 0.0f;
     float fastFlow = 0.0f;
     float slowFlow = 0.0f;
@@ -62,34 +70,24 @@ struct SmartFlowStatus
 
 class SmartFlowController
 {
-    struct Sample
-    {
-        uint32_t timeMs = 0;
-        int pwm = 0;
-        float rawFlow = 0.0f;
-        float fastFlow = 0.0f;
-        bool valid = false;
-    };
-
-    static const uint8_t sampleCount = 24;
-
     SmartFlowTune tune;
-    Sample samples[sampleCount];
-    uint8_t sampleHead = 0;
-    uint8_t samplesStored = 0;
     float fastFlow = 0.0f;
     float slowFlow = 0.0f;
     float previousFastFlow = 0.0f;
-    float previousErrorSlow = 0.0f;
+    float previousRawFlow = 0.0f;
+    int previousPwm = 0;
     bool filterReady = false;
+
+    bool centerFound = false;
+    int centerPwm = 0;
+    float currentTrim = 0.0f;
     float integral = 0.0f;
-    float estimatedGain = 0.0f;
-    float confidence = 0.0f;
-    float smoothedPwmFF = 0.0f;
-    bool smoothedPwmFFReady = false;
-    int minFlowPwm = -1;
-    int maxUsefulPwm = -1;
-    uint8_t upperFlatCount = 0;
+    uint8_t settledTicks = 0;
+    bool isDrifting = false;
+    uint32_t driftStartMs = 0;
+    bool isBreakout = false;
+    uint32_t breakoutStartMs = 0;
+    SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
 
     static int clampInt(int value, int low, int high)
     {
@@ -115,196 +113,6 @@ class SmartFlowController
         return target;
     }
 
-    int newestSampleIndex() const
-    {
-        if (samplesStored == 0) return -1;
-        return (sampleHead + sampleCount - 1) % sampleCount;
-    }
-
-    bool interpolatePwm(float targetFlow, int &pwm) const
-    {
-        if (samplesStored < 3) return false;
-
-        bool found = false;
-        int bestLowPwm = 0;
-        int bestHighPwm = 0;
-        float bestLowFlow = 0.0f;
-        float bestHighFlow = 0.0f;
-        float bestSpan = 1000000.0f;
-
-        for (uint8_t i = 0; i < sampleCount; i++)
-        {
-            if (!samples[i].valid) continue;
-            for (uint8_t j = 0; j < sampleCount; j++)
-            {
-                if (i == j || !samples[j].valid) continue;
-                float f0 = samples[i].fastFlow;
-                float f1 = samples[j].fastFlow;
-                if ((f0 <= targetFlow && targetFlow <= f1) || (f1 <= targetFlow && targetFlow <= f0))
-                {
-                    float span = fabsf(f1 - f0);
-                    if (span < 0.15f || span >= bestSpan) continue;
-                    bestSpan = span;
-                    bestLowPwm = samples[i].pwm;
-                    bestHighPwm = samples[j].pwm;
-                    bestLowFlow = f0;
-                    bestHighFlow = f1;
-                    found = true;
-                }
-            }
-        }
-
-        if (!found) return false;
-        float denom = bestHighFlow - bestLowFlow;
-        if (fabsf(denom) < 0.001f) return false;
-        float ratio = (targetFlow - bestLowFlow) / denom;
-        pwm = bestLowPwm + static_cast<int>((bestHighPwm - bestLowPwm) * ratio);
-        return true;
-    }
-
-    void addSample(uint32_t nowMs, int pwm, float rawFlow, float currentFastFlow)
-    {
-        samples[sampleHead].timeMs = nowMs;
-        samples[sampleHead].pwm = pwm;
-        samples[sampleHead].rawFlow = rawFlow;
-        samples[sampleHead].fastFlow = currentFastFlow;
-        samples[sampleHead].valid = true;
-        sampleHead = (sampleHead + 1) % sampleCount;
-        if (samplesStored < sampleCount) samplesStored++;
-    }
-
-    void updateUsefulRange(int pwm, float rawFlow)
-    {
-        if (rawFlow > tune.minActive)
-        {
-            if (minFlowPwm < 0 || pwm < minFlowPwm) minFlowPwm = pwm;
-            if (maxUsefulPwm < 0 || pwm > maxUsefulPwm) maxUsefulPwm = pwm;
-        }
-    }
-
-    void updateGainModel(float targetFlow)
-    {
-        int latestIdx = newestSampleIndex();
-        if (latestIdx < 0 || samplesStored < 2) return;
-
-        const Sample &latest = samples[latestIdx];
-        for (uint8_t n = 1; n < samplesStored; n++)
-        {
-            int idx = (latestIdx + sampleCount - n) % sampleCount;
-            const Sample &previous = samples[idx];
-            if (!previous.valid || previous.timeMs == latest.timeMs) continue;
-
-            int deltaPwm = latest.pwm - previous.pwm;
-            float deltaFlow = latest.fastFlow - previous.fastFlow;
-            if (abs(deltaPwm) < tune.minLearnDeltaPwm) continue;
-            if (fabsf(deltaFlow) < tune.minLearnDeltaFlow) continue;
-            if ((deltaPwm > 0 && deltaFlow <= 0.0f) || (deltaPwm < 0 && deltaFlow >= 0.0f)) continue;
-
-            float newGain = deltaFlow / deltaPwm;
-            if (newGain < tune.minGain || newGain > tune.maxGain) continue;
-
-            if (estimatedGain <= 0.0f)
-                estimatedGain = newGain;
-            else
-                estimatedGain = (1.0f - tune.gainAlpha) * estimatedGain + tune.gainAlpha * newGain;
-
-            float errorAbs = fabsf(targetFlow - latest.fastFlow);
-            float confidenceTarget = errorAbs < 0.35f ? 1.0f : (errorAbs < 1.0f ? 0.7f : 0.45f);
-            confidence = clampFloat(confidence * 0.85f + confidenceTarget * 0.15f, 0.0f, 1.0f);
-            return;
-        }
-    }
-
-    int predictPwmForFlow(int currentPwm, float targetFlow, float measuredFlow, int maxPwm, SmartFlowMode &mode) const
-    {
-        int predicted = currentPwm;
-        if (confidence > 0.35f && interpolatePwm(targetFlow, predicted))
-        {
-            mode = SMART_FLOW_INTERPOLATE;
-        }
-        else if (estimatedGain >= tune.minGain)
-        {
-            predicted = currentPwm + static_cast<int>((targetFlow - measuredFlow) / estimatedGain);
-            mode = SMART_FLOW_GAIN_PREDICT;
-        }
-        else
-        {
-            float error = targetFlow - measuredFlow;
-            predicted = currentPwm + static_cast<int>(tune.kp * error);
-            mode = SMART_FLOW_PID_ONLY;
-        }
-
-        return clampInt(predicted, 0, maxPwm);
-    }
-
-    int smoothFeedForward(int currentPwm, int pwmFF, int maxPwm)
-    {
-        if (!smoothedPwmFFReady)
-        {
-            smoothedPwmFF = currentPwm;
-            smoothedPwmFFReady = true;
-        }
-
-        float target = smoothedPwmFF + (pwmFF - smoothedPwmFF) * tune.feedForwardAlpha;
-        float delta = target - smoothedPwmFF;
-        if (delta > tune.maxFeedForwardStep) delta = tune.maxFeedForwardStep;
-        if (delta < -tune.maxFeedForwardStep) delta = -tune.maxFeedForwardStep;
-        smoothedPwmFF = clampFloat(smoothedPwmFF + delta, 0.0f, static_cast<float>(maxPwm));
-        return clampInt(static_cast<int>(smoothedPwmFF), 0, maxPwm);
-    }
-
-    int adaptiveStepLimit(float error, float derivativeFlow, bool modelValid) const
-    {
-        (void)modelValid;
-        float absError = fabsf(error);
-        int step = tune.minStep;
-
-        if (absError > 3.0f) step = tune.maxStep;
-        else if (absError > 1.5f) step = static_cast<int>(tune.maxStep * 0.75f);
-        else if (absError > 0.7f) step = static_cast<int>(tune.maxStep * 0.55f);
-        else if (absError > 0.25f) step = static_cast<int>(tune.maxStep * 0.35f);
-
-        if (fabsf(derivativeFlow) > 0.8f && absError < 1.2f) step = static_cast<int>(step * 0.60f);
-        return clampInt(step, tune.minStep, tune.maxStep);
-    }
-
-    int updatePidTerms(float targetFlow,
-                       float dtSeconds,
-                       bool feedForwardValid,
-                       bool outputSaturated,
-                       bool errorDrivesAwayFromSaturation,
-                       int &pidCorrection,
-                       float &pTerm,
-                       float &iTerm,
-                       float &dTerm)
-    {
-        float errorFast = targetFlow - fastFlow;
-        float errorSlow = targetFlow - slowFlow;
-        if (fabsf(errorFast) < tune.deadband) errorFast = 0.0f;
-        if (fabsf(errorSlow) < tune.deadband) errorSlow = 0.0f;
-
-        bool signChanged = (previousErrorSlow > 0.0f && errorSlow < 0.0f) || (previousErrorSlow < 0.0f && errorSlow > 0.0f);
-        bool integrate = (!outputSaturated || errorDrivesAwayFromSaturation) && fabsf(errorSlow) < 1.8f;
-        if (!feedForwardValid) integrate = !outputSaturated || errorDrivesAwayFromSaturation;
-
-        if (signChanged)
-            integral *= 0.35f;
-        if (integrate)
-            integral += errorSlow * dtSeconds;
-
-        integral = clampFloat(integral, -tune.integralLimit, tune.integralLimit);
-        previousErrorSlow = errorSlow;
-
-        float derivative = dtSeconds > 0.001f ? (fastFlow - previousFastFlow) / dtSeconds : 0.0f;
-        float ffScale = feedForwardValid ? (1.0f - 0.65f * confidence) : 1.0f;
-        pTerm = ffScale * tune.kp * errorFast;
-        iTerm = tune.ki * integral;
-        dTerm = -tune.kd * derivative;
-        float correction = pTerm + iTerm + dTerm;
-        pidCorrection = static_cast<int>(correction);
-        return pidCorrection;
-    }
-
 public:
     void setTune(const SmartFlowTune &newTune)
     {
@@ -314,6 +122,21 @@ public:
     const SmartFlowTune &getTune() const
     {
         return tune;
+    }
+
+    void seedCenter(int pwm)
+    {
+        if (pwm > 0)
+        {
+            centerPwm = pwm;
+            centerFound = true;
+            mode = SMART_FLOW_CENTER_LOCKED;
+            currentTrim = 0.0f;
+            integral = 0.0f;
+            settledTicks = 3;
+            isDrifting = false;
+            isBreakout = false;
+        }
     }
 
     void resetAll()
@@ -326,22 +149,26 @@ public:
         fastFlow = 0.0f;
         slowFlow = 0.0f;
         previousFastFlow = 0.0f;
-        previousErrorSlow = 0.0f;
+        previousRawFlow = 0.0f;
+        previousPwm = 0;
         filterReady = false;
         integral = 0.0f;
-        upperFlatCount = 0;
-        smoothedPwmFF = 0.0f;
-        smoothedPwmFFReady = false;
+        currentTrim = 0.0f;
+        settledTicks = 0;
+        isDrifting = false;
+        driftStartMs = 0;
+        isBreakout = false;
+        breakoutStartMs = 0;
 
         if (!preserveModel)
         {
-            for (uint8_t i = 0; i < sampleCount; i++) samples[i].valid = false;
-            sampleHead = 0;
-            samplesStored = 0;
-            estimatedGain = 0.0f;
-            confidence = 0.0f;
-            minFlowPwm = -1;
-            maxUsefulPwm = -1;
+            centerFound = false;
+            centerPwm = 0;
+            mode = SMART_FLOW_SEEK_CENTER;
+        }
+        else if (centerFound && centerPwm > 0)
+        {
+            mode = SMART_FLOW_CENTER_LOCKED;
         }
     }
 
@@ -350,86 +177,217 @@ public:
         SmartFlowStatus status;
         status.rawFlow = rawFlow;
 
+        // 1. Filtrado de flujo de aire
         if (!filterReady)
         {
             fastFlow = rawFlow;
             slowFlow = rawFlow;
             previousFastFlow = rawFlow;
+            previousRawFlow = rawFlow;
+            previousPwm = currentPwm;
             filterReady = true;
         }
         else
         {
             previousFastFlow = fastFlow;
+            previousRawFlow = rawFlow;
             fastFlow = tune.fastAlpha * rawFlow + (1.0f - tune.fastAlpha) * fastFlow;
             slowFlow = tune.slowAlpha * rawFlow + (1.0f - tune.slowAlpha) * slowFlow;
         }
 
-        status.fastFlow = fastFlow;
-        status.slowFlow = slowFlow;
-        status.errorFast = targetFlow - fastFlow;
-        status.errorSlow = targetFlow - slowFlow;
-        status.integral = integral;
-        status.estimatedGain = estimatedGain;
-        status.confidence = confidence;
-        status.minFlowPwm = minFlowPwm;
-        status.maxUsefulPwm = maxUsefulPwm;
+        const float errorFast = targetFlow - fastFlow;
+        const float errorSlow = targetFlow - slowFlow;
+        const float derivative = dtSeconds > 0.001f ? (fastFlow - previousFastFlow) / dtSeconds : 0.0f;
 
-        addSample(nowMs, currentPwm, rawFlow, fastFlow);
-        updateUsefulRange(currentPwm, rawFlow);
-        updateGainModel(targetFlow);
+        // 2. Comprobación de cambio de consigna o setpoint inactivo
+        if (targetFlow <= tune.minActive)
+        {
+            resetController(false);
+            status.pwm = 0;
+            status.fastFlow = fastFlow;
+            status.slowFlow = slowFlow;
+            status.mode = SMART_FLOW_SEEK_CENTER;
+            return status;
+        }
 
-        bool modelValid = estimatedGain >= tune.minGain && confidence > 0.20f;
-        SmartFlowMode mode = SMART_FLOW_PID_ONLY;
-        int pwmFF = predictPwmForFlow(currentPwm, targetFlow, fastFlow, maxPwm, mode);
+        int nextPwm = currentPwm;
+        int activeSeekStep = tune.seekStep > 0 ? tune.seekStep : tune.maxStep;
+        if (activeSeekStep <= 0) activeSeekStep = 16;
 
-        // Nota: MIN_ACTIVE_BOOST y lowerClamp eliminados.
-        // El arranque en frío (capacitor) es manejado por la fase Kick del FlowMotorController.
-        // El PWM puede bajar libremente tras el kick — no hay piso artificial.
-        bool lowerClamp = false;
-
-        pwmFF = smoothFeedForward(currentPwm, clampInt(pwmFF, 0, maxPwm), maxPwm);
-        int pidCorrection = 0;
         float pTerm = 0.0f;
         float iTerm = 0.0f;
         float dTerm = 0.0f;
-        bool predictedSaturated = pwmFF <= 0 || pwmFF >= maxPwm;
-        bool errorDrivesAwayFromSaturation = (pwmFF <= 0 && targetFlow > fastFlow) || (pwmFF >= maxPwm && targetFlow < fastFlow);
-        updatePidTerms(targetFlow, dtSeconds, modelValid, predictedSaturated, errorDrivesAwayFromSaturation,
-                       pidCorrection, pTerm, iTerm, dTerm);
 
-        int desired = clampInt(pwmFF + pidCorrection, 0, maxPwm);
-        float derivative = dtSeconds > 0.001f ? (fastFlow - previousFastFlow) / dtSeconds : 0.0f;
-        int step = adaptiveStepLimit(targetFlow - fastFlow, derivative, modelValid);
-        int nextPwm = limitStep(currentPwm, desired, step, maxPwm);
-
-        if (currentPwm > maxPwm - step && rawFlow < targetFlow - 0.5f)
-            upperFlatCount++;
-        else if (upperFlatCount > 0)
-            upperFlatCount--;
-
-        if (upperFlatCount >= 8)
+        // 3. FASE: Búsqueda y Estabilización de Centro (SEEK_CENTER)
+        if (!centerFound)
         {
-            maxUsefulPwm = currentPwm;
-            confidence = clampFloat(confidence * 0.85f, 0.0f, 1.0f);
+            mode = SMART_FLOW_SEEK_CENTER;
+            const float absErr = fabsf(errorFast);
+
+            // Ventana de Estabilización (Settling Window):
+            // Para confirmar el centro de operación y evitar enclavar en un sobrepico o transitorio,
+            // el flujo debe permanecer dentro de la ventana objetivo (+-deadband) durante 3 ticks consecutivos.
+            const float settlingBand = (tune.deadband > 0.10f) ? tune.deadband : 0.10f;
+            if (fastFlow > tune.minActive && absErr <= settlingBand)
+            {
+                settledTicks++;
+            }
+            else
+            {
+                settledTicks = 0;
+            }
+
+            const uint8_t requiredSettledTicks = 3;
+
+            if (settledTicks >= requiredSettledTicks)
+            {
+                centerPwm = currentPwm;
+                centerPwm = clampInt(centerPwm, 0, maxPwm);
+                centerFound = true;
+                mode = SMART_FLOW_CENTER_LOCKED;
+                currentTrim = 0.0f;
+                integral = 0.0f;
+                isDrifting = false;
+                driftStartMs = 0;
+                isBreakout = false;
+                breakoutStartMs = 0;
+                nextPwm = centerPwm;
+            }
+            else
+            {
+                // Rampa proporcional continua y amortiguada (Anti-hunting):
+                // A gran distancia acelera el acercamiento; cerca del setpoint atenúa el paso
+                // proporcionalmente al error para entrar suavemente sin sobrepicos ni oscilaciones.
+                int stepSize = static_cast<int>(absErr * 30.0f);
+                if (stepSize < 2) stepSize = 2;
+                if (stepSize > activeSeekStep) stepSize = activeSeekStep;
+
+                if (errorFast > 0.0f)
+                    nextPwm = limitStep(currentPwm, maxPwm, stepSize, maxPwm);
+                else
+                    nextPwm = limitStep(currentPwm, 0, stepSize, maxPwm);
+            }
+        }
+        else // 4. FASE: Centro Enclavado y Trimming Suave (CENTER_LOCKED / RECENTER)
+        {
+            // Verificación de perturbación extrema (breakout)
+            if (fabsf(errorFast) > tune.breakoutThreshold)
+            {
+                if (!isBreakout)
+                {
+                    isBreakout = true;
+                    breakoutStartMs = nowMs;
+                }
+                else if ((nowMs - breakoutStartMs) > 6000UL)
+                {
+                    // Romper enclave para re-buscar centro ante cambio drástico persistente
+                    centerFound = false;
+                    isBreakout = false;
+                    breakoutStartMs = 0;
+                    mode = SMART_FLOW_SEEK_CENTER;
+                }
+            }
+            else
+            {
+                isBreakout = false;
+                breakoutStartMs = 0;
+            }
+
+            if (centerFound)
+            {
+                // Manejo de zona muerta: dentro de deadband, error efectivo es 0
+                float effectiveError = 0.0f;
+                if (fabsf(errorFast) > tune.deadband)
+                {
+                    effectiveError = (errorFast > 0.0f) ? (errorFast - tune.deadband) : (errorFast + tune.deadband);
+                }
+
+                // Detección de deriva sostenida para auto-recentrado suave
+                if (tune.recenterDelayMs > 0 && fabsf(effectiveError) > 0.05f)
+                {
+                    if (!isDrifting)
+                    {
+                        isDrifting = true;
+                        driftStartMs = nowMs;
+                    }
+                    else if ((nowMs - driftStartMs) >= tune.recenterDelayMs)
+                    {
+                        int shift = (effectiveError > 0.0f) ? tune.recenterStep : -tune.recenterStep;
+                        centerPwm = clampInt(centerPwm + shift, 0, maxPwm);
+                        mode = SMART_FLOW_RECENTER;
+                        driftStartMs = nowMs;
+                    }
+                }
+                else
+                {
+                    isDrifting = false;
+                    driftStartMs = 0;
+                    mode = SMART_FLOW_CENTER_LOCKED;
+                }
+
+                // Cálculo del Soft PID (Trimming suave)
+                const float sens = (tune.sensitivity > 0.05f) ? tune.sensitivity : 1.0f;
+                pTerm = sens * tune.kp * effectiveError;
+
+                // Integración lenta con anti-windup estricto
+                if (fabsf(effectiveError) > 0.01f)
+                {
+                    integral += sens * effectiveError * dtSeconds;
+                    integral = clampFloat(integral, -tune.integralLimit, tune.integralLimit);
+                }
+                else
+                {
+                    // En zona muerta, reducir suavemente el acumulador integral
+                    integral *= 0.95f;
+                }
+                iTerm = tune.ki * integral;
+
+                // Derivativo suave (anti-ruido)
+                dTerm = -tune.kd * derivative;
+
+                float targetTrim = pTerm + iTerm + dTerm;
+                int maxTrim = tune.softTrimMax > 0 ? tune.softTrimMax : 64;
+                targetTrim = clampFloat(targetTrim, -static_cast<float>(maxTrim), static_cast<float>(maxTrim));
+
+                // Slew-rate limiter sobre el trimming (garantiza transiciones ultra-suaves)
+                int maxSoftStep = tune.softStepLimit > 0 ? tune.softStepLimit : 2;
+                float trimDelta = targetTrim - currentTrim;
+                trimDelta = clampFloat(trimDelta, -static_cast<float>(maxSoftStep), static_cast<float>(maxSoftStep));
+                currentTrim += trimDelta;
+
+                int desiredPwm = centerPwm + static_cast<int>(currentTrim);
+                nextPwm = clampInt(desiredPwm, 0, maxPwm);
+            }
         }
 
+        previousPwm = currentPwm;
+
+        // Actualizar datos de estado
         status.pwm = nextPwm;
-        status.pwmFF = pwmFF;
-        status.pidCorrection = pidCorrection;
-        status.step = step;
+        status.centerPwm = centerPwm;
+        status.trimPwm = static_cast<int>(currentTrim);
+        status.pwmFF = centerPwm;
+        status.pidCorrection = static_cast<int>(currentTrim);
+        status.step = abs(nextPwm - currentPwm);
         status.mode = mode;
+        status.centerFound = centerFound;
+        status.fastFlow = fastFlow;
+        status.slowFlow = slowFlow;
+        status.errorFast = errorFast;
+        status.errorSlow = errorSlow;
         status.integral = integral;
         status.derivativeFlow = derivative;
         status.pTerm = pTerm;
         status.iTerm = iTerm;
         status.dTerm = dTerm;
-        status.estimatedGain = estimatedGain;
-        status.confidence = confidence;
-        status.modelValid = modelValid;
-        status.lowerClamp = lowerClamp;
-        status.upperSaturation = upperFlatCount >= 8;
-        status.minFlowPwm = minFlowPwm;
-        status.maxUsefulPwm = maxUsefulPwm;
+        status.estimatedGain = (centerPwm > 0) ? (fastFlow / static_cast<float>(centerPwm)) : 0.0f;
+        status.confidence = centerFound ? 1.0f : 0.2f;
+        status.modelValid = centerFound;
+        status.lowerClamp = (nextPwm <= 0);
+        status.upperSaturation = (nextPwm >= maxPwm);
+        status.minFlowPwm = (centerFound && centerPwm > 0) ? centerPwm : -1;
+        status.maxUsefulPwm = maxPwm;
+
         return status;
     }
 };

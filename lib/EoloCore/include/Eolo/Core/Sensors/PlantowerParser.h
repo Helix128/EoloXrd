@@ -64,11 +64,8 @@ public:
             break;
         case DATA:
             _buffer[_bufIdx++] = ch;
-            if (_bufIdx < _packetLen - 2)
-            {
-                _calcChecksum += ch;
-            }
-            else
+            _calcChecksum += ch;
+            if (_bufIdx >= _packetLen - 2)
             {
                 _state = CHECKSUM;
                 _bufIdx = 0;
@@ -89,6 +86,14 @@ public:
                     _data.pm1_0 = (_buffer[6] << 8) | _buffer[7];
                     _data.pm2_5 = (_buffer[8] << 8) | _buffer[9];
                     _data.pm10_0 = (_buffer[10] << 8) | _buffer[11];
+                    // Los últimos campos propios del PMS5003T están después
+                    // de los seis contadores de partículas. Temperatura es
+                    // int16 (décimas de °C), por lo que no debe tratarse como
+                    // un entero sin signo.
+                    int16_t temperatureRaw = (int16_t)((uint16_t(_buffer[22]) << 8) | _buffer[23]);
+                    uint16_t humidityRaw = (uint16_t(_buffer[24]) << 8) | _buffer[25];
+                    _data.temperature = temperatureRaw / 10.0f;
+                    _data.humidity = humidityRaw / 10.0f;
                     _data.valid = true;
                 }
                 else
@@ -118,7 +123,7 @@ private:
     uint16_t _calcChecksum = 0;
     uint16_t _packetLen = 0;
     uint16_t _recvChecksum = 0;
-    PlantowerData _data = {0, 0, 0, false};
+    PlantowerData _data = {};
 };
 
 #endif // EOLO_CORE_SENSORS_PLANTOWER_PARSER_H

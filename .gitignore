@@ -10,3 +10,5 @@ __pycache__/
 .antigravitycli/
 .cave
 .cave/worktrees
+firmware_backups/
+.build_tag

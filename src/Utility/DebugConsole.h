@@ -120,6 +120,7 @@ public:
     void attachModemService(ModemService* modem) {
         _modemCommands.attachModemService(modem);
     }
+    void attachSensorApi(SensorAPI* api) { _modemCommands.attachSensorApi(api); }
 #endif
 
     void attachRTC(RTCManager* rtc) {

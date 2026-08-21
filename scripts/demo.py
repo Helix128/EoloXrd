@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from demo_config import MODELS, config_for, demo_sketches, env_name
 from generate_demo_envs import main as generate_demo_envs
@@ -48,9 +50,12 @@ def pio_command():
     return cmd
 
 
-def run_pio(args):
+def run_pio(args, env_vars=None):
     generate_demo_envs()
-    return subprocess.call([pio_command(), *args])
+    merged_env = os.environ.copy()
+    if env_vars:
+        merged_env.update(env_vars)
+    return subprocess.call([pio_command(), *args], env=merged_env)
 
 
 def list_demos(_args):
@@ -70,7 +75,10 @@ def build_or_upload(args, target=None):
     pio_args = ["run", "-e", env]
     if target:
         pio_args.extend(["-t", target])
-    return run_pio(pio_args)
+    extra_env = {}
+    if getattr(args, "tag", None):
+        extra_env["EOLO_TAG"] = args.tag
+    return run_pio(pio_args, env_vars=extra_env)
 
 
 def monitor(args):
@@ -81,6 +89,14 @@ def monitor(args):
     return run_pio(["device", "monitor", "-e", env])
 
 
+def list_backups_cmd(_args):
+    scripts_dir = Path(__file__).resolve().parent
+    sys.path.insert(0, str(scripts_dir))
+    from firmware_backup import list_all_backups
+    list_all_backups()
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build/upload helpers for EOLO demos.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -88,15 +104,23 @@ def main():
     list_parser = sub.add_parser("list", help="List detected demos and supported models.")
     list_parser.set_defaults(func=list_demos)
 
-    for command in ("build", "upload", "monitor"):
+    backups_parser = sub.add_parser("backups", help="List all firmware and demo backups.")
+    backups_parser.set_defaults(func=list_backups_cmd)
+
+    for command in ("build", "upload"):
         p = sub.add_parser(command, help=f"{command} a demo environment.")
         p.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
         p.add_argument("model", nargs="?", default="dron", help="Board model. Default: dron.")
+        p.add_argument("--tag", default="", help="Optional version tag for this build.")
         p.set_defaults(func={
             "build": lambda a: build_or_upload(a),
             "upload": lambda a: build_or_upload(a, "upload"),
-            "monitor": monitor,
         }[command])
+
+    p_mon = sub.add_parser("monitor", help="Monitor serial output for a demo environment.")
+    p_mon.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
+    p_mon.add_argument("model", nargs="?", default="dron", help="Board model. Default: dron.")
+    p_mon.set_defaults(func=monitor)
 
     args = parser.parse_args()
     return args.func(args)

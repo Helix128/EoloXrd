@@ -126,7 +126,7 @@ private:
             break;
         }
         case Context::BootPhase::Ready:
-            switch (ctx.sdStatus)
+            switch (ctx.sdStatus())
             {
             case SD_MISSING:
                 snprintf(detail, sizeof(detail), "SD sin tarjeta");

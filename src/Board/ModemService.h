@@ -8,6 +8,8 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <Eolo/Types/ModemTypes.h>
+#include <Eolo/Types/ModemHttpContract.h>
+#include <Eolo/Core/Communication/GnssParser.h>
 #include <atomic>
 
 class ModemService
@@ -17,8 +19,11 @@ public:
   static constexpr uint8_t HistoryDepth = 4;
   static constexpr uint8_t HttpMaxAttempts = 3;
   static constexpr uint32_t HttpRetryDelayMs = 3000;
+  static constexpr uint32_t HttpJobBudgetMs = 5UL * 60UL * 1000UL;
   static constexpr uint32_t IdlePowerOffMs = 2UL * 60UL * 1000UL;
   static constexpr uint32_t SignalPollMs = 15000;
+  static constexpr uint32_t GnssPollMs = 15000;
+  static constexpr uint32_t GnssMaxAgeMs = 60000;
   static constexpr size_t MaxResponseBytes = sizeof(ModemJobResult::responsePreview);
   static constexpr size_t HttpResponseBytes = 4096;
 
@@ -56,7 +61,7 @@ public:
       static const uint32_t kTaskStack = 8192;
       // Public callers must be able to request the service without waiting
       // for the modem's power-on and AT handshake.
-      if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+      if constexpr (EoloConfig::modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
       {
         _startupRequested = true;
         setState(ModemServiceState::Booting);
@@ -79,7 +84,7 @@ public:
         return false;
       }
     }
-    else if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+    else if constexpr (EoloConfig::modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
     {
       ModemServiceState current = state();
       if (current == ModemServiceState::Off || current == ModemServiceState::Error)
@@ -126,15 +131,18 @@ public:
 
   void shutdownNow()
   {
-    _driver.end();
-    _shutdownWhenIdle = false;
-    clearSignalQuality();
-    setState(ModemServiceState::Off);
+    // Only the worker owns the driver.  This makes shutdown safe even while
+    // an AT wait holds the modem mutex.
+    _shutdownRequested.store(true);
+    setState(ModemServiceState::ShuttingDown);
+    if (_queue != nullptr) { Job *wake = nullptr; xQueueSend(_queue, &wake, 0); }
   }
+
+  bool isShuttingDown() const { return _shutdownRequested.load() || state() == ModemServiceState::ShuttingDown; }
 
   void shutdownWhenIdle()
   {
-    if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+    if constexpr (EoloConfig::modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
     {
       _shutdownWhenIdle = false;
       return;
@@ -191,6 +199,34 @@ public:
     return age;
   }
 
+  float signalQualityForTelemetry() const
+  {
+    if (!takeMutex(pdMS_TO_TICKS(50))) return -1.0f;
+    bool valid = _signalKnown && _signalCsq <= 31 &&
+                 (uint32_t)(millis() - _signalUpdatedAtMs) <= GnssMaxAgeMs;
+    float csq = valid ? (float)_signalCsq : -1.0f;
+    giveMutex();
+    return csq;
+  }
+
+  GnssData gnssData() const
+  {
+    if (!takeMutex(pdMS_TO_TICKS(50))) return GnssData{};
+    GnssData result = _gnss;
+    if (!_gnss.valid || (uint32_t)(millis() - _gnssUpdatedAtMs) > GnssMaxAgeMs)
+      result = GnssData{};
+    giveMutex();
+    return result;
+  }
+
+  uint32_t gnssAgeMs() const
+  {
+    if (!takeMutex(pdMS_TO_TICKS(50))) return UINT32_MAX;
+    uint32_t age = _gnss.valid ? millis() - _gnssUpdatedAtMs : UINT32_MAX;
+    giveMutex();
+    return age;
+  }
+
   const char *lastErrorText() const
   {
     return _lastError;
@@ -203,7 +239,8 @@ public:
 
   void printStatus(Print &out)
   {
-    out.printf("state=%s active=", stateName(_state));
+    ModemServiceState snapshotState = state();
+    out.printf("state=%s active=", stateName(snapshotState));
     if (_activeId == 0)
     {
       out.print("none");
@@ -212,7 +249,7 @@ public:
     {
       out.printf("#%lu %s tag=%s", (unsigned long)_activeId, kindName(_activeKind), _activeTag);
     }
-    out.printf(" pending=%lu last_error=%s\n", (unsigned long)pendingCount(), _lastError);
+    out.printf(" pending=%lu shutdown=%s last_error=%s\n", (unsigned long)pendingCount(), isShuttingDown() ? "yes" : "no", _lastError);
 
     out.println("Ultimos resultados:");
     uint8_t count = _historyCount < HistoryDepth ? _historyCount : HistoryDepth;
@@ -226,14 +263,16 @@ public:
     {
       uint8_t idx = (_historyNext + HistoryDepth - count + i) % HistoryDepth;
       const ModemJobResult &r = _history[idx];
-      out.printf("  #%lu %s %s tag=%s attempts=%u bytes=%u time=%lu ms error=%s\n",
+      out.printf("  #%lu %s %s tag=%s http=%d%s attempts=%u bytes=%u time=%lu ms phase=%s error=%s\n",
                  (unsigned long)r.id,
                  kindName(r.kind),
                  statusName(r.status),
                  r.tag,
+                 r.httpStatus, r.responseTruncated ? " truncated" : "",
                  (unsigned int)r.attempts,
                  (unsigned int)r.bytes,
                  (unsigned long)r.durationMs,
+                 stateName(r.failurePhase),
                  r.errorText);
     }
   }
@@ -245,7 +284,7 @@ private:
     ModemJobKind kind = ModemJobKind::HttpGet;
     uint32_t timeoutMs = 0;
     char primary[512] = "";
-    char payload[2048] = "";
+    char payload[ModemHttpContract::kHttpPayloadStorageBytes] = "";
     char tag[32] = "";
     ModemJobCallback callback = nullptr;
     void *context = nullptr;
@@ -263,11 +302,16 @@ private:
   char _lastError[96] = "OK";
   bool _shutdownWhenIdle = false;
   std::atomic_bool _startupRequested{false};
+  std::atomic_bool _shutdownRequested{false};
   bool _signalKnown = false;
   uint8_t _signalCsq = 99;
   uint8_t _signalBer = 99;
   uint32_t _signalUpdatedAtMs = 0;
   uint32_t _lastSignalPollMs = 0;
+  uint32_t _lastGnssPollMs = 0;
+  uint32_t _gnssUpdatedAtMs = 0;
+  bool _gnssStarted = false;
+  GnssData _gnss;
   uint32_t _idleSinceMs = 0;
   Job _jobPool[QueueDepth];
   bool _jobUsed[QueueDepth]{};
@@ -284,12 +328,27 @@ private:
                         ModemJobCallback callback,
                         void *context)
   {
-    if (!begin()) return 0;
     if (primary == nullptr || primary[0] == '\0')
     {
       setLastError("job modem invalido");
       return 0;
     }
+
+    if (kind == ModemJobKind::HttpGet || kind == ModemJobKind::HttpPost)
+    {
+      if (!ModemHttpContract::urlFits(primary))
+      {
+        setLastError("URL HTTP demasiado larga");
+        return 0;
+      }
+      if (kind == ModemJobKind::HttpPost && !ModemHttpContract::payloadFits(payload))
+      {
+        setLastError("payload HTTP demasiado largo");
+        return 0;
+      }
+    }
+
+    if (!begin()) return 0;
 
     Job *job = allocJob();
     if (job == nullptr)
@@ -340,7 +399,7 @@ private:
     if (!_startupRequested.exchange(false))
       return true;
 
-    if constexpr (EoloConfig::board.modemPowerMode != EoloConfig::ModemPowerMode::AlwaysOn)
+    if constexpr (EoloConfig::modemPowerMode != EoloConfig::ModemPowerMode::AlwaysOn)
     {
       return true;
     }
@@ -367,10 +426,12 @@ private:
     runStartupIfRequested();
     while (true)
     {
+      if (_shutdownRequested.load()) { completeShutdown(); continue; }
       if (xQueueReceive(_queue, &job, pdMS_TO_TICKS(SignalPollMs)) == pdTRUE)
       {
         if (job == nullptr)
         {
+          if (_shutdownRequested.load()) { completeShutdown(); continue; }
           runStartupIfRequested();
           continue;
         }
@@ -389,7 +450,8 @@ private:
         uint32_t now = millis();
         if (_idleSinceMs == 0) _idleSinceMs = now;
         refreshSignalQualityIfDue(now);
-        if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+        refreshGnssIfDue(now);
+        if constexpr (EoloConfig::modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
           continue;
 
         if ((uint32_t)(now - _idleSinceMs) < IdlePowerOffMs) continue;
@@ -415,6 +477,8 @@ private:
     uint32_t start = millis();
     bool ok = false;
 
+    if (_shutdownRequested.load()) { finishCanceled(job, result, start); return; }
+
     if (job->kind == ModemJobKind::AtCommand)
     {
       result.attempts = 1;
@@ -422,6 +486,7 @@ private:
       copyText(result.responsePreview, sizeof(result.responsePreview), _responseBuffer);
       result.bytes = strlen(_responseBuffer);
       result.httpStatus = 0;
+      result.responseTruncated = false;
       copyText(result.errorText, sizeof(result.errorText), ok ? "OK" : _driver.lastErrorText());
       if (ok) updateSignalFromResponse(_responseBuffer);
     }
@@ -432,26 +497,46 @@ private:
         response[0] = '\0';
         for (uint8_t attempt = 1; attempt <= HttpMaxAttempts; ++attempt)
         {
+          if (_shutdownRequested.load() || (uint32_t)(millis() - start) >= HttpJobBudgetMs) break;
           result.attempts = attempt;
           setState(ModemServiceState::Booting);
           ok = job->kind == ModemJobKind::HttpGet
                  ? _driver.executeHttpGet(job->primary, response, HttpResponseBytes)
                  : _driver.executeHttpPost(job->primary, job->payload, response, HttpResponseBytes);
 
+          // Downgrade is deliberately compile-time only.  Production
+          // Standard sets this profile flag to false, so TLS errors retain
+          // their spool entry and can never become clear-text traffic.
+          if (!ok) {
+            if constexpr (EoloConfig::modemAllowHttpFallback) {
+              if (strncmp(job->primary, "https://", 8) == 0) {
+                char fallback[sizeof(job->primary)];
+                snprintf(fallback, sizeof(fallback), "http://%s", job->primary + 8);
+                ok = job->kind == ModemJobKind::HttpGet
+                       ? _driver.executeHttpGet(fallback, response, HttpResponseBytes)
+                       : _driver.executeHttpPost(fallback, job->payload, response, HttpResponseBytes);
+              }
+            }
+          }
+
           if (ok) break;
           copyText(result.errorText, sizeof(result.errorText), _driver.lastErrorText());
-          if (attempt < HttpMaxAttempts) vTaskDelay(pdMS_TO_TICKS(HttpRetryDelayMs));
+          if (attempt < HttpMaxAttempts && !_shutdownRequested.load()) vTaskDelay(pdMS_TO_TICKS(HttpRetryDelayMs));
         }
 
         copyText(result.responsePreview, sizeof(result.responsePreview), response);
         result.bytes = strlen(response);
-        result.httpStatus = ok ? 200 : 0;
+        result.httpStatus = _driver.lastHttpStatus();
+        result.responseTruncated = _driver.lastHttpResponseTruncated();
         if (ok) copyText(result.errorText, sizeof(result.errorText), "OK");
       }
       refreshSignalQuality();
     }
 
     result.durationMs = millis() - start;
+    result.failurePhase = state();
+    if (_shutdownRequested.load()) { finishCanceled(job, result, start); return; }
+    if (!ok && (uint32_t)(millis() - start) >= HttpJobBudgetMs) copyText(result.errorText, sizeof(result.errorText), "presupuesto HTTP agotado");
     result.status = ok ? ModemJobStatus::Succeeded : ModemJobStatus::Failed;
     if (!ok && result.errorText[0] == '\0') copyText(result.errorText, sizeof(result.errorText), _driver.lastErrorText());
 
@@ -463,7 +548,7 @@ private:
 
     if (_shutdownWhenIdle && pendingCount() == 0)
     {
-      if constexpr (EoloConfig::board.modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
+      if constexpr (EoloConfig::modemPowerMode == EoloConfig::ModemPowerMode::AlwaysOn)
       {
         _shutdownWhenIdle = false;
       }
@@ -480,6 +565,30 @@ private:
     {
       job->callback(result, job->context);
     }
+  }
+
+  void finishCanceled(Job *job, ModemJobResult &result, uint32_t start)
+  {
+    result.status = ModemJobStatus::Canceled;
+    result.durationMs = millis() - start;
+    result.failurePhase = ModemServiceState::ShuttingDown;
+    copyText(result.errorText, sizeof(result.errorText), "apagado solicitado");
+    pushHistory(result); clearActive();
+    if (job->callback) job->callback(result, job->context);
+  }
+
+  void completeShutdown()
+  {
+    setState(ModemServiceState::ShuttingDown);
+    Job *job = nullptr;
+    while (_queue != nullptr && xQueueReceive(_queue, &job, 0) == pdTRUE) {
+      if (job == nullptr) continue;
+      ModemJobResult result; result.id = job->id; result.kind = job->kind;
+      copyText(result.tag, sizeof(result.tag), job->tag);
+      finishCanceled(job, result, millis()); freeJob(job);
+    }
+    _driver.end(); _shutdownWhenIdle = false; clearSignalQuality(); clearActive();
+    _shutdownRequested.store(false); setLastError("OK"); setState(ModemServiceState::Off);
   }
 
   void setActive(const Job *job)
@@ -537,6 +646,7 @@ private:
       setState(ModemServiceState::AtReady);
       clearSignalQuality();
       refreshSignalQuality();
+      startGnss();
       return true;
     }
 
@@ -560,6 +670,27 @@ private:
   {
     if (_lastSignalPollMs != 0 && (uint32_t)(now - _lastSignalPollMs) < SignalPollMs) return;
     refreshSignalQuality();
+  }
+
+  void startGnss()
+  {
+    if (_gnssStarted) return;
+    if (_driver.rawAT("AT+CGNSSPWR=1", _responseBuffer, HttpResponseBytes, 5000))
+      _gnssStarted = true;
+  }
+
+  void refreshGnssIfDue(uint32_t now)
+  {
+    if (_lastGnssPollMs != 0 && (uint32_t)(now - _lastGnssPollMs) < GnssPollMs) return;
+    _lastGnssPollMs = now;
+    startGnss();
+    if (!_gnssStarted || !_driver.rawAT("AT+CGNSSINFO", _responseBuffer, HttpResponseBytes, 5000)) return;
+    GnssData parsed;
+    if (!GnssParser::parse(_responseBuffer, parsed)) return;
+    if (!takeMutex(pdMS_TO_TICKS(50))) return;
+    _gnss = parsed;
+    _gnssUpdatedAtMs = millis();
+    giveMutex();
   }
 
   void updateSignalFromResponse(const char *response)
@@ -737,6 +868,7 @@ private:
     case ModemServiceState::Registered: return "Registered";
     case ModemServiceState::DataReady: return "DataReady";
     case ModemServiceState::Busy: return "Busy";
+    case ModemServiceState::ShuttingDown: return "ShuttingDown";
     case ModemServiceState::IdleWaitingPowerOff: return "IdleWaitingPowerOff";
     case ModemServiceState::Error: return "Error";
     }
