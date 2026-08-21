@@ -25,8 +25,8 @@ Los switches se leen al encender. Cada grupo usa dos posiciones: `SW0` y `SW1`.
 | `WAIT_SW1` | `WAIT_SW0` | Espera |
 | --- | --- | --- |
 | 0 | 0 | Off |
-| 0 | 1 | 5 min |
-| 1 | 0 | 15 min |
+| 0 | 1 | 1 min |
+| 1 | 0 | 5 min |
 | 1 | 1 | Instantanea |
 
 ### Duracion de captura
@@ -70,7 +70,7 @@ OJO: ES IMPORTANTE QUE SEA "http" Y NO "https"!!
 
 Desde la pagina puede configurar:
 
-- Espera antes de capturar: instantanea, 5 min, 15 min o segundos manuales.
+- Espera antes de capturar: instantanea, 1 min, 5 min o segundos manuales.
 - Duracion: 5 min, 15 min, segundos manuales o infinita.
 - Flujo objetivo: 0.0 a 8.0 L/min.
 - Revision de estado de SD, hora RTC, switches y rango de calibracion disponible.
@@ -80,55 +80,7 @@ Al confirmar, el Wi-Fi se apaga, se guardan esos valores como defaults del formu
 
 ## Calibracion automatica de motor
 
-EOLO Dron puede calibrar la bomba en modo headless usando el motor PWM y el sensor de flujo AFM07. La calibracion barre PWM, espera estabilizacion, promedia lecturas validas y guarda una curva `PWM -> flujo` en la memoria interna (`eolo_calib`). Luego las capturas usan esa curva para partir cerca del flujo objetivo y el control closed-loop corrige fino.
-
-### Desde setup Wi-Fi
-
-1. Deje los switches de espera en `Off` y energice el equipo.
-2. Conectese a `eolo-dron` y abra `http://eolo.setup` o `http://192.168.4.1`.
-3. En **Calibracion automatica**, revise parametros.
-4. Asegure entrada/salida de aire libres.
-5. Pulse **Iniciar calibracion**.
-6. Espere a que el estado indique `done` y revise el rango de flujo.
-
-Parametros recomendados:
-
-```text
-PWM inicial: 400
-PWM final: 1900
-Paso PWM: 80
-Estabilizacion: 3000 ms
-Intervalo muestra: 800 ms
-Muestras por punto: 5
-Flujo maximo: 8.0 L/min
-```
-
-La escala PWM del firmware principal es 11-bit (`0-2047`) a 20 kHz en GPIO 26. La demo interactiva antigua usa escala 8-bit (`0-255`); para comparar valores use:
-
-```text
-PWM11 = round(PWM8 * 2047 / 255)
-```
-
-### Desde consola Serial
-
-Entre a modo terminal enviando `!` y use:
-
-```text
-drone calib start
-drone calib start pwmStart=400 pwmEnd=1900 pwmStep=80 settle=3000 sample=800 n=5 maxFlow=8.0
-drone calib status
-drone calib show
-drone calib abort
-drone calib clear
-```
-
-Tambien puede usar valores estilo demo con `scale=8`:
-
-```text
-drone calib start scale=8 pwmStart=50 pwmEnd=237 pwmStep=10
-```
-
-No inicie una captura mientras la calibracion esta corriendo. Si no hay calibracion valida, la captura puede iniciar pero el motor queda sin PWM util.
+La calibracion automatica headless no esta disponible en el flujo productivo actual. El repositorio conserva implementaciones y comandos historicos, pero no estan conectados al portal ni al ciclo de captura. No los use como procedimiento operativo hasta que se valide y publique una version que los integre de nuevo.
 
 ## Patrones LED
 

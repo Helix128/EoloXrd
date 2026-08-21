@@ -45,9 +45,9 @@ public:
     case 0b00:
       return "off";
     case 0b01:
-      return "5 min";
+      return "1 min";
     case 0b10:
-      return "15 min";
+      return "5 min";
     case 0b11:
       return "instantanea";
     default:

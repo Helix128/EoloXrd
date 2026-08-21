@@ -132,13 +132,26 @@ public:
         {
             if (!_graceActive) { _graceStartMs = in.nowMs; _graceActive = true; }
             out.sensorGraceActive = true;
-            out.fault = in.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
+            out.smartStatus = _controller.smartStatus();
+            out.kickActive = _controller.isKickActive();
+            out.kickCount = _controller.kickCount();
+            out.stallDetected = _controller.stallDetected();
+            if (in.flowStale || !in.flowValid)
+            {
+                out.fault = in.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
+            }
+            else
+            {
+                out.fault = FLOW_PID_FAULT_NONE;
+            }
+
             if ((uint32_t)(in.nowMs - _graceStartMs) > 6000UL)
             {
                 _virtualPwm = 0;
                 _faultStopped = true;
                 out.updated = true;
                 out.stoppedForSensorFault = true;
+                out.fault = in.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
             }
         }
         out.virtualPwm = _virtualPwm;

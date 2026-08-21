@@ -46,6 +46,7 @@ python3 -m pip install platformio
 | `eolo_express` | Build default. Display, AFM07, Plantower. |
 | `eolo_express_legacy` | Express con FS3000 legacy. |
 | `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
+| `eolo_standard_libraries` | Standard con RTClib/Adafruit en vez de los drivers I²C directos. |
 | `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
 | `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
 
@@ -87,6 +88,8 @@ Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan
 - [EOLO Express](pinouts/eolo-express.md)
 - [EOLO Express Legacy](pinouts/eolo-express-legacy.md)
 
+Las discrepancias que requieren equipo o esquemático están congeladas en [validación de hardware](docs/hardware-validation.md); el firmware no modifica pines ni escalas sólo para reconciliar documentación histórica.
+
 ## Setup Wi-Fi headless
 
 `HeadlessSetup` es una feature para equipos sin pantalla. Actualmente se activa solo en `eolo_dron`.
@@ -120,8 +123,13 @@ Ver [`demos/README.md`](demos/README.md).
 
 ## Tests
 
-Hay tests en `test/`. Varios requieren hardware real conectado, por ejemplo AFM07, RS485, Plantower o RTC.
+Las capas de validacion se reportan por separado:
+
+- `pio test -e native` ejecuta pruebas host de `EoloCore`.
+- `pio test -e <entorno> -f <suite> --without-uploading --without-testing` compila una suite Arduino sin ejecutarla; es una comprobacion de compilacion/enlace, no una prueba HIL.
+- Las pruebas HIL requieren el equipo correspondiente conectado (AFM07, RS485, Plantower, RTC, etc.) y un `test_port` configurado localmente. No se deben ejecutar contra una variante distinta de la placa conectada.
 
 ```bash
-pio test -e eolo_dron
+pio test -e native
+pio test -e eolo_dron -f test_capture_switches --without-uploading --without-testing
 ```

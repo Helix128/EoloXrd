@@ -35,6 +35,11 @@ struct FlowPidConfig
     float stallFlowLpm;
     uint32_t restallCooldownMs;
     uint32_t stallConfirmMs;
+    // Overhaul: Centro y Trimming Suave
+    int softTrimMax;
+    int softMaxStep;
+    float sensitivity;
+    uint32_t recenterDelayMs;
 };
 
 struct FlowPidStatus
@@ -52,8 +57,11 @@ struct FlowPidStatus
     float iTerm = 0.0f;
     float dTerm = 0.0f;
     int pwm = 0;
+    int centerPwm = 0;
+    int trimPwm = 0;
+    bool centerFound = false;
     uint32_t lastUpdateMs = 0;
-    SmartFlowMode mode = SMART_FLOW_PID_ONLY;
+    SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
     FlowPidFault fault = FLOW_PID_FAULT_NONE;
     bool timingOk = true;
     bool outputLimited = false;
@@ -99,7 +107,7 @@ struct FlowMotorOutput
 namespace FlowPidLimits
 {
     // Intervalo de ciclo: mínimo útil del sensor / máximo seguro sin watchdog
-    static constexpr uint32_t INTERVAL_MIN_MS            = 100;
+    static constexpr uint32_t INTERVAL_MIN_MS            = 50;
     static constexpr uint32_t INTERVAL_MAX_MS            = 10000;
     // Deadband en L/min: >5 supera el rango nominal del caudalímetro
     static constexpr float    DEADBAND_MAX                = 5.0f;
@@ -127,6 +135,15 @@ namespace FlowPidLimits
     // stallConfirmMs: tiempo de confirmación antes del re-kick
     static constexpr uint32_t STALL_CONFIRM_MIN_MS        = 100;
     static constexpr uint32_t STALL_CONFIRM_MAX_MS        = 10000;
+    // softTrimMax: límite de excursión alrededor del centro
+    static constexpr int      SOFT_TRIM_MAX_LIMIT         = 2000;
+    // softMaxStep: límite de paso por ciclo en soft trim
+    static constexpr int      SOFT_MAX_STEP_LIMIT         = 500;
+    // sensitivity: factor de escala post-centro
+    static constexpr float    SENSITIVITY_MAX             = 10.0f;
+    // recenterDelayMs: retraso antes de deslizar centro
+    static constexpr uint32_t RECENTER_DELAY_MIN_MS       = 500;
+    static constexpr uint32_t RECENTER_DELAY_MAX_MS       = 60000;
 }
 
 class FlowMotorController
@@ -166,6 +183,14 @@ public:
             return false;
         if (config.stallConfirmMs < FlowPidLimits::STALL_CONFIRM_MIN_MS || config.stallConfirmMs > FlowPidLimits::STALL_CONFIRM_MAX_MS)
             return false;
+        if (config.softTrimMax < 0 || config.softTrimMax > FlowPidLimits::SOFT_TRIM_MAX_LIMIT)
+            return false;
+        if (config.softMaxStep < 0 || config.softMaxStep > FlowPidLimits::SOFT_MAX_STEP_LIMIT)
+            return false;
+        if (isnan(config.sensitivity) || config.sensitivity < 0.0f || config.sensitivity > FlowPidLimits::SENSITIVITY_MAX)
+            return false;
+        if (config.recenterDelayMs > 0 && (config.recenterDelayMs < FlowPidLimits::RECENTER_DELAY_MIN_MS || config.recenterDelayMs > FlowPidLimits::RECENTER_DELAY_MAX_MS))
+            return false;
         return true;
     }
 
@@ -182,8 +207,12 @@ public:
         tune.slowAlpha = config.filterAlpha * 0.5f;
         if (tune.slowAlpha < 0.05f) tune.slowAlpha = 0.05f;
         if (tune.slowAlpha > 0.35f) tune.slowAlpha = 0.35f;
+        tune.seekStep = config.maxStep;
         tune.maxStep = config.maxStep;
-        tune.maxFeedForwardStep = config.maxStep;
+        tune.softTrimMax = config.softTrimMax > 0 ? config.softTrimMax : 64;
+        tune.softStepLimit = config.softMaxStep > 0 ? config.softMaxStep : 2;
+        tune.sensitivity = config.sensitivity > 0.05f ? config.sensitivity : 1.0f;
+        tune.recenterDelayMs = config.recenterDelayMs >= 500 ? config.recenterDelayMs : 4000;
         return tune;
     }
 
@@ -239,6 +268,7 @@ public:
         _lastUpdateMs = 0;
         _fault = FLOW_PID_FAULT_NONE;
         _smart.resetController(true);
+        _smart.seedCenter(_currentPwm);
     }
 
     FlowMotorOutput update(const FlowMotorInput &input, const FlowPidConfig &config)
@@ -420,7 +450,7 @@ public:
             _stallDetected = false;
         }
 
-        // --- PID / SmartFlow normal ---
+        // --- PID / SmartFlow normal (Center-Seeking / Soft-Trim) ---
         _smartStatus = _smart.update(input.nowMs, input.currentPwm, input.targetFlow,
                                      input.measuredFlow, dtSeconds, input.maxPwm);
         _filteredFlow = _smartStatus.fastFlow;
@@ -454,6 +484,9 @@ public:
         s.iTerm = _smartStatus.iTerm;
         s.dTerm = _smartStatus.dTerm;
         s.pwm = _currentPwm;
+        s.centerPwm = _smartStatus.centerPwm;
+        s.trimPwm = _smartStatus.trimPwm;
+        s.centerFound = _smartStatus.centerFound;
         s.lastUpdateMs = _lastUpdateMs;
         s.mode = _smartStatus.mode;
         s.fault = _fault;
@@ -469,6 +502,11 @@ public:
         s.stallDetected = _stallDetected;
         return s;
     }
+
+    const SmartFlowStatus& smartStatus() const { return _smartStatus; }
+    bool isKickActive() const { return _ignPhase == IgnitionPhase::Kick; }
+    uint16_t kickCount() const { return _kickCount; }
+    bool stallDetected() const { return _stallDetected; }
 
 private:
     bool _initialized = false;

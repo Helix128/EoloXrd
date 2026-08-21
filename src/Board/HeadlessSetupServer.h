@@ -350,9 +350,9 @@ private:
     flow["ageMs"] = flowData.ageMs;
 #endif
 
-    doc["motorTempValid"] = _ctx.motorCapture.motorThermalSensorValid;
-    doc["motorTemp"] = _ctx.motorCapture.motorThermalTemperature;
-    doc["overheat"] = _ctx.motorCapture.motorOverheatActive;
+    doc["motorTempValid"] = _ctx.isMotorThermalSensorValid();
+    doc["motorTemp"] = _ctx.motorThermalTemperatureC();
+    doc["overheat"] = _ctx.isMotorOverheatActive();
 
     size_t needed = measureJson(doc) + 1;
     char *buf = (char *)malloc(needed);
@@ -379,8 +379,8 @@ private:
   {
     CaptureSwitchSnapshot snap = _switches.snapshot();
     StaticJsonDocument<2048> doc;
-    doc["sdReady"] = _ctx.isSdReady;
-    doc["sdStatus"] = sdStatusText(_ctx.sdStatus);
+    doc["sdReady"] = _ctx.isSdReady();
+    doc["sdStatus"] = sdStatusText(_ctx.sdStatus());
     doc["rtc"] = _ctx.components.rtc.now().timestamp();
 
     JsonObject defaults = doc.createNestedObject("defaults");
@@ -425,13 +425,13 @@ private:
 
   void handleLogs()
   {
-    if (!_ctx.isSdReady)
+    if (!_ctx.isSdReady())
     {
       _server.send(503, "application/json", "{\"available\":false,\"files\":[]}");
       return;
     }
 
-    File dir = SD.open(_ctx.logsDir);
+    File dir = SD.open(_ctx.logsDirectory());
     if (!dir || !dir.isDirectory())
     {
       _server.send(200, "application/json", "{\"available\":true,\"files\":[]}");
@@ -479,14 +479,14 @@ private:
     String name = _server.arg("file");
     if (!HeadlessSetup::isSafeLogBasename(name.c_str()))
       return false;
-    // compose path: logsDir + '/' + name
-    int ret = snprintf(out, outLen, "%s/%s", _ctx.logsDir, name.c_str());
+    // compose path: logs directory + '/' + name
+    int ret = snprintf(out, outLen, "%s/%s", _ctx.logsDirectory(), name.c_str());
     return ret > 0 && (size_t)ret < outLen;
   }
 
   void handlePreview()
   {
-    if (!_ctx.isSdReady)
+    if (!_ctx.isSdReady())
     {
       _server.send(503, "application/json", "{\"error\":\"sd_unavailable\"}");
       return;
@@ -523,30 +523,35 @@ private:
       }
     }
 
-    // collect last up to 40 rows
-    const size_t ROWS = 40;
-    const size_t ROW_MAX = 256;
-    static char rows[ROWS][ROW_MAX];
+    // Keep only the file offsets for the last rows.  The previous static
+    // 40 x 256-byte matrix consumed 10 KiB of BSS permanently even when the
+    // setup portal was inactive.  A single reusable row buffer is enough to
+    // stream the same response from SD.
+    constexpr size_t kPreviewRows = 40;
+    constexpr size_t kPreviewRowMax = 256;
+    uint32_t rowOffsets[kPreviewRows];
+    char rowBuf[kPreviewRowMax];
     size_t count = 0;
     while (file.available())
     {
-      size_t rlen = file.readBytesUntil('\n', rows[count % ROWS], ROW_MAX - 1);
-      rows[count % ROWS][rlen] = '\0';
+      const uint32_t rowOffset = file.position();
+      size_t rlen = file.readBytesUntil('\n', rowBuf, sizeof(rowBuf) - 1);
+      rowBuf[rlen] = '\0';
       // trim CR
-      if (rlen > 0 && rows[count % ROWS][rlen - 1] == '\r') rows[count % ROWS][rlen - 1] = '\0';
-      if (rlen == 0 || strcmp(rows[count % ROWS], headerBuf) == 0)
+      if (rlen > 0 && rowBuf[rlen - 1] == '\r') rowBuf[rlen - 1] = '\0';
+      if (rlen == 0 || strcmp(rowBuf, headerBuf) == 0)
       {
         // ignore
       }
       else
       {
+        rowOffsets[count % kPreviewRows] = rowOffset;
         count++;
       }
     }
-    file.close();
 
-    size_t start = count > ROWS ? count % ROWS : 0;
-    size_t total = count > ROWS ? ROWS : count;
+    const size_t start = count > kPreviewRows ? count % kPreviewRows : 0;
+    const size_t total = count > kPreviewRows ? kPreviewRows : count;
 
     // Stream the preview output to save heap memory
     _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -562,17 +567,25 @@ private:
         _server.sendContent(",");
       }
       _server.sendContent("\"");
-      _server.sendContent(rows[(start + i) % ROWS]);
+      const uint32_t rowOffset = rowOffsets[(start + i) % kPreviewRows];
+      if (file.seek(rowOffset))
+      {
+        size_t rlen = file.readBytesUntil('\n', rowBuf, sizeof(rowBuf) - 1);
+        rowBuf[rlen] = '\0';
+        if (rlen > 0 && rowBuf[rlen - 1] == '\r') rowBuf[rlen - 1] = '\0';
+        _server.sendContent(rowBuf);
+      }
       _server.sendContent("\"");
     }
 
     _server.sendContent("]}");
     _server.sendContent(""); // end chunked stream
+    file.close();
   }
 
   void handleDownload()
   {
-    if (!_ctx.isSdReady)
+    if (!_ctx.isSdReady())
     {
       _server.send(503, "text/plain", "SD no disponible");
       return;
@@ -602,7 +615,7 @@ private:
 
   void handleLogDelete()
   {
-    if (!_ctx.isSdReady)
+    if (!_ctx.isSdReady())
     {
       _server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_unavailable\"}");
       return;

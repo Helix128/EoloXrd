@@ -53,6 +53,7 @@ DEMO_CONFIG = {
     "I2CDisplayDiag": {"models": ["express"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
     "MotorDirDiag": {"models": ["express"], "lib_deps": []},
     "SPIStandardDisplayDiag": {"models": ["standard"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
+    "DIPSwitchDiag": {"models": ["dron"], "lib_deps": []},
 }
 
 

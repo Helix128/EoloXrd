@@ -1,0 +1,196 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "EOLO: Definir nombre de version actual",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo tag \"${input:versionName}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Limpiar nombre de version actual",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo untag",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "EOLO: Renombrar ultimo respaldo",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo name-last \"${input:renameTag}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Listar respaldos de firmware",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo backups",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "EOLO: Crear snapshot de version",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo snapshot \"${input:snapTarget}\" -n \"${input:snapName}\" --notes \"${input:snapNotes}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Flashear ultimo firmware",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo flash \"${input:flashTarget}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Compilar y respaldar Express",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo build express",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "EOLO: Compilar y respaldar Dron",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo build dron",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "EOLO: Compilar y respaldar Standard",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo build standard",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "EOLO: Compilar demo",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo demo build ${input:demoChoice} ${input:modelChoice}",
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Cargar demo",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo demo upload ${input:demoChoice} ${input:modelChoice}",
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
+      "label": "EOLO: Monitorear demo",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo demo monitor ${input:demoChoice} ${input:modelChoice}",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "versionName",
+      "type": "promptString",
+      "description": "Ingresa el nombre o etiqueta de la version actual (ej. calibracion_afm07):",
+      "default": "version_test"
+    },
+    {
+      "id": "renameTag",
+      "type": "promptString",
+      "description": "Ingresa el nuevo nombre para el ultimo respaldo probado:",
+      "default": "version_estable"
+    },
+    {
+      "id": "snapTarget",
+      "type": "pickString",
+      "description": "Selecciona el target a congelar en snapshot:",
+      "options": ["eolo_express", "eolo_dron", "eolo_standard", "eolo_express_legacy"]
+    },
+    {
+      "id": "snapName",
+      "type": "promptString",
+      "description": "Nombre formal de la version de entrega (ej. V1.2_Produccion):",
+      "default": "V1.0_Release"
+    },
+    {
+      "id": "snapNotes",
+      "type": "promptString",
+      "description": "Notas o descripcion del release:",
+      "default": "Version verificada en hardware."
+    },
+    {
+      "id": "flashTarget",
+      "type": "pickString",
+      "description": "Selecciona el firmware a flashear en el dispositivo:",
+      "options": ["express", "dron", "standard", "express_legacy"]
+    },
+    {
+      "id": "demoChoice",
+      "type": "pickString",
+      "description": "Selecciona la demo que deseas compilar/cargar:",
+      "options": [
+        "AFM07",
+        "AFM07ProfPins",
+        "AFM07Scan",
+        "Anemometer",
+        "BME280",
+        "DIPSwitchDiag",
+        "DronFull",
+        "DynamicMotorCalibration",
+        "FS3000",
+        "I2CDisplayDiag",
+        "MotorDirDiag",
+        "Plantower",
+        "SPIStandardDisplayDiag"
+      ],
+      "default": "AFM07"
+    },
+    {
+      "id": "modelChoice",
+      "type": "pickString",
+      "description": "Selecciona el modelo de hardware:",
+      "options": ["dron", "express", "standard", "express_legacy"],
+      "default": "dron"
+    }
+  ]
+}

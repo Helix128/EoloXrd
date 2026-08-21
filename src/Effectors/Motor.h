@@ -5,7 +5,7 @@
 #include "../Config/Legacy.h"
 #include <Eolo/Core/Motor/PwmMath.h>
 
-inline constexpr int PWM_RESOLUTION = EoloConfig::board.motorPwmResolutionBits;
+inline constexpr int PWM_RESOLUTION = EoloConfig::motorPwmResolutionBits;
 inline constexpr int MAX_PWM = (1 << PWM_RESOLUTION) - 1;
 
 class MotorManager
@@ -108,12 +108,12 @@ private:
   static int physicalPwmFromLogical(int pwm)
   {
     pwm = constrainPwm(pwm);
-    return EoloConfig::board.motorPwmInverted ? MAX_PWM - pwm : pwm;
+    return EoloConfig::motorPwmInverted ? MAX_PWM - pwm : pwm;
   }
 
   static uint8_t physicalOffLevel()
   {
-    return EoloConfig::board.motorPwmInverted ? HIGH : LOW;
+    return EoloConfig::motorPwmInverted ? HIGH : LOW;
   }
 
   void writeMotorPwm(int motorIdx, int pwm)
@@ -141,7 +141,7 @@ private:
     pwm = constrainPwm(pwm);
     targetPwmValues[motorIdx] = pwm;
 
-    if (EoloConfig::board.motorRampStep > 0 && pwm > pwmValues[motorIdx])
+    if (EoloConfig::motorRampStep > 0 && pwm > pwmValues[motorIdx])
       return;
     writeMotorPwm(motorIdx, pwm);
   }
@@ -211,11 +211,11 @@ public:
 
   void updateRamp()
   {
-    if (EoloConfig::board.motorRampStep <= 0)
+    if (EoloConfig::motorRampStep <= 0)
       return;
 
     unsigned long now = millis();
-    if (now - lastRampMs < EoloConfig::board.motorRampIntervalMs)
+    if (now - lastRampMs < EoloConfig::motorRampIntervalMs)
       return;
     lastRampMs = now;
 
@@ -224,7 +224,7 @@ public:
       if (pwmValues[i] >= targetPwmValues[i])
         continue;
 
-      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], EoloConfig::board.motorRampStep);
+      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], EoloConfig::motorRampStep);
       writeMotorPwm(i, next);
     }
   }

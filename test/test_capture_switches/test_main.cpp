@@ -10,15 +10,15 @@ void test_wait_table()
     TEST_ASSERT_FALSE(off.waitEnabled);
     TEST_ASSERT_FALSE(off.shouldStart);
 
-    CaptureSwitchSelection five = CaptureSwitches::decode(0b01, 0b01);
+    CaptureSwitchSelection one = CaptureSwitches::decode(0b01, 0b01);
+    TEST_ASSERT_TRUE(one.waitEnabled);
+    TEST_ASSERT_EQUAL_UINT32(1UL * MINUTE, one.waitSeconds);
+    TEST_ASSERT_FALSE(one.instantStart);
+
+    CaptureSwitchSelection five = CaptureSwitches::decode(0b10, 0b01);
     TEST_ASSERT_TRUE(five.waitEnabled);
     TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, five.waitSeconds);
     TEST_ASSERT_FALSE(five.instantStart);
-
-    CaptureSwitchSelection fifteen = CaptureSwitches::decode(0b10, 0b01);
-    TEST_ASSERT_TRUE(fifteen.waitEnabled);
-    TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, fifteen.waitSeconds);
-    TEST_ASSERT_FALSE(fifteen.instantStart);
 
     CaptureSwitchSelection instant = CaptureSwitches::decode(0b11, 0b01);
     TEST_ASSERT_TRUE(instant.waitEnabled);
@@ -52,18 +52,18 @@ void test_sw0_is_lsb()
 {
     CaptureSwitchSelection sw0Only = CaptureSwitches::decode(0b01, 0b01);
     TEST_ASSERT_EQUAL_UINT8(0b01, sw0Only.waitCode);
-    TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, sw0Only.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(1UL * MINUTE, sw0Only.waitSeconds);
 
     CaptureSwitchSelection sw1Only = CaptureSwitches::decode(0b10, 0b10);
     TEST_ASSERT_EQUAL_UINT8(0b10, sw1Only.waitCode);
-    TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, sw1Only.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, sw1Only.waitSeconds);
     TEST_ASSERT_EQUAL_UINT8(0b10, sw1Only.durationCode);
     TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, sw1Only.durationSeconds);
 }
 
 void test_decode_full_table()
 {
-    const uint32_t waitSeconds[] = {0, 5UL * MINUTE, 15UL * MINUTE, 0};
+    const uint32_t waitSeconds[] = {0, 1UL * MINUTE, 5UL * MINUTE, 0};
     const uint32_t durationSeconds[] = {0, 5UL * MINUTE, 15UL * MINUTE, DRONE_DURATION_INFINITE};
 
     for (uint8_t waitCode = 0; waitCode < 4; waitCode++) {
@@ -93,8 +93,8 @@ void test_web_setup_entry_uses_wait_off()
 void test_descriptions()
 {
     TEST_ASSERT_EQUAL_STRING("off", CaptureSwitches::waitDescription(0b00));
-    TEST_ASSERT_EQUAL_STRING("5 min", CaptureSwitches::waitDescription(0b01));
-    TEST_ASSERT_EQUAL_STRING("15 min", CaptureSwitches::waitDescription(0b10));
+    TEST_ASSERT_EQUAL_STRING("1 min", CaptureSwitches::waitDescription(0b01));
+    TEST_ASSERT_EQUAL_STRING("5 min", CaptureSwitches::waitDescription(0b10));
     TEST_ASSERT_EQUAL_STRING("instantanea", CaptureSwitches::waitDescription(0b11));
 
     TEST_ASSERT_EQUAL_STRING("off", CaptureSwitches::durationDescription(0b00));

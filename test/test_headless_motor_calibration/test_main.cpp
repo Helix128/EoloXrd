@@ -21,9 +21,9 @@ void test_default_pid_config_is_valid()
     TEST_ASSERT_TRUE(MotorCaptureControl::validatePidConfig(config));
 }
 
-void test_flow_pid_base_pwm_is_1660()
+void test_flow_pid_base_pwm_matches_active_profile()
 {
-    TEST_ASSERT_EQUAL_INT(1660, FLOW_PID_BASE_PWM);
+    TEST_ASSERT_EQUAL_INT(EoloConfig::flowPidInitialPwm, FLOW_PID_BASE_PWM);
 }
 
 void test_rejects_invalid_pid_timing()
@@ -215,7 +215,7 @@ void setup()
     delay(1000);
     UNITY_BEGIN();
     RUN_TEST(test_default_pid_config_is_valid);
-    RUN_TEST(test_flow_pid_base_pwm_is_1660);
+    RUN_TEST(test_flow_pid_base_pwm_matches_active_profile);
     RUN_TEST(test_rejects_invalid_pid_timing);
     RUN_TEST(test_rejects_invalid_pid_gains);
     RUN_TEST(test_rejects_invalid_pid_filter);

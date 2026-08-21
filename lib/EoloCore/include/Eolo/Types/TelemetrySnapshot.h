@@ -21,9 +21,9 @@ struct TelemetrySnapshot
     PlantowerData plantower;
     AnemometerData anemometer;
     float batteryVoltage = -1.0f;
+    float rtcTemperature = -1.0f;
 
-    // GPS todavía no es parte del hardware EOLO actual. Se dejan explícitos
-    // para que el serializador no tenga que inferir valores faltantes.
+    // Instantánea de los últimos datos válidos del SIM7600G.
     float latitude = -1.0f;
     float longitude = -1.0f;
     float signalStrength = -1.0f;

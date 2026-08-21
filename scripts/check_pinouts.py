@@ -40,6 +40,15 @@ DOC_DEFINES = {
     "MODEM_RX_PIN", "MODEM_TX_PIN",
 }
 
+# A physical discrepancy must never be silenced by changing a document to
+# match a build.  These are deliberately narrow, value-checked exceptions:
+# the checker still fails if either side changes until hardware validation
+# resolves the decision and this entry is removed.
+KNOWN_UNRESOLVED_DIFFERENCES = {
+    ("express_legacy", "MOTOR_PWM_PIN_0"): (14, 25),
+    ("express_legacy", "MOTOR_PWM_PIN_1"): (25, 14),
+}
+
 def eval_value(raw: str, values: dict[str, int]) -> int:
     raw = raw.strip()
     if raw == "EOLO_PIN_UNUSED":
@@ -80,6 +89,8 @@ def parse_doc(path: Path) -> dict[str, int]:
 def main() -> int:
     demo_text = DEMO.read_text()
     errors = []
+    pending = []
+    seen_exceptions = set()
 
     if '#include "../src/Board/Pinout.h"' not in demo_text:
         errors.append(f"{DEMO}: no incluye la fuente autoritativa src/Board/Pinout.h")
@@ -92,7 +103,22 @@ def main() -> int:
             if name not in pinout:
                 errors.append(f"{cfg['doc']}: {name} no existe en Pinout.h para {target}")
             elif pinout[name] != doc_value:
-                errors.append(f"{cfg['doc']}: {name}={doc_value}, Pinout.h={pinout[name]}")
+                exception = KNOWN_UNRESOLVED_DIFFERENCES.get((target, name))
+                if exception == (doc_value, pinout[name]):
+                    pending.append(
+                        f"{target}: {name} documentado={doc_value}, firmware={pinout[name]} "
+                        "(pendiente de validacion fisica)"
+                    )
+                    seen_exceptions.add((target, name))
+                else:
+                    errors.append(f"{cfg['doc']}: {name}={doc_value}, Pinout.h={pinout[name]}")
+
+    for exception in KNOWN_UNRESOLVED_DIFFERENCES:
+        if exception not in seen_exceptions:
+            errors.append(
+                f"excepcion de pinout obsoleta o alterada: {exception[0]} {exception[1]}; "
+                "validala fisicamente y elimina la excepcion"
+            )
 
     if errors:
         print("Pinout sync check failed:")
@@ -100,7 +126,12 @@ def main() -> int:
             print(f"- {error}")
         return 1
 
-    print("Pinout sync check OK")
+    if pending:
+        print("Pinout sync check OK with pending hardware decisions:")
+        for item in pending:
+            print(f"- {item}")
+    else:
+        print("Pinout sync check OK")
     return 0
 
 

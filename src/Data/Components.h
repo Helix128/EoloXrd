@@ -6,8 +6,8 @@
 #include "../Effectors/StatusLed.h"
 #include "../Board/RTCManager.h"
 #include "../Board/I2CBus.h"
-#include "../Sensors/AFM07.h"
-#include "../Sensors/FS3000.h"
+#include "../Board/I2CRetryPolicy.h"
+#include "../Sensors/ActiveFlowSensor.h"
 #include "../Sensors/Plantower.h"
 #include "../Sensors/BME280.h"
 #include "../Sensors/NTC.h"
@@ -39,11 +39,7 @@ struct Components {
   SensorAPI api = SensorAPI(&modemService, 20);
 #endif
 
-#ifdef FEATURE_FLOW_AFM07
-  AFM07 flowSensor;
-#elif defined(FEATURE_FLOW_FS3000)
-  FS3K flowSensor;
-#endif
+  ActiveFlowSensor flowSensor;
 
 #ifdef FEATURE_PLANTOWER
   Plantower plantower;
@@ -58,12 +54,8 @@ struct Components {
 private:
   TaskHandle_t _i2cTaskHandle = nullptr;
 
-  static uint32_t retryDelayMs(uint8_t failures, uint32_t normalInterval) {
-    (void)normalInterval;
-    static constexpr uint32_t delays[] = {250UL, 500UL, 1000UL, 2000UL, 5000UL};
-    uint8_t index = failures == 0 ? 0 : (uint8_t)(failures - 1);
-    if (index >= 5) index = 4;
-    return delays[index];
+  static uint32_t retryDelayMs(uint8_t failures) {
+    return I2CRetryPolicy::delayForFailures(failures);
   }
 
   static void reportHealth(const char *name, bool success, uint8_t failures,
@@ -190,7 +182,7 @@ private:
         if (success) inputFailures = 0;
         else if (inputFailures < 255) ++inputFailures;
         reportHealth("encoder", success, inputFailures, inputDegraded, inputLastLog);
-        nextInput = now + (success ? InputPollIntervalMs : retryDelayMs(inputFailures, InputPollIntervalMs));
+        nextInput = now + (success ? InputPollIntervalMs : retryDelayMs(inputFailures));
         maybeRecoverBus();
       }
 #endif
@@ -201,7 +193,7 @@ private:
         if (!flowInitialized && flowFailures < 255) ++flowFailures;
         if (flowInitialized) flowFailures = 0;
         reportHealth("FS3000", flowInitialized, flowFailures, flowDegraded, flowLastLog);
-        nextFlow = now + (flowInitialized ? 10UL : retryDelayMs(flowFailures, 10UL));
+        nextFlow = now + (flowInitialized ? 10UL : retryDelayMs(flowFailures));
         nextFlowInit = nextFlow;
         maybeRecoverBus();
       } else if (flowInitialized && (int32_t)(now - nextFlow) >= 0) {
@@ -210,7 +202,7 @@ private:
         else if (flowFailures < 255) ++flowFailures;
         if (!success && !flowSensor.isReady) flowInitialized = false;
         reportHealth("FS3000", success, flowFailures, flowDegraded, flowLastLog);
-        nextFlow = now + (success ? 10UL : retryDelayMs(flowFailures, 10UL));
+        nextFlow = now + (success ? 10UL : retryDelayMs(flowFailures));
         nextFlowInit = nextFlow;
         maybeRecoverBus();
       }
@@ -221,7 +213,7 @@ private:
         if (bmeInitialized) bmeFailures = 0;
         else if (bmeFailures < 255) ++bmeFailures;
         reportHealth("BME280", bmeInitialized, bmeFailures, bmeDegraded, bmeLastLog);
-        nextBme = now + (bmeInitialized ? 1000UL : retryDelayMs(bmeFailures, 1000UL));
+        nextBme = now + (bmeInitialized ? 1000UL : retryDelayMs(bmeFailures));
         nextBmeInit = nextBme;
         maybeRecoverBus();
       } else if (bmeInitialized && (int32_t)(now - nextBme) >= 0) {
@@ -230,7 +222,7 @@ private:
         else if (bmeFailures < 255) ++bmeFailures;
         if (!success && !bme.isReady) bmeInitialized = false;
         reportHealth("BME280", success, bmeFailures, bmeDegraded, bmeLastLog);
-        nextBme = now + (success ? 1000UL : retryDelayMs(bmeFailures, 1000UL));
+        nextBme = now + (success ? 1000UL : retryDelayMs(bmeFailures));
         nextBmeInit = nextBme;
         maybeRecoverBus();
       }
@@ -240,7 +232,7 @@ private:
         if (rtcInitialized) rtcFailures = 0;
         else if (rtcFailures < 255) ++rtcFailures;
         reportHealth("RTC", rtcInitialized, rtcFailures, rtcDegraded, rtcLastLog);
-        nextRtc = now + (rtcInitialized ? 1000UL : retryDelayMs(rtcFailures, 1000UL));
+        nextRtc = now + (rtcInitialized ? 1000UL : retryDelayMs(rtcFailures));
         nextRtcInit = nextRtc;
         maybeRecoverBus();
       } else if (rtcInitialized && (int32_t)(now - nextRtc) >= 0) {
@@ -249,7 +241,7 @@ private:
         else if (rtcFailures < 255) ++rtcFailures;
         if (!success && !rtc.ok) rtcInitialized = false;
         reportHealth("RTC", success, rtcFailures, rtcDegraded, rtcLastLog);
-        nextRtc = now + (success ? 1000UL : retryDelayMs(rtcFailures, 1000UL));
+        nextRtc = now + (success ? 1000UL : retryDelayMs(rtcFailures));
         nextRtcInit = nextRtc;
         maybeRecoverBus();
       }
@@ -260,7 +252,7 @@ private:
         if (success) batteryFailures = 0;
         else if (batteryFailures < 255) ++batteryFailures;
         reportHealth("batería", success, batteryFailures, batteryDegraded, batteryLastLog);
-        nextBattery = now + (success ? 1000UL : retryDelayMs(batteryFailures, 1000UL));
+        nextBattery = now + (success ? 1000UL : retryDelayMs(batteryFailures));
         maybeRecoverBus();
       }
 #endif

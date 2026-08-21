@@ -38,16 +38,33 @@ copias de parsers en las demos.
 
 `src/Data/Context.h` sigue siendo el composition root. Posee componentes,
 inicializa hardware, ejecuta el ciclo y conecta acciones del core con motor,
-UI, SD y módem. El ciclo captura un `LogRecord` y la cola de SD lo transporta
-completo a un worker que no consulta `Context`; el wrapper de aplicación aún
-conserva la compatibilidad de escenas y la publicación remota. Los servicios
-conservan shims mientras las escenas migran a `UiSnapshot` y comandos pequeños.
+UI, SD y módem. Expone consultas estrechas, no aliases por referencia al
+estado de captura, térmico, SD, logging o upload. `LogService` solo recibe
+`LogRecord`; `UploadService` solo publica `TelemetrySnapshot`; y
+`MotorCaptureControl` recibe motor, lectura de flujo, calibración y estado
+térmico explícitos. Eso evita que estos servicios incluyan o recorran
+`Context`.
+
+`CaptureController` conserva temporalmente un adaptador de composición porque
+su flujo aún coordina escenas, sesión, motor, logging y módem. Sus definiciones
+viven en `ContextCaptureController.h`, que se incluye explícitamente después
+de terminar `Context`, sin reinclusiones ni macros de orden. La calibración
+headless histórica sigue separada del flujo de producto y no se reactiva por
+esta organización.
+
+La entrada Arduino no contiene lógica de producto: `main.cpp` instancia
+`ActiveApplication` y delega `begin()`/`update()`. El selector elige
+`UiApplication` para Express/Legacy/Standard y `DronApplication` para Dron.
 
 ## Configuración y persistencia
 
-`src/Config/ActiveProfile.h` expone `EoloConfig` tipado y selecciona un único
-perfil por ambiente. `src/Config/Legacy.h` es solo un shim de macros para
-código antiguo; el código nuevo no agrega macros de configuración.
+`src/Config/ActiveProfile.h` expone constantes de variante con nombre y el
+contrato `FlowPidConfig`, y selecciona un único perfil por ambiente. Los GPIO
+de display viven con el mapa del modelo en `Board/Pinouts/`.
+`VariantValidation.h` exige que el entorno declare sus capacidades completas,
+y `Board/Pinout.h` selecciona un mapa completo por modelo sin herencia de
+pinout. `src/Config/Legacy.h` es solo un shim de macros para código antiguo; el
+código nuevo no agrega macros de configuración.
 
 `SettingsStore` es la interfaz portable. `PreferencesSettingsStore` adapta NVS
 sin cambiar namespaces, claves ni representación existentes, incluyendo la
@@ -58,17 +75,26 @@ La sincronización RTC de red recibe explícitamente `ModemService` y
 En Standard, OLED y SD comparten VSPI; `SPIBus::Guard` serializa la
 inicialización, el render y las operaciones de SD.
 
+Las URLs y cuerpos HTTP pasan por `ModemHttpContract`: `SensorAPI`, la cola
+del módem, la API directa, RTC y la consola comparten el mismo límite y
+rechazan explícitamente solicitudes demasiado largas. No se truncan al entrar
+a la cola.
+
 ## Validación
 
 Antes de un cambio de arquitectura se ejecutan:
 
 ```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron
+pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_standard_libraries -e eolo_dron -e eolo_dron_low_power
 pio test -e native
 python3 scripts/check_pinouts.py
 bash scripts/audit_eolo_core_deps.sh
 git diff --check
 ```
+
+El chequeo de pinouts informa explícitamente una discrepancia Legacy pendiente
+de validación física; no cambia firmware ni documentación para ocultarla. Ver
+[`hardware-validation.md`](hardware-validation.md).
 
 Las demos soportadas se generan desde `scripts/demo_config.py` y se compilan
 con `platformio.demos.ini`; no son un segundo firmware con lógica duplicada.

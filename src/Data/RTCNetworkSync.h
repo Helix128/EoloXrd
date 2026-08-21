@@ -7,6 +7,7 @@
 #include <atomic>
 #include <stddef.h>
 #include <stdint.h>
+#include <Eolo/Types/ModemHttpContract.h>
 #ifdef FEATURE_MODEM
 #include "../Board/ModemService.h"
 #endif
@@ -24,7 +25,7 @@ enum class RTCNetworkSyncStatus : uint8_t
 
 class RTCNetworkSync
 {
-    static constexpr size_t MaxSourceUrl = 512;
+    static constexpr size_t MaxSourceUrl = ModemHttpContract::kHttpUrlStorageBytes;
 
     struct Request
     {
@@ -51,12 +52,6 @@ public:
     RTCNetworkSyncStatus getStatus() const { return status.load(); }
 };
 
-#endif // EOLO_RTC_NETWORK_SYNC_H
-
-
-#if !defined(EOLO_RTC_NETWORK_SYNC_IMPL_DONE)
-#define EOLO_RTC_NETWORK_SYNC_IMPL_DONE
-
 #include "../Config/Legacy.h"
 #include "../Board/RTCManager.h"
 #include <string.h>
@@ -76,7 +71,7 @@ inline void RTCNetworkSync::timeSyncCallback(const ModemJobResult &result, void 
     if (!ok)
         LOG_F("Sincronizacion RTC fallida (%s)\n", result.errorText);
 }
-#endif
+#endif // FEATURE_MODEM
 
 inline bool RTCNetworkSync::syncFromTimeServer(ModemService &modem,
                                                 RTCManager &rtc,
@@ -86,12 +81,18 @@ inline bool RTCNetworkSync::syncFromTimeServer(ModemService &modem,
     const char *sourceUrl = (url != nullptr && url[0] != '\0')
                                 ? url
                                 : RTCManager::DefaultTimeServerUrl;
+    if (!ModemHttpContract::urlFits(sourceUrl))
+    {
+        status = RTCNetworkSyncStatus::Failed;
+        LOG_LN("URL de sincronizacion RTC demasiado larga");
+        return false;
+    }
     request.modem = &modem;
     request.rtc = &rtc;
     if (sourceUrl != request.sourceUrl)
     {
-        strncpy(request.sourceUrl, sourceUrl, sizeof(request.sourceUrl) - 1);
-        request.sourceUrl[sizeof(request.sourceUrl) - 1] = '\0';
+        size_t sourceUrlLength = strlen(sourceUrl);
+        memcpy(request.sourceUrl, sourceUrl, sourceUrlLength + 1);
     }
 
     status = RTCNetworkSyncStatus::Running;
@@ -144,8 +145,14 @@ inline bool RTCNetworkSync::start(ModemService &modem,
     const char *sourceUrl = (url != nullptr && url[0] != '\0')
                                 ? url
                                 : RTCManager::DefaultTimeServerUrl;
-    strncpy(request.sourceUrl, sourceUrl, sizeof(request.sourceUrl) - 1);
-    request.sourceUrl[sizeof(request.sourceUrl) - 1] = '\0';
+    if (!ModemHttpContract::urlFits(sourceUrl))
+    {
+        status = RTCNetworkSyncStatus::Failed;
+        LOG_LN("URL de sincronizacion RTC demasiado larga");
+        return false;
+    }
+    size_t sourceUrlLength = strlen(sourceUrl);
+    memcpy(request.sourceUrl, sourceUrl, sourceUrlLength + 1);
     status = RTCNetworkSyncStatus::Running;
     // Prio 1 (servicio de fondo): sincronizacion NTP no critica en tiempo real.
     // Stack 8192: HTTP GET + JSON parsing para la respuesta del servidor de tiempo.

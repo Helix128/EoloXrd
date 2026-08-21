@@ -7,6 +7,7 @@
 #ifdef FEATURE_MODEM
 #include "../Board/ModemService.h"
 #include "../Board/RTCManager.h"
+#include "SensorAPI.h"
 #endif
 
 class ModemDebugCommands : public ConsoleCommandHandler {
@@ -14,11 +15,13 @@ private:
 #ifdef FEATURE_MODEM
     ModemService* _modem = nullptr;
     RTCManager* _rtc = nullptr;
+    SensorAPI* _api = nullptr;
 
     struct TimeSyncContext {
         RTCManager* rtc = nullptr;
         char url[128] = "";
     };
+    struct DiagContext { ModemDebugCommands* self; uint8_t index; };
 #endif
 
     void printHelp(Print& out) {
@@ -31,6 +34,7 @@ private:
         out.println("  m get <URL>          encola HTTP GET");
         out.println("  m post <URL> <body>  encola HTTP POST");
         out.println("  m timesync [URL]     encola HTTP GET y ajusta RTC");
+        out.println("  m gnss               muestra ultimo fix GNSS y su antiguedad");
         out.println("  m ntp                obsoleto; usa m timesync");
         out.println("  m diag               encola diagnostico AT basico");
 #else
@@ -114,15 +118,30 @@ private:
             "AT+IPADDR"
         };
 
-        out.println("Encolando diagnostico modem...");
-        for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
-            char tag[24];
-            snprintf(tag, sizeof(tag), "diag-%02u", (unsigned int)(i + 1));
-            ModemJobId id = _modem->enqueueAtCommand(commands[i], i == 1 ? 10000 : 5000, tag, printAsyncResult);
-            if (id == 0) {
-                out.printf("Diag detenido: cola llena o error (%s)\n", _modem->lastErrorText());
-                return;
-            }
+        // One callback schedules the next command, so the eleven-step
+        // diagnostic never depends on the public queue depth of four.
+        DiagContext* ctx = new DiagContext{this, 0};
+        if (ctx == nullptr) { out.println("Sin memoria para diagnostico"); return; }
+        out.println("Diagnostico modem iniciado...");
+        scheduleDiag(ctx);
+    }
+
+    static void diagDone(const ModemJobResult& result, void* raw) {
+        DiagContext* ctx = static_cast<DiagContext*>(raw);
+        printAsyncResult(result, nullptr);
+        if (ctx == nullptr) return;
+        if (result.status != ModemJobStatus::Succeeded) { delete ctx; return; }
+        ++ctx->index;
+        ctx->self->scheduleDiag(ctx);
+    }
+
+    void scheduleDiag(DiagContext* ctx) {
+        static const char* commands[] = {"AT", "ATI", "AT+CPIN?", "AT+CSQ", "AT+COPS?", "AT+CREG?", "AT+CGREG?", "AT+CEREG?", "AT+CGACT?", "AT+NETOPEN?", "AT+IPADDR"};
+        if (ctx == nullptr) return;
+        if (ctx->index >= sizeof(commands) / sizeof(commands[0])) { delete ctx; return; }
+        char tag[24]; snprintf(tag, sizeof(tag), "diag-%02u", (unsigned int)(ctx->index + 1));
+        if (_modem->enqueueAtCommand(commands[ctx->index], ctx->index == 1 ? 10000 : 5000, tag, diagDone, ctx) == 0) {
+            cmdOut.printf("Diag detenido (%s)\n", _modem->lastErrorText()); delete ctx;
         }
     }
 #endif
@@ -136,6 +155,8 @@ public:
     void attachRTC(RTCManager* rtc) {
         _rtc = rtc;
     }
+
+    void attachSensorApi(SensorAPI* api) { _api = api; }
 #endif
 
     bool handle(const String& line, Print& out) {
@@ -164,9 +185,11 @@ public:
                             : _modem->lastErrorText());
         } else if (args == "end") {
             _modem->shutdownNow();
-            out.println("Modem cerrado");
+            out.println("Apagado solicitado; use m status para seguir la transicion");
         } else if (args == "status") {
             _modem->printStatus(out);
+            if (_api != nullptr)
+                out.printf("telemetry pending=%u in_flight=%s dropped=%lu\n", (unsigned int)_api->pendingTelemetry(), _api->telemetryInFlight() ? "yes" : "no", (unsigned long)_api->droppedTelemetry());
         } else if (args.startsWith("at ")) {
             String command = args.substring(strlen("at "));
             command.trim();
@@ -207,14 +230,23 @@ public:
                                                    : args.substring(strlen("timesync "));
                 urlArg.trim();
                 if (urlArg.length() == 0) urlArg = RTCManager::DefaultTimeServerUrl;
+                size_t urlArgLength = urlArg.length();
+
+                if (!ModemHttpContract::urlFits(urlArg.c_str())) {
+                    out.println("URL de timesync demasiado larga");
+                    return true;
+                }
+                if (urlArgLength >= sizeof(TimeSyncContext::url)) {
+                    out.println("URL de timesync excede el buffer de consola");
+                    return true;
+                }
 
                 TimeSyncContext* ctx = new TimeSyncContext();
                 if (ctx == nullptr) {
                     out.println("Sin memoria para timesync");
                 } else {
                     ctx->rtc = _rtc;
-                    strncpy(ctx->url, urlArg.c_str(), sizeof(ctx->url) - 1);
-                    ctx->url[sizeof(ctx->url) - 1] = '\0';
+                    memcpy(ctx->url, urlArg.c_str(), urlArgLength + 1);
                     ModemJobId id = _modem->enqueueHttpGet(ctx->url, "timesync", timeSyncCallback, ctx);
                     if (id == 0) {
                         out.printf("No se pudo encolar timesync (%s)\n", _modem->lastErrorText());
@@ -228,6 +260,10 @@ public:
             out.println("m ntp esta obsoleto. Usa: m timesync [URL]. No hay soporte NTP/AT+CNTP.");
         } else if (args == "diag") {
             runDiag(out);
+        } else if (args == "gnss") {
+            GnssData g = _modem->gnssData();
+            if (!g.valid) out.println("GNSS sin fix o dato vencido");
+            else out.printf("GNSS fix lat=%.6f lon=%.6f speed=%.2f sats=%u age=%lu ms\n", g.latitude, g.longitude, g.speedKmh, (unsigned int)g.satellites, (unsigned long)_modem->gnssAgeMs());
         } else if (args == "scan") {
             enqueueAt(out, "AT+COPS=?", 180000, "scan");
         } else if (args == "auto") {

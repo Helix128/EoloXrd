@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""
+eolo - Interfaz unificada de comandos para desarrollo, compilación y respaldos de EOLO.
+"""
+
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent
+SCRIPTS_DIR = ROOT_DIR / "scripts"
+BACKUP_SCRIPT = SCRIPTS_DIR / "firmware_backup.py"
+DEMO_SCRIPT = SCRIPTS_DIR / "demo.py"
+
+
+def print_help():
+    print("""
+Uso: ./eolo <comando> [argumentos]
+
+Comandos de Versiones y Respaldos:
+  ./eolo tag [nombre]                 Consultar o fijar el nombre de versión actual
+  ./eolo untag                        Limpiar el nombre de versión actual activo
+  ./eolo name-last <nombre>           Renombrar/etiquetar el último respaldo probado
+  ./eolo backups                      Listar todos los respaldos por dispositivo y demo
+  ./eolo snapshot <target> -n <nom>   Crear una versión formal de entrega con notas
+  ./eolo prune [--keep N]             Limpiar respaldos antiguos conservando los últimos N
+
+Comandos de Compilación y Flasheo:
+  ./eolo build <target> [--tag tag]   Compilar dispositivo (ej. express, dron, standard)
+  ./eolo flash <target> [--port port] Flashear último respaldo de un dispositivo
+  ./eolo demo <subcomando> [...]      Gestión de demos (list, build, upload, monitor)
+
+Ejemplos:
+  ./eolo tag "calibracion_afm07"
+  ./eolo build express
+  ./eolo name-last "version_feria_ok"
+  ./eolo backups
+  ./eolo demo build AFM07 dron
+  ./eolo flash express /dev/ttyUSB0
+""")
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print_help()
+        return 0
+
+    command = sys.argv[1]
+    args = sys.argv[2:]
+
+    # Si es comando demo -> redirigir a demo.py
+    if command == "demo":
+        if not args:
+            return subprocess.call([sys.executable, str(DEMO_SCRIPT), "--help"])
+        return subprocess.call([sys.executable, str(DEMO_SCRIPT), *args])
+
+    # Redirigir a firmware_backup.py
+    return subprocess.call([sys.executable, str(BACKUP_SCRIPT), command, *args])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

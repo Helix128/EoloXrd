@@ -31,6 +31,9 @@ enum class ModemServiceState : uint8_t
   Registered,
   DataReady,
   Busy,
+  // A request to stop is owned by the worker.  No other task may tear down
+  // UART/power while an AT transaction is in progress.
+  ShuttingDown,
   IdleWaitingPowerOff,
   Error
 };
@@ -43,6 +46,8 @@ struct ModemJobResult
   ModemJobStatus status = ModemJobStatus::Queued;
   int httpStatus = 0;
   size_t bytes = 0;
+  bool responseTruncated = false;
+  ModemServiceState failurePhase = ModemServiceState::Off;
   uint32_t durationMs = 0;
   uint8_t attempts = 0;
   char errorText[96] = "";

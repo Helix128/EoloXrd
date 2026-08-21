@@ -5,10 +5,11 @@
 #include <math.h>
 #include "../Config/Legacy.h"
 #include "../Effectors/Motor.h"
+#include "CalibrationManager.h"
 #include <Eolo/Core/Flow/DualMotorFlowController.h>
 #include <Eolo/Core/Thermal/ThermalProtectionModel.h>
-
-struct Context;
+#include <Eolo/Types/FlowData.h>
+#include <Eolo/Types/NTCData.h>
 
 class MotorCaptureControl
 {
@@ -31,7 +32,11 @@ class MotorCaptureControl
         FLOW_PID_KICK_MS,
         FLOW_PID_STALL_FLOW_LPM,
         FLOW_PID_RESTALL_COOLDOWN_MS,
-        FLOW_PID_STALL_CONFIRM_MS
+        FLOW_PID_STALL_CONFIRM_MS,
+        FLOW_PID_SOFT_TRIM_MAX,
+        FLOW_PID_SOFT_MAX_STEP,
+        FLOW_PID_SENSITIVITY,
+        FLOW_PID_RECENTER_DELAY_MS
     };
     bool pidTestRunning = false;
     float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
@@ -41,7 +46,9 @@ class MotorCaptureControl
     uint32_t lastMotorOverheatLogMs = 0;
 
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
-    void updatePidMotors(Context &ctx);
+    void updatePidMotors(MotorManager &motor, const FlowData &flowData,
+                         bool flowReadValid, float targetFlow,
+                         const CalibrationManager &calibration);
 #endif
 
 public:
@@ -53,38 +60,34 @@ public:
     {
         return FlowMotorController::validateConfig(config, MAX_PWM);
     };
-    bool updateThermalProtection(Context &ctx);
+    bool updateThermalProtection(const NTCData &ntcData, bool ntcValid,
+                                 MotorManager &motor);
     void resetFlowController();
-    void updateMotors(Context &ctx);
+    void updateMotors(MotorManager &motor, const FlowData &flowData,
+                      bool flowReadValid, float targetFlow,
+                      const CalibrationManager &calibration);
 
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     const FlowPidConfig &getPidConfig() const { return pidCfg; }
     void setPidConfig(const FlowPidConfig &config) { if (validatePidConfig(config)) pidCfg = config; }
     bool isPidTestRunning() const { return pidTestRunning; }
     void startPidTest(float targetFlow) { pidTestTargetFlow = targetFlow; pidTestRunning = true; resetFlowController(); }
-    void stopPidTest(Context &ctx);
+    void stopPidTest(MotorManager &motor);
     FlowPidStatus getPidStatus() const;
     void forceIgnition() { pid.forceKick(); }
 #endif
 };
 
-#endif // EOLO_MOTOR_CAPTURE_CONTROL_H
-
-
-#if defined(CONTEXT_CLASS_DEFINED) && !defined(EOLO_MOTOR_CAPTURE_CONTROL_IMPL_DONE)
-#define EOLO_MOTOR_CAPTURE_CONTROL_IMPL_DONE
-
-#include "Context.h"
-
-inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
+inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
+                                                          bool ntcValid,
+                                                          MotorManager &motor)
 {
 #ifdef FEATURE_NTC
     bool previousActive = motorOverheatActive;
     bool previousValid = motorThermalSensorValid;
     float previousTemperature = motorThermalTemperature;
 
-    NTCData ntcData;
-    motorThermalSensorValid = ctx.components.ntc.getData(ntcData);
+    motorThermalSensorValid = ntcValid;
     motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
     ThermalProtectionInput thermalInput;
     thermalInput.latched = motorOverheatActive;
@@ -98,7 +101,7 @@ inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
     uint32_t nowMs = millis();
     if (motorOverheatActive)
     {
-        ctx.components.motor.setPwmImmediate(0);
+        motor.setPwmImmediate(0);
         resetFlowController();
     }
 
@@ -141,12 +144,9 @@ inline bool MotorCaptureControl::updateThermalProtection(Context &ctx)
         lastMotorOverheatLogMs = nowMs;
     }
 
-    if (previousActive != motorOverheatActive ||
-        previousValid != motorThermalSensorValid ||
-        fabsf(previousTemperature - motorThermalTemperature) > 0.1f)
-    {
-        ctx.markUiDirty();
-    }
+    (void)previousActive;
+    (void)previousValid;
+    (void)previousTemperature;
     return motorOverheatActive;
 #else
     motorOverheatActive = false;
@@ -164,11 +164,11 @@ inline void MotorCaptureControl::resetFlowController()
 }
 
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
-inline void MotorCaptureControl::stopPidTest(Context &ctx)
+inline void MotorCaptureControl::stopPidTest(MotorManager &motor)
 {
     pidTestRunning = false;
     resetFlowController();
-    ctx.components.motor.setPwmImmediate(0);
+    motor.setPwmImmediate(0);
 }
 
 inline FlowPidStatus MotorCaptureControl::getPidStatus() const
@@ -176,11 +176,14 @@ inline FlowPidStatus MotorCaptureControl::getPidStatus() const
     return pid.status(true, pidTestRunning, pidTestTargetFlow);
 }
 
-inline void MotorCaptureControl::updatePidMotors(Context &ctx)
+inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
+                                                 const FlowData &flowData,
+                                                 bool flowReadValid,
+                                                 float targetFlow,
+                                                 const CalibrationManager &calibration)
 {
     uint32_t nowMs = millis();
-    float targetFlow = pidTestRunning ? pidTestTargetFlow : ctx.session.targetFlow;
-    FlowData flowData;
+    targetFlow = pidTestRunning ? pidTestTargetFlow : targetFlow;
     if (!pidConfigLogged)
     {
         LOG_OUT("PID config: interval=");
@@ -217,13 +220,13 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
         pidConfigLogged = true;
     }
 
-    bool flowReadValid = ctx.components.flowSensor.getData(flowData) && flowData.valid;
+    flowReadValid = flowReadValid && flowData.valid;
     bool flowFresh = flowReadValid && flowData.ageMs <= pidCfg.sensorStaleMs;
 
     int seed0 = 0, seed1 = 0;
-    bool hasSeed = ctx.calibration.getMotorPwms(targetFlow, seed0, seed1);
+    bool hasSeed = calibration.getMotorPwms(targetFlow, seed0, seed1);
     const bool useCalibrationSeed = EoloConfig::useCalibrationSeed && hasSeed;
-    const int primaryMotor = useCalibrationSeed ? ctx.calibration.weakMotor : 0;
+    const int primaryMotor = useCalibrationSeed ? calibration.weakMotor : 0;
 
     DualMotorFlowInput input;
     input.nowMs = nowMs;
@@ -268,8 +271,37 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
     // inválida no se debe cambiar el PWM hasta que venza la ventana segura.
     if (output.updated || output.sensorGraceActive)
     {
-        ctx.components.motor.setMotorPwm(0, output.motor0Pwm);
-        ctx.components.motor.setMotorPwm(1, output.motor1Pwm);
+        motor.setMotorPwm(0, output.motor0Pwm);
+        motor.setMotorPwm(1, output.motor1Pwm);
+    }
+
+    // Log de enclavamiento de centro con tiempo exacto de calibración
+    static bool _lastLockedReported = false;
+    static uint32_t _seekStartReportMs = 0;
+
+    if (output.kickActive)
+    {
+        _seekStartReportMs = nowMs;
+        _lastLockedReported = false;
+    }
+    else if (!output.smartStatus.centerFound)
+    {
+        if (_seekStartReportMs == 0) _seekStartReportMs = nowMs;
+        _lastLockedReported = false;
+    }
+    else if (output.smartStatus.centerFound && !_lastLockedReported)
+    {
+        _lastLockedReported = true;
+        uint32_t lockDurationMs = (_seekStartReportMs > 0 && nowMs >= _seekStartReportMs)
+                                      ? (nowMs - _seekStartReportMs)
+                                      : 0;
+        LOG_OUT("[PID Flujo] ¡Centro enclavado en PWM ");
+        LOG_OUT(output.smartStatus.centerPwm);
+        LOG_OUT("! Tiempo de calibracion: ");
+        LOG_OUT(lockDurationMs / 1000.0f, 2);
+        LOG_OUT("s | Caudal: ");
+        LOG_OUT(flowData.flow, 2);
+        LOG_OUT_LN(" L/min");
     }
 
     // Log fault de sensor (con rate limit)
@@ -305,6 +337,10 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
             LOG_OUT(output.smartStatus.fastFlow, 2);
             LOG_OUT(" L/min PWM ");
             LOG_OUT(output.virtualPwm);
+            LOG_OUT(" centro=");
+            LOG_OUT(output.smartStatus.centerPwm);
+            LOG_OUT(" trim=");
+            LOG_OUT(output.smartStatus.trimPwm);
             LOG_OUT(" P/I/D ");
             LOG_OUT(output.smartStatus.pTerm, 1);
             LOG_OUT("/");
@@ -313,26 +349,36 @@ inline void MotorCaptureControl::updatePidMotors(Context &ctx)
             LOG_OUT(output.smartStatus.dTerm, 1);
             LOG_OUT(" modo ");
             LOG_OUT(static_cast<int>(output.smartStatus.mode));
-            LOG_OUT(" gain ");
-            LOG_OUT(output.smartStatus.estimatedGain, 5);
-            LOG_OUT(" conf ");
-            LOG_OUT_LN(output.smartStatus.confidence, 2);
+            LOG_OUT(" locked=");
+            LOG_OUT_LN(output.smartStatus.centerFound ? "si" : "no");
             lastPidLogMs = nowMs;
         }
     }
 }
 #endif
 
-inline void MotorCaptureControl::updateMotors(Context &ctx)
+inline void MotorCaptureControl::updateMotors(MotorManager &motor,
+                                              const FlowData &flowData,
+                                              bool flowReadValid,
+                                              float targetFlow,
+                                              const CalibrationManager &calibration)
 {
     if (motorOverheatActive)
     {
-        ctx.components.motor.setPwmImmediate(0);
+        motor.setPwmImmediate(0);
         resetFlowController();
         return;
     }
 
-    updatePidMotors(ctx);
+ #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
+    updatePidMotors(motor, flowData, flowReadValid, targetFlow, calibration);
+ #else
+    (void)motor;
+    (void)flowData;
+    (void)flowReadValid;
+    (void)targetFlow;
+    (void)calibration;
+ #endif
 }
 
-#endif
+#endif // EOLO_MOTOR_CAPTURE_CONTROL_H

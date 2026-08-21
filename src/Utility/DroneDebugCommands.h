@@ -103,11 +103,11 @@ private:
 
   const char *capturePhaseText(const DateTime &now) const
   {
-    if (_ctx->isEnd)
+    if (_ctx->hasCaptureEnded())
       return "finalizada";
-    if (_ctx->isPaused)
+    if (_ctx->isCapturePaused())
       return "pausada";
-    if (_ctx->isCapturing)
+    if (_ctx->isCaptureActive())
       return "capturando";
     if (_ctx->session.startUnix > now.unixtime())
       return "esperando";
@@ -124,7 +124,7 @@ private:
     uint32_t startTs = _ctx->session.startUnix;
     String line = "Captura: ";
 
-    if (_ctx->isCapturing)
+    if (_ctx->isCaptureActive())
     {
       line += "transcurrido ";
       line += formatDuration(_ctx->session.elapsedTime);
@@ -147,7 +147,7 @@ private:
       line += " | duracion ";
       line += formatDuration(_ctx->session.duration);
     }
-    else if (_ctx->isEnd)
+    else if (_ctx->hasCaptureEnded())
     {
       line += "finalizada";
     }
@@ -209,6 +209,10 @@ private:
     if (readFloatArg(args, "stallFlow", floatValue)) config.stallFlowLpm = floatValue;
     if (readIntArg(args, "cooldown", intValue)) config.restallCooldownMs = (uint32_t)intValue;
     if (readIntArg(args, "stallConfirm", intValue)) config.stallConfirmMs = (uint32_t)intValue;
+    if (readIntArg(args, "trimMax", intValue)) config.softTrimMax = intValue;
+    if (readIntArg(args, "softStep", intValue)) config.softMaxStep = intValue;
+    if (readFloatArg(args, "sens", floatValue)) config.sensitivity = floatValue;
+    if (readIntArg(args, "recenter", intValue)) config.recenterDelayMs = (uint32_t)intValue;
     return config;
   }
 
@@ -216,11 +220,10 @@ private:
   {
     switch (mode)
     {
-    case SMART_FLOW_INTERPOLATE: return "INTERPOLATE";
-    case SMART_FLOW_GAIN_PREDICT: return "GAIN_PREDICT";
-    case SMART_FLOW_MIN_ACTIVE_BOOST: return "BOOST";
-    case SMART_FLOW_PID_ONLY:
-    default: return "PID";
+    case SMART_FLOW_SEEK_CENTER: return "SEEK_CENTER";
+    case SMART_FLOW_CENTER_LOCKED: return "CENTER_LOCKED";
+    case SMART_FLOW_RECENTER: return "RECENTER";
+    default: return "UNKNOWN";
     }
   }
 
@@ -245,20 +248,21 @@ private:
                (unsigned)s.kickCount,
                (unsigned long)s.lastKickMs,
                s.stallDetected ? "si" : "no");
-    out.printf("PID flujo: running=%s test=%s fault=%s timing=%s mode=%s model=%s conf=%.2f gain=%.5f target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d dt=%.3f P/I/D=%.1f/%.1f/%.1f integral=%.3f limited=%s\n",
+    out.printf("PID flujo: running=%s test=%s fault=%s mode=%s locked=%s target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d centro=%d trim=%d P/I/D=%.1f/%.1f/%.1f integral=%.3f\n",
                s.running ? "si" : "no", _ctx->motorCapture.isPidTestRunning() ? "si" : "no",
-               pidFaultText(s.fault), s.timingOk ? "ok" : "bad",
-               pidModeText(s.mode), s.modelValid ? "ok" : "learning", s.confidence, s.estimatedGain,
-               s.targetFlow, s.measuredFlow, s.filteredFlow, s.error, s.pwm, s.dtSeconds,
-               s.pTerm, s.iTerm, s.dTerm, s.integral, s.outputLimited ? "si" : "no");
+               pidFaultText(s.fault),
+               pidModeText(s.mode), s.centerFound ? "si" : "no",
+               s.targetFlow, s.measuredFlow, s.filteredFlow, s.error, s.pwm, s.centerPwm, s.trimPwm,
+               s.pTerm, s.iTerm, s.dTerm, s.integral);
   }
 
   void printPidConfig(Print &out) const
   {
     const FlowPidConfig &c = _ctx->motorCapture.getPidConfig();
-    out.printf("PID config: interval=%lu deadband=%.2f kp=%.2f ki=%.2f kd=%.2f ilim=%.2f maxStep=%d alpha=%.2f minActive=%.2f maxDt=%lu stale=%lu\n",
+    out.printf("PID config: interval=%lu deadband=%.2f kp=%.2f ki=%.2f kd=%.2f ilim=%.2f maxStep=%d alpha=%.2f minActive=%.2f trimMax=%d softStep=%d sens=%.2f recenter=%lu maxDt=%lu stale=%lu\n",
                (unsigned long)c.intervalMs, c.deadband, c.kp, c.ki, c.kd, c.integralLimit,
-               c.maxStep, c.filterAlpha, c.minActive, (unsigned long)c.maxDtMs, (unsigned long)c.sensorStaleMs);
+               c.maxStep, c.filterAlpha, c.minActive, c.softTrimMax, c.softMaxStep, c.sensitivity,
+               (unsigned long)c.recenterDelayMs, (unsigned long)c.maxDtMs, (unsigned long)c.sensorStaleMs);
   }
 
   bool handlePidCommand(const String &args, Print &out)
@@ -305,7 +309,7 @@ private:
     }
     if (sub == "stop")
     {
-      _ctx->motorCapture.stopPidTest(*_ctx);
+      _ctx->stopPidTest();
       printPidStatus(out);
       return true;
     }
@@ -328,7 +332,7 @@ private:
     out.println("  drone status       estado compacto");
     out.println("  drone status -v    estado con detalles raw");
     out.println("  drone pid status|config");
-    out.println("  drone pid set [interval=800 deadband=0.15 kp=28 ki=0.4 kd=5 ilim=6 maxStep=8 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
+    out.println("  drone pid set [interval=800 deadband=0.15 kp=14 ki=0.3 kd=0 ilim=8 maxStep=16 trimMax=64 softStep=2 sens=0.8 recenter=5000 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
     out.println("  drone pid test [target=5.0]|stop");
     out.println("  drone pid ignite         kick manual de arranque");
     out.println("  drone help         ayuda");
@@ -417,7 +421,7 @@ public:
     else
       out.println("Switches: no adjuntados");
 
-    out.printf("SD: %s\n", sdStatusText(_ctx->sdStatus));
+    out.printf("SD: %s\n", sdStatusText(_ctx->sdStatus()));
 
     out.printf("Sensores: flujo ");
     if (flowOk)
@@ -461,13 +465,13 @@ public:
     {
       out.println("Detalle:");
       out.printf("  flags: active=%s paused=%s end=%s log=%s uploadPending=%s uploadActive=%s\n",
-                 _ctx->isCapturing ? "si" : "no",
-                 _ctx->isPaused ? "si" : "no",
-                 _ctx->isEnd ? "si" : "no",
-                 _ctx->logActive.load() ? "si" : "no",
-                 _ctx->uploadPending.load() ? "si" : "no",
-                 _ctx->uploadActive.load() ? "si" : "no");
-      out.printf("  SD: ready=%s enum=%d\n", _ctx->isSdReady ? "si" : "no", (int)_ctx->sdStatus);
+                 _ctx->isCaptureActive() ? "si" : "no",
+                 _ctx->isCapturePaused() ? "si" : "no",
+                 _ctx->hasCaptureEnded() ? "si" : "no",
+                 _ctx->isLogActive() ? "si" : "no",
+                 _ctx->isUploadPending() ? "si" : "no",
+                 _ctx->isUploadActive() ? "si" : "no");
+      out.printf("  SD: ready=%s enum=%d\n", _ctx->isSdReady() ? "si" : "no", (int)_ctx->sdStatus());
       out.printf("  session: start=%s elapsed=%lu duration=%u target=%.2f volume=%.3f L\n",
                  DateTime(_ctx->session.startUnix).timestamp().c_str(),
                  _ctx->session.elapsedTime,

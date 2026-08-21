@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <RTClib.h>
+#include <Eolo/Types/ModemHttpContract.h>
 #include "../Config/Legacy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -107,6 +108,9 @@ public:
   {
     return lastError;
   }
+
+  int lastHttpStatus() const { return lastHttpActionStatus; }
+  bool lastHttpResponseTruncated() const { return _lastHttpResponseTruncated; }
 
   bool rawAT(const char *command, String &response, unsigned long timeout = 5000)
   {
@@ -279,6 +283,7 @@ private:
   SemaphoreHandle_t mutex = nullptr;
   char lastError[96] = "OK";
   int lastHttpActionStatus = 0;
+  bool _lastHttpResponseTruncated = false;
 
   class ScopedLock {
   public:
@@ -333,6 +338,20 @@ private:
 
   bool executeHttpRequest(uint8_t method, const char *url, const char *payload, char *respBuffer, int bufferSize)
   {
+    _lastHttpResponseTruncated = false;
+    if (url == nullptr || url[0] == '\0' || respBuffer == nullptr || bufferSize <= 1) {
+      setLastError("parámetros HTTP inválidos");
+      return false;
+    }
+    if (!ModemHttpContract::urlFits(url)) {
+      setLastError("URL HTTP demasiado larga");
+      return false;
+    }
+    if (method == 1 && !ModemHttpContract::payloadFits(payload)) {
+      setLastError("payload HTTP demasiado largo");
+      return false;
+    }
+
     ScopedLock lock(*this);
     if (!lock.locked()) return false;
 
@@ -557,9 +576,17 @@ private:
       setLastError("parámetros HTTP inválidos");
       return false;
     }
+    if (!ModemHttpContract::urlFits(url)) {
+      setLastError("URL HTTP demasiado larga");
+      return false;
+    }
+    if (method == 1 && !ModemHttpContract::payloadFits(payload)) {
+      setLastError("payload HTTP demasiado largo");
+      return false;
+    }
 
-    char normalizedUrl[512];
-    char cmd[512];
+    char normalizedUrl[ModemHttpContract::kHttpUrlStorageBytes];
+    char cmd[ModemHttpContract::kHttpAtCommandBufferBytes];
     // savedError preserva el error real antes del cleanup, que puede machacarlo con "OK"
     char savedError[sizeof(lastError)];
     memcpy(savedError, lastError, sizeof(savedError));
@@ -573,7 +600,7 @@ private:
 
     if (!normalizeHttpUrl(url, normalizedUrl, sizeof(normalizedUrl))) return false;
 
-    char requestUrl[512];
+    char requestUrl[ModemHttpContract::kHttpUrlStorageBytes];
     char host[128];
     copyCString(requestUrl, sizeof(requestUrl), normalizedUrl);
     bool hasHost = extractHttpHost(normalizedUrl, host, sizeof(host));
@@ -604,7 +631,14 @@ retry_http:
     }
 
     if (isHttps) {
-      sendATOptionalLocked("AT+HTTPPARA=\"SSLCFG\",\"0\"", "OK", 5000);
+      // SIM7600 SSL context 0: strict peer verification and SNI.  The CA
+      // bundle is provisioned at manufacturing as cacert.pem; a missing or
+      // invalid CA therefore fails closed instead of silently using HTTP.
+      if (!sendATLocked("AT+CSSLCFG=\"sslversion\",0,3", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"authmode\",0,1", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"cacert\",0,\"cacert.pem\"", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"enableSNI\",0,1", "OK", 10000)) goto cleanup;
+      if (!sendATLocked("AT+HTTPPARA=\"SSLCFG\",\"0\"", "OK", 5000)) goto cleanup;
     }
 
     written = snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"%s\"", requestUrl);
@@ -751,6 +785,7 @@ cleanup:
     unsigned long start = millis();
     bool headerSeen = false;
     bool truncated = false;
+    _lastHttpResponseTruncated = false;
     int idx = 0;
 
     // Buscar "+HTTPREAD" con streaming, sin quemar 2s por línea
@@ -805,10 +840,9 @@ cleanup:
       setLastError("respuesta HTTP incompleta");
       return false;
     }
-    if (truncated) {
-      setLastError("respuesta HTTP truncada");
-      return false;
-    }
+    // The body is intentionally bounded by the caller.  A successful 2xx is
+    // still a successful transaction; callers receive the truncation flag.
+    _lastHttpResponseTruncated = truncated;
     return true;
   }
 

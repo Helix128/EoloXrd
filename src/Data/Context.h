@@ -50,19 +50,6 @@ typedef struct Context
     UploadService uploader;
 
     static constexpr int CAPTURE_INTERVAL = CaptureController::CAPTURE_INTERVAL;
-    bool &isCapturing = capture.isCapturing;
-    bool &isPaused = capture.isPaused;
-    bool &isEnd = capture.isEnd;
-    bool &motorOverheatActive = motorCapture.motorOverheatActive;
-    bool &motorThermalSensorValid = motorCapture.motorThermalSensorValid;
-    float &motorThermalTemperature = motorCapture.motorThermalTemperature;
-    SDStatus &sdStatus = logging.sdStatus;
-    bool &isSdReady = logging.isSdReady;
-    const char *&eoloDir = logging.eoloDir;
-    const char *&logsDir = logging.logsDir;
-    std::atomic_bool &uploadPending = logging.uploadPending;
-    std::atomic_bool &uploadActive = uploader.uploadActive;
-    std::atomic_bool &logActive = logging.logActive;
     bool uiDirty = true;
 
     UiSnapshot uiSnapshot;
@@ -98,18 +85,44 @@ public:
     Context() {}
 #endif
 
+    // Context remains the public boundary for application and scene code.
+    // These queries deliberately expose values, never aliases to the mutable
+    // state owned by capture, motor control, logging, or upload services.
+    bool isCaptureActive() const { return capture.isCapturing; }
+    bool isCapturePaused() const { return capture.isPaused; }
+    bool hasCaptureEnded() const { return capture.isEnd; }
+
+    bool isMotorOverheatActive() const { return motorCapture.motorOverheatActive; }
+    bool isMotorThermalSensorValid() const { return motorCapture.motorThermalSensorValid; }
+    float motorThermalTemperatureC() const { return motorCapture.motorThermalTemperature; }
+
+    SDStatus sdStatus() const { return logging.sdStatus; }
+    bool isSdReady() const { return logging.isSdReady; }
+    const char *logsDirectory() const { return logging.logsDir; }
+
+    bool isLogActive() const { return logging.logActive.load(); }
+    bool isUploadPending() const {
+#ifdef FEATURE_MODEM
+        return logging.uploadPending.load() || components.api.pendingTelemetry() > 0;
+#else
+        return logging.uploadPending.load();
+#endif
+    }
+    bool isUploadActive() const {
+#ifdef FEATURE_MODEM
+        return uploader.uploadActive.load() || components.api.telemetryInFlight();
+#else
+        return uploader.uploadActive.load();
+#endif
+    }
+
     void begin()
     {
         PROFILE_SCOPE("context.begin");
         // 1. Esperar a que los periféricos (ya encendidos en main.cpp) se estabilicen
         delay(100); 
 
-        bool grande = false;
-#ifdef FEATURE_MODEM
-        grande = true;
-#endif
-        const char *versionType = grande ? "Standard" : "Express";
-        LOG_F("Iniciando EOLO %s\n", versionType);
+        LOG_F("Iniciando %s\n", EoloConfig::kModelName);
 
 #ifndef FEATURE_HEADLESS
         // 3. Inicializar pantalla
@@ -272,7 +285,7 @@ public:
             return;
         }
 #if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
-        u8g2.setBusClock(EoloConfig::board.displaySpiClockHz);
+        u8g2.setBusClock(EoloConfig::displaySpiClockHz);
 #elif !EOLO_DISPLAY_SPI
         u8g2.setBusClock(I2C_CLOCK);
 #endif
@@ -312,7 +325,7 @@ public:
 #endif
     }
 
-    bool initSD() { return logging.initSD(*this); }
+    bool initSD() { return logging.initSD(); }
     void markSdFailed() { logging.markSdFailed(); }
     void saveSession() { sessionStore.save(session); }
     bool loadSession() { return sessionStore.load(session, components.rtc); }
@@ -357,11 +370,11 @@ public:
         uiSnapshot.environment.humidity = bmeValid ? bmeData.humidity : -1.0f;
         uiSnapshot.environment.pressure = bmeValid ? bmeData.pressure : -1.0f;
 #ifdef FEATURE_NTC
-        uiSnapshot.environment.ntcValid = motorThermalSensorValid;
-        uiSnapshot.environment.ntcTemperature = motorThermalTemperature;
-        uiSnapshot.environment.motorOverheat = motorOverheatActive;
-        uiSnapshot.environment.motorThermalSensorValid = motorThermalSensorValid;
-        uiSnapshot.environment.motorThermalTemperature = motorThermalTemperature;
+        uiSnapshot.environment.ntcValid = isMotorThermalSensorValid();
+        uiSnapshot.environment.ntcTemperature = motorThermalTemperatureC();
+        uiSnapshot.environment.motorOverheat = isMotorOverheatActive();
+        uiSnapshot.environment.motorThermalSensorValid = isMotorThermalSensorValid();
+        uiSnapshot.environment.motorThermalTemperature = motorThermalTemperatureC();
 #else
         uiSnapshot.environment.ntcValid = false;
         uiSnapshot.environment.ntcTemperature = -1.0f;
@@ -446,15 +459,15 @@ public:
 #endif
 
         DateTime now = components.rtc.now();
-        uiSnapshot.status.sdReady = isSdReady;
-        uiSnapshot.status.sdStatus = (int)sdStatus;
+        uiSnapshot.status.sdReady = isSdReady();
+        uiSnapshot.status.sdStatus = (int)sdStatus();
 #ifdef FEATURE_MODEM
         ModemServiceState modemState = components.modemService.state();
         uiSnapshot.status.modemEnabled = true;
         uiSnapshot.status.modemPowered = modemState != ModemServiceState::Off;
         uiSnapshot.status.modemActive = modemState == ModemServiceState::Booting ||
                                         modemState == ModemServiceState::Busy ||
-                                        uploadActive;
+                                        isUploadActive();
         uiSnapshot.status.modemError = modemState == ModemServiceState::Error;
         uiSnapshot.status.modemSignalKnown = components.modemService.hasSignalQuality();
         uiSnapshot.status.modemSignalBars = components.modemService.signalQualityBars();
@@ -468,8 +481,8 @@ public:
         uiSnapshot.status.modemSignalBars = 0;
         uiSnapshot.status.modemSignalCsq = 99;
 #endif
-        uiSnapshot.status.uploadPending = uploadPending.load();
-        uiSnapshot.status.uploadActive = uploadActive.load();
+        uiSnapshot.status.uploadPending = isUploadPending();
+        uiSnapshot.status.uploadActive = isUploadActive();
         uiSnapshot.status.displayOn = isDisplayOn;
         uiSnapshot.status.unixTime = now.unixtime();
         uiSnapshot.status.hour = now.hour();
@@ -496,12 +509,168 @@ public:
         return changed;
     }
 
-    void startLogTask() { logging.startLogTask(*this); }
-    void enqueueLogData() { logging.enqueueLogData(*this); }
+    void startLogTask() { logging.startLogTask(); }
+
+    bool buildLogRecord(LogRecord &record)
+    {
+        record = LogRecord();
+        record.timestampUnix = getUnixTime();
+        record.elapsedSeconds = session.elapsedTime;
+        record.targetFlow = session.targetFlow;
+        record.capturedVolume = session.capturedVolume;
+        record.sessionActive = isCaptureActive();
+
+        BME280Data bmeData;
+        (void)components.bme.getData(bmeData);
+        record.environment = bmeData;
+
+        (void)components.flowSensor.getData(record.flow);
+#ifdef FEATURE_PLANTOWER
+        (void)components.plantower.getData(record.plantower);
+#endif
+#ifdef FEATURE_ANEMOMETER
+        (void)components.anemometer.getData(record.anemometer);
+#endif
+#ifdef FEATURE_NTC
+        (void)components.ntc.getData(record.ntc);
+#endif
+        record.batteryVoltage = components.battery.getVoltage();
+        record.batteryPercent = components.battery.getPct();
+        return record.flow.valid || record.environment.valid ||
+               record.plantower.valid || record.anemometer.valid;
+    }
+
+    void enqueueLogData()
+    {
+        if (!logging.hasLogQueue())
+            logging.startLogTask();
+
+        LogRecord record;
+        (void)buildLogRecord(record);
+        saveSession();
+
+#ifdef FEATURE_FLOW_PID
+        const bool kickActive = motorCapture.getPidStatus().kickActive;
+#else
+        const bool kickActive = false;
+#endif
+        logging.enqueueLogRecord(record, session.startUnix,
+#ifdef FEATURE_FLOW_PID
+                                 true,
+#else
+                                 false,
+#endif
+#ifdef FEATURE_PLANTOWER
+                                 session.usePlantower,
+#else
+                                 false,
+#endif
+#ifdef FEATURE_ANEMOMETER
+                                 true,
+#else
+                                 false,
+#endif
+#ifdef FEATURE_NTC
+                                 true,
+#else
+                                 false,
+#endif
+                                 kickActive);
+    }
     bool logsIdle() const { return logging.logsIdle(); }
-    void processCaptureSample() { logging.processCaptureSample(*this); }
-    bool logData() { return logging.logData(*this); }
-    void uploadData() { uploader.uploadData(*this); }
+    void processCaptureSample()
+    {
+        enqueueLogData();
+#ifdef FEATURE_MODEM
+        uploadData();
+#endif
+    }
+    bool logData()
+    {
+        LogRecord record;
+        (void)buildLogRecord(record);
+        return logging.logData(record, session.startUnix,
+#ifdef FEATURE_FLOW_PID
+                               true,
+#else
+                               false,
+#endif
+#ifdef FEATURE_PLANTOWER
+                               session.usePlantower,
+#else
+                               false,
+#endif
+#ifdef FEATURE_ANEMOMETER
+                               true,
+#else
+                               false,
+#endif
+#ifdef FEATURE_NTC
+                               true,
+#else
+                               false,
+#endif
+#ifdef FEATURE_FLOW_PID
+                               motorCapture.getPidStatus().kickActive ? "Arrancando" : "Capturando"
+#else
+                               "Capturando"
+#endif
+        );
+    }
+    bool collectTelemetrySnapshot(TelemetrySnapshot &snapshot)
+    {
+        snapshot = TelemetrySnapshot();
+        snapshot.timestampUnix = getUnixTime();
+        snapshot.targetFlow = session.targetFlow;
+        snapshot.capturedVolume = session.capturedVolume;
+
+        BME280Data bmeData;
+        bool bmeValid = components.bme.getData(bmeData);
+        snapshot.environment.temperature = bmeValid ? bmeData.temperature : -1.0f;
+        snapshot.environment.humidity = bmeValid ? bmeData.humidity : -1.0f;
+        snapshot.environment.pressure = bmeValid ? bmeData.pressure : -1.0f;
+        snapshot.environment.valid = bmeValid;
+        float batteryVoltage = components.battery.getVoltage();
+        snapshot.batteryVoltage = isfinite(batteryVoltage) && batteryVoltage >= 0.0f ? batteryVoltage : -1.0f;
+
+        float rtcTemperature = -1.0f;
+        snapshot.rtcTemperature = components.rtc.getTemperature(rtcTemperature) ? rtcTemperature : -1.0f;
+
+#ifdef FEATURE_ANEMOMETER
+        (void)components.anemometer.getData(snapshot.anemometer);
+#endif
+#ifdef FEATURE_PLANTOWER
+        (void)components.plantower.getData(snapshot.plantower);
+#endif
+        (void)components.flowSensor.getData(snapshot.flow);
+#ifdef FEATURE_MODEM
+        GnssData gnss = components.modemService.gnssData();
+        if (gnss.valid) {
+            snapshot.latitude = gnss.latitude;
+            snapshot.longitude = gnss.longitude;
+            snapshot.gpsSpeed = gnss.speedKmh;
+            snapshot.satellites = gnss.satellites;
+        }
+        snapshot.signalStrength = components.modemService.signalQualityForTelemetry();
+#endif
+        return snapshot.flow.valid || snapshot.environment.valid ||
+               snapshot.anemometer.valid || snapshot.plantower.valid;
+    }
+
+    void uploadData()
+    {
+#ifdef FEATURE_MODEM
+        PROFILE_SCOPE("context.upload");
+        uploader.uploadActive = true;
+        markUiDirty();
+
+        TelemetrySnapshot snapshot;
+        (void)collectTelemetrySnapshot(snapshot);
+        uploader.publishSnapshot(components.api, snapshot);
+        uploader.uploadActive = false;
+        markUiDirty();
+#endif
+    }
 
     bool update()
     {
@@ -553,20 +722,49 @@ public:
     void resumeCapture() { capture.resume(*this); }
     void endCapture() { capture.end(*this); }
     void resetCapture() { capture.reset(*this); }
-    bool updateMotorThermalProtection() { return motorCapture.updateThermalProtection(*this); }
+    bool updateMotorThermalProtection()
+    {
+#ifdef FEATURE_NTC
+        const bool previousActive = motorCapture.motorOverheatActive;
+        const bool previousValid = motorCapture.motorThermalSensorValid;
+        const float previousTemperature = motorCapture.motorThermalTemperature;
+        NTCData ntcData;
+        const bool ntcValid = components.ntc.getData(ntcData);
+        const bool overheat = motorCapture.updateThermalProtection(ntcData, ntcValid,
+                                                                     components.motor);
+        if (previousActive != motorCapture.motorOverheatActive ||
+            previousValid != motorCapture.motorThermalSensorValid ||
+            fabsf(previousTemperature - motorCapture.motorThermalTemperature) > 0.1f)
+        {
+            markUiDirty();
+        }
+        return overheat;
+#else
+        NTCData ignoredNtc;
+        return motorCapture.updateThermalProtection(ignoredNtc, false, components.motor);
+#endif
+    }
     void resetMotorFlowController() { motorCapture.resetFlowController(); }
-    void updateMotors() { motorCapture.updateMotors(*this); }
+    void stopPidTest()
+    {
+#if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
+        motorCapture.stopPidTest(components.motor);
+#endif
+    }
+    void updateMotors()
+    {
+        FlowData flowData;
+        const bool flowReadValid = components.flowSensor.getData(flowData);
+        motorCapture.updateMotors(components.motor, flowData, flowReadValid,
+                                  session.targetFlow, calibration);
+    }
     void updateCapture() { capture.update(*this); }
 
 } Context;
 
-#define CONTEXT_CLASS_DEFINED
-
-// Re-include the headers to trigger compilation of their inline implementations
-#include "Logging/LogService.h"
-#include "CaptureController.h"
-#include "RTCNetworkSync.h"
-#include "MotorCaptureControl.h"
-#include "UploadService.h"
+// Capture control remains a transitional adapter over Context. Its bindings
+// are explicit and included only after this composition root is complete.
+#include "ContextCaptureController.h"
+#include "ContextHeadlessMotorCalibration.h"
 
 #endif
