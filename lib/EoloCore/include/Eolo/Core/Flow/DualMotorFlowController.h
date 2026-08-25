@@ -92,14 +92,17 @@ public:
             return mapOutput(out, in.primaryMotor, in.maxPwm);
         }
 
-        if (targetChanged && in.hasFeedForward)
+        if (targetChanged)
         {
-            _virtualPwm = virtualFromMotors(in.feedForwardPrimary, in.feedForwardSecondary, in.maxPwm);
-            _controller.reset();
-            _controller.seedRunning(_virtualPwm);
             _graceStartMs = 0;
             _graceActive = false;
             _faultStopped = false;
+            if (_virtualPwm == 0 && in.hasFeedForward)
+            {
+                _virtualPwm = virtualFromMotors(in.feedForwardPrimary, in.feedForwardSecondary, in.maxPwm);
+                _controller.reset();
+                _controller.seedRunning(_virtualPwm);
+            }
         }
 
         const bool newSample = in.flowValid && in.flowFresh && in.sampleId != 0 && in.sampleId != _lastSampleId;

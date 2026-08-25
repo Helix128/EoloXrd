@@ -258,8 +258,8 @@ public:
     }
 
     // Arranca el lazo desde un mando externo (por ejemplo, feed-forward de
-    // calibración) sin sustituirlo por un kick. El siguiente update conserva
-    // el PID y corrige alrededor de este valor.
+    // calibración) sin sustituirlo por un kick. El siguiente update busca
+    // y enclava el centro alrededor de este valor inicial.
     void seedRunning(int pwm)
     {
         _initialized = true;
@@ -267,8 +267,7 @@ public:
         _ignPhase = IgnitionPhase::Run;
         _lastUpdateMs = 0;
         _fault = FLOW_PID_FAULT_NONE;
-        _smart.resetController(true);
-        _smart.seedCenter(_currentPwm);
+        _smart.resetController(false);
     }
 
     FlowMotorOutput update(const FlowMotorInput &input, const FlowPidConfig &config)
@@ -312,7 +311,7 @@ public:
             _initialized = true;
             _smart.setTune(tuneFromConfig(config));
             if (wasRun)
-                _smart.resetController(true);
+                _smart.uncenter();
             else if (!wasRun && _ignPhase == IgnitionPhase::Off)
                 _smart.resetController(false);
             _targetFlow = input.targetFlow;

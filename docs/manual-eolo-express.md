@@ -89,10 +89,12 @@ Los datos se guardan en:
 El intervalo de registro es de 10 segundos. El CSV de EOLO Express contiene:
 
 ```text
-time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct
+time,flow,flow_target,captured_volume,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct
 ```
 
 EOLO Express no registra `wind_speed` ni `wind_direction`, porque no incluye anemometro. Las columnas PM corresponden al sensor Plantower.
+
+`captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
 
 ## Reloj
 

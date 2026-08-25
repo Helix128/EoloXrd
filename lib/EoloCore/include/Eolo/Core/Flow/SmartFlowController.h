@@ -88,6 +88,7 @@ class SmartFlowController
     bool isBreakout = false;
     uint32_t breakoutStartMs = 0;
     SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
+    float previousTargetFlow = -1.0f;
 
     static int clampInt(int value, int low, int high)
     {
@@ -124,6 +125,20 @@ public:
         return tune;
     }
 
+    void uncenter()
+    {
+        centerFound = false;
+        centerPwm = 0;
+        mode = SMART_FLOW_SEEK_CENTER;
+        currentTrim = 0.0f;
+        integral = 0.0f;
+        settledTicks = 0;
+        isDrifting = false;
+        driftStartMs = 0;
+        isBreakout = false;
+        breakoutStartMs = 0;
+    }
+
     void seedCenter(int pwm)
     {
         if (pwm > 0)
@@ -136,6 +151,7 @@ public:
             settledTicks = 3;
             isDrifting = false;
             isBreakout = false;
+            previousTargetFlow = -1.0f;
         }
     }
 
@@ -159,6 +175,7 @@ public:
         driftStartMs = 0;
         isBreakout = false;
         breakoutStartMs = 0;
+        previousTargetFlow = -1.0f;
 
         if (!preserveModel)
         {
@@ -209,6 +226,13 @@ public:
             status.mode = SMART_FLOW_SEEK_CENTER;
             return status;
         }
+
+        // Cambio de consigna activo durante ejecución: forzar re-búsqueda suave de centro
+        if (previousTargetFlow >= 0.0f && fabsf(targetFlow - previousTargetFlow) > 0.001f)
+        {
+            uncenter();
+        }
+        previousTargetFlow = targetFlow;
 
         int nextPwm = currentPwm;
         int activeSeekStep = tune.seekStep > 0 ? tune.seekStep : tune.maxStep;

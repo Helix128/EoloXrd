@@ -596,6 +596,220 @@ static void test_smart_flow_recenter_on_sustained_drift()
     TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_RECENTER), static_cast<int>(status.mode));
 }
 
+static void test_smart_flow_fluid_transition_on_target_change()
+{
+    SmartFlowController controller;
+    SmartFlowTune tune;
+    tune.deadband = 0.10f;
+    tune.seekStep = 20;
+    tune.maxStep = 20;
+    tune.fastAlpha = 1.0f;
+    controller.setTune(tune);
+
+    int pwm = 0;
+    SmartFlowStatus status;
+
+    // Etapa 1: Target = 1.0 L/min, busca y enclava en 1.0 L/min
+    status = controller.update(100, pwm, 1.0f, 0.5f, 0.1f, 2047);
+    pwm = status.pwm;
+    TEST_ASSERT_FALSE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_SEEK_CENTER), static_cast<int>(status.mode));
+
+    // Estabiliza 3 ticks en 1.0 L/min -> Enclava centro en PWM 600
+    status = controller.update(200, 600, 1.0f, 1.02f, 0.1f, 2047);
+    status = controller.update(300, 600, 1.0f, 1.00f, 0.1f, 2047);
+    status = controller.update(400, 600, 1.0f, 0.99f, 0.1f, 2047);
+    TEST_ASSERT_TRUE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(600, status.centerPwm);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_CENTER_LOCKED), static_cast<int>(status.mode));
+
+    // Etapa 2: Cambio de target a 2.0 L/min en caliente desde PWM = 600
+    status = controller.update(500, 600, 2.0f, 1.00f, 0.1f, 2047);
+    TEST_ASSERT_FALSE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_SEEK_CENTER), static_cast<int>(status.mode));
+    TEST_ASSERT_TRUE(status.pwm > 600);
+    TEST_ASSERT_TRUE(status.pwm <= 620);
+
+    // Continúa subiendo fluidamente hacia el nuevo target
+    pwm = status.pwm;
+    status = controller.update(600, pwm, 2.0f, 1.50f, 0.1f, 2047);
+    TEST_ASSERT_FALSE(status.centerFound);
+    TEST_ASSERT_TRUE(status.pwm > pwm);
+
+    // Flujo llega a 2.0 L/min y se estabiliza 3 ticks en PWM = 850
+    status = controller.update(700, 850, 2.0f, 2.02f, 0.1f, 2047);
+    status = controller.update(800, 850, 2.0f, 2.00f, 0.1f, 2047);
+    status = controller.update(900, 850, 2.0f, 1.99f, 0.1f, 2047);
+    TEST_ASSERT_TRUE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(850, status.centerPwm);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_CENTER_LOCKED), static_cast<int>(status.mode));
+}
+
+static void test_smart_flow_uncenters_on_close_targets()
+{
+    SmartFlowController controller;
+    SmartFlowTune tune;
+    tune.deadband = 0.10f;
+    tune.seekStep = 16;
+    tune.fastAlpha = 1.0f;
+    controller.setTune(tune);
+    controller.seedCenter(800);
+
+    // Con centro enclavado en 800 para 2.0 L/min
+    SmartFlowStatus status = controller.update(100, 800, 2.0f, 2.0f, 0.1f, 2047);
+    TEST_ASSERT_TRUE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(800, status.centerPwm);
+
+    // Cambio cercano: de 2.0 a 2.3 L/min (diferencia 0.3 L/min < breakoutThreshold de 2.0)
+    status = controller.update(200, 800, 2.3f, 2.0f, 0.1f, 2047);
+    TEST_ASSERT_FALSE(status.centerFound);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(SmartFlowMode::SMART_FLOW_SEEK_CENTER), static_cast<int>(status.mode));
+    TEST_ASSERT_TRUE(status.pwm > 800);
+}
+
+static void test_flow_motor_controller_no_kick_on_running_target_change()
+{
+    FlowMotorController controller;
+    FlowPidConfig config;
+    config.intervalMs = 100;
+    config.deadband = 0.10f;
+    config.kp = 14.0f;
+    config.ki = 0.4f;
+    config.integralLimit = 16.0f;
+    config.maxStep = 16;
+    config.filterAlpha = 1.0f;
+    config.minActive = 0.20f;
+    config.kd = 0.0f;
+    config.maxDtMs = 2000;
+    config.sensorStaleMs = 2000;
+    config.kickPwm = 1500;
+    config.kickMs = 200;
+    config.stallFlowLpm = 0.1f;
+    config.restallCooldownMs = 5000;
+    config.stallConfirmMs = 500;
+    config.softTrimMax = 64;
+    config.softMaxStep = 2;
+    config.sensitivity = 1.0f;
+    config.recenterDelayMs = 4000;
+
+    FlowMotorInput input;
+    input.nowMs = 0;
+    input.currentPwm = 0;
+    input.targetFlow = 1.0f;
+    input.measuredFlow = 0.0f;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.maxPwm = 2047;
+
+    // 1. Kick inicial
+    FlowMotorOutput out = controller.update(input, config);
+    TEST_ASSERT_TRUE(out.kickActive);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(IgnitionPhase::Kick), static_cast<int>(out.ignitionPhase));
+    TEST_ASSERT_EQUAL_UINT16(1, out.kickCount);
+
+    // 2. Transición a Run tras kickMs
+    input.nowMs = 250;
+    input.currentPwm = out.pwm;
+    input.measuredFlow = 0.8f;
+    out = controller.update(input, config);
+    TEST_ASSERT_FALSE(out.kickActive);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(IgnitionPhase::Run), static_cast<int>(out.ignitionPhase));
+    TEST_ASSERT_EQUAL_UINT16(1, out.kickCount);
+
+    // Estabiliza en 1.0 L/min
+    input.nowMs = 350;
+    input.currentPwm = 600;
+    input.measuredFlow = 1.0f;
+    out = controller.update(input, config);
+
+    input.nowMs = 450;
+    input.currentPwm = 600;
+    input.measuredFlow = 1.0f;
+    out = controller.update(input, config);
+
+    input.nowMs = 550;
+    input.currentPwm = 600;
+    input.measuredFlow = 1.0f;
+    out = controller.update(input, config);
+    TEST_ASSERT_TRUE(out.smartStatus.centerFound);
+
+    // 3. Cambio de target a 2.0 L/min en marcha
+    input.nowMs = 650;
+    input.targetFlow = 2.0f;
+    input.currentPwm = 600;
+    input.measuredFlow = 1.0f;
+    out = controller.update(input, config);
+
+    // NO debe hacer kick, debe seguir en Run con kickCount = 1
+    TEST_ASSERT_FALSE(out.kickActive);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(IgnitionPhase::Run), static_cast<int>(out.ignitionPhase));
+    TEST_ASSERT_EQUAL_UINT16(1, out.kickCount);
+    TEST_ASSERT_FALSE(out.smartStatus.centerFound);
+    TEST_ASSERT_TRUE(out.pwm > 600);
+}
+
+static void test_dual_motor_multi_stage_seamless_pwm()
+{
+    DualMotorFlowController dual;
+    FlowPidConfig config;
+    config.intervalMs = 100;
+    config.deadband = 0.10f;
+    config.kp = 14.0f;
+    config.ki = 0.4f;
+    config.integralLimit = 16.0f;
+    config.maxStep = 16;
+    config.filterAlpha = 1.0f;
+    config.minActive = 0.20f;
+    config.kd = 0.0f;
+    config.maxDtMs = 2000;
+    config.sensorStaleMs = 2000;
+    config.kickPwm = 1500;
+    config.kickMs = 200;
+    config.stallFlowLpm = 0.0f;
+    config.restallCooldownMs = 5000;
+    config.stallConfirmMs = 500;
+    config.softTrimMax = 64;
+    config.softMaxStep = 2;
+    config.sensitivity = 1.0f;
+    config.recenterDelayMs = 4000;
+
+    DualMotorFlowInput in;
+    in.nowMs = 0;
+    in.targetFlow = 1.0f;
+    in.measuredFlow = 0.0f;
+    in.flowValid = true;
+    in.flowFresh = true;
+    in.sampleId = 1;
+    in.maxPwm = 2047;
+    in.primaryMotor = 0;
+    in.hasFeedForward = false;
+
+    // Inicio con Kick
+    DualMotorFlowOutput out = dual.update(in, config);
+    TEST_ASSERT_TRUE(out.kickActive);
+
+    // Pasa a Run
+    in.nowMs = 250;
+    in.sampleId = 2;
+    in.measuredFlow = 0.95f;
+    out = dual.update(in, config);
+    TEST_ASSERT_FALSE(out.kickActive);
+
+    int runningPwm = out.virtualPwm;
+    TEST_ASSERT_TRUE(runningPwm > 0);
+
+    // Cambio de etapa: target 2.0 L/min
+    in.nowMs = 350;
+    in.sampleId = 3;
+    in.targetFlow = 2.0f;
+    in.measuredFlow = 1.0f;
+    out = dual.update(in, config);
+
+    // Continuidad: no debe caer a 0 ni reiniciar kick
+    TEST_ASSERT_FALSE(out.kickActive);
+    TEST_ASSERT_TRUE(out.virtualPwm >= runningPwm);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -626,5 +840,9 @@ int main(int, char **)
     RUN_TEST(test_smart_flow_soft_trim_limits_excursion_and_step);
     RUN_TEST(test_smart_flow_sensitivity_scaling);
     RUN_TEST(test_smart_flow_recenter_on_sustained_drift);
+    RUN_TEST(test_smart_flow_fluid_transition_on_target_change);
+    RUN_TEST(test_smart_flow_uncenters_on_close_targets);
+    RUN_TEST(test_flow_motor_controller_no_kick_on_running_target_change);
+    RUN_TEST(test_dual_motor_multi_stage_seamless_pwm);
     return UNITY_END();
 }

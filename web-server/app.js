@@ -1,48 +1,58 @@
-const $ = id => document.getElementById(id);
-let logFiles = [], flowSections = [], presets = [];
-const MAX_SECTIONS = 8, INF = 4294967295;
+// EOLO Dron - Panel de Control & Gestor de Captura
+// 100% Flat, Sin Emojis, Modular y Optimizado
 
-// Helper: Format bytes to human readable
-function fmtSize(n) {
-  if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
-  if (n > 1024) return (n / 1024).toFixed(1) + ' KB';
-  return n + ' B';
+const $ = id => document.getElementById(id);
+const MAX_BLOCKS = 8;
+const INF = 4294967295;
+
+let flowBlocks = [];
+let logFiles = [];
+let presets = [];
+let _debugActive = false;
+let _debugTimer = null;
+let _debugMaxPwm = 2047;
+
+// Formateo de bytes
+function fmtBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+  if (bytes > 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
 }
 
-// Toast Notifications
+// Notificaciones Toast (sin emojis)
 function notify(msg, type = 'info', timeout = 3500) {
-  if (!document.querySelector('.toast-container')) {
-    const tc = document.createElement('div');
-    tc.className = 'toast-container';
-    document.body.appendChild(tc);
-  }
+  const container = $('toastContainer') || document.body;
   const el = document.createElement('div');
   el.className = 'toast ' + (type === 'success' ? 'success' : type === 'error' ? 'error' : '');
   el.textContent = msg;
-  document.querySelector('.toast-container').appendChild(el);
+  container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = '0';
-    setTimeout(() => el.remove(), 300);
+    setTimeout(() => el.remove(), 250);
   }, timeout);
 }
 
-// Time Split Helpers
+// Utilidades de Tiempo
 function secToMinSec(totalSeconds) {
   if (totalSeconds === INF || totalSeconds === '' || totalSeconds === null || totalSeconds === undefined || isNaN(totalSeconds)) {
-    return { min: '', sec: '' };
+    return { min: 0, sec: 0 };
   }
+  const s = Math.max(0, Math.floor(Number(totalSeconds)));
   return {
-    min: Math.floor(totalSeconds / 60),
-    sec: totalSeconds % 60
+    min: Math.floor(s / 60),
+    sec: s % 60
   };
 }
 
 function minSecToSec(min, sec) {
-  return (Number(min || 0) * 60) + Number(sec || 0);
+  const m = Math.max(0, Math.floor(Number(min || 0)));
+  const s = Math.max(0, Math.min(59, Math.floor(Number(sec || 0))));
+  return (m * 60) + s;
 }
 
 function formatDuration(totalSeconds) {
-  if (totalSeconds === INF || Number(totalSeconds) === INF) return 'Sin límite';
+  if (totalSeconds === INF || Number(totalSeconds) === INF) return 'Sin limite';
   const n = Number(totalSeconds || 0);
   if (n <= 0) return '0 s';
   const h = Math.floor(n / 3600);
@@ -51,41 +61,54 @@ function formatDuration(totalSeconds) {
   return [h ? `${h} h` : '', m ? `${m} min` : '', s ? `${s} s` : ''].filter(Boolean).join(' ') || '0 s';
 }
 
-function clampNumber(value, min, max) {
-  if (value === '') return '';
-  const n = Number(value);
-  if (isNaN(n)) return '';
-  return Math.max(min, Math.min(max, Math.floor(n)));
+function formatTime(totalSeconds) {
+  if (totalSeconds === INF || Number(totalSeconds) === INF) return '--:--';
+  const n = Math.max(0, Math.floor(Number(totalSeconds || 0)));
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = n % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  if (h > 0) {
+    return `${h}:${mm}:${ss}`;
+  }
+  return `${mm}:${ss}`;
 }
 
-function normalizeTimePair(minInput, secInput) {
-  minInput.value = clampNumber(minInput.value, 0, 1440);
-  secInput.value = clampNumber(secInput.value, 0, 59);
-  return minSecToSec(minInput.value, secInput.value);
+function formatRtc(raw) {
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return raw || '--';
+    return d.toLocaleString('es-CL', { hour12: false });
+  } catch (_) {
+    return raw || '--';
+  }
 }
 
-function sectionStart(index) {
-  return flowSections.slice(0, index).reduce((sum, s) => sum + Number(s.durationSeconds || 0), 0);
+// Color según caudal para el timeline (Flat Palette)
+function getFlowColor(flow) {
+  const f = Number(flow || 0);
+  if (f <= 0.05) return '#475569'; // Detenido / purga
+  if (f <= 2.5) return '#0284c7';  // Caudal bajo (azul cielo)
+  if (f <= 4.5) return '#0d9488';  // Caudal medio-bajo (verde azulado)
+  if (f <= 6.0) return '#10b981';  // Caudal nominal 5.0 (esmeralda)
+  if (f <= 7.2) return '#f59e0b';  // Caudal alto (ámbar)
+  return '#ef4444';                // Caudal máximo 8.0 (rojo coral)
 }
 
-// Theme Toggle Logic
+// Gestión de Tema Claro / Oscuro
 function initTheme() {
-  const savedTheme = localStorage.getItem('eolo-theme');
-  const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-  const activeTheme = savedTheme || (prefersLight ? 'light' : 'dark');
-  setTheme(activeTheme);
+  const saved = localStorage.getItem('eolo_theme');
+  const theme = saved || 'dark';
+  setTheme(theme);
 }
 
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('eolo-theme', theme);
-  if (theme === 'light') {
-    document.querySelector('.icon-sun').classList.remove('hidden');
-    document.querySelector('.icon-moon').classList.add('hidden');
-  } else {
-    document.querySelector('.icon-sun').classList.add('hidden');
-    document.querySelector('.icon-moon').classList.remove('hidden');
-  }
+  localStorage.setItem('eolo_theme', theme);
+  const isLight = theme === 'light';
+  document.querySelector('.icon-sun').classList.toggle('hidden', !isLight);
+  document.querySelector('.icon-moon').classList.toggle('hidden', isLight);
 }
 
 $('themeToggle').addEventListener('click', () => {
@@ -93,806 +116,1144 @@ $('themeToggle').addEventListener('click', () => {
   setTheme(current === 'light' ? 'dark' : 'light');
 });
 
-// Drawer Navigation Router
-const menuToggle = $('menuToggle');
-const closeDrawer = $('closeDrawer');
-const navDrawer = $('navDrawer');
-const drawerOverlay = $('drawerOverlay');
-
-function openMenu() {
-  navDrawer.classList.add('open');
-  drawerOverlay.classList.add('open');
-}
-
-function closeMenu() {
-  navDrawer.classList.remove('open');
-  drawerOverlay.classList.remove('open');
-}
-
-menuToggle.addEventListener('click', openMenu);
-closeDrawer.addEventListener('click', closeMenu);
-drawerOverlay.addEventListener('click', closeMenu);
-
-document.querySelectorAll('.nav-item').forEach(btn => {
+// Navegación por pestañas
+document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    
+
     const target = btn.dataset.target;
-    document.querySelectorAll('.section-view').forEach(view => view.classList.remove('active'));
-    $(target).classList.add('active');
-    closeMenu();
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    if ($(target)) $(target).classList.add('active');
+
+    if (target === 'view-debug' && _debugActive) {
+      startDebugRefresh();
+    } else {
+      stopDebugRefresh();
+    }
   });
 });
 
-// Time split duration managers
-function setDuration(v) {
-  if (v === 'infinite' || Number(v) === INF) {
-    $('durationMode').value = 'infinite';
-    $('durationField').classList.add('hidden');
-  } else {
-    $('durationMode').value = 'finite';
-    $('durationField').classList.remove('hidden');
-    const t = secToMinSec(v);
-    $('durMin').value = t.min;
-    $('durSec').value = t.sec;
-  }
-  updateScheduleStatus();
-}
-
-function durationSeconds() {
-  return $('durationMode').value === 'infinite' ? INF : minSecToSec($('durMin').value, $('durSec').value);
-}
-
-function waitSeconds() {
-  return minSecToSec($('waitMin').value, $('waitSec').value);
-}
-
-function flowMode() {
+// Estado y Modo de Flujo
+function activeMode() {
   const checked = document.querySelector('input[name="flowMode"]:checked');
   return checked ? checked.value : 'fixed';
 }
 
-function setFlowMode(mode) {
-  const option = document.querySelector(`input[name="flowMode"][value="${mode}"]`);
-  if (option) option.checked = true;
-  updateFlowModeUI();
+function setMode(mode) {
+  const radio = document.querySelector(`input[name="flowMode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+  updateModeView();
 }
 
-function updateFlowModeUI() {
-  const periods = flowMode() === 'periods';
-  document.querySelectorAll('.fixed-flow-field').forEach(el => el.classList.toggle('hidden', periods));
-  $('periodFlowFields').classList.toggle('hidden', !periods);
-  updateScheduleStatus();
+function updateModeView() {
+  const isPeriods = activeMode() === 'periods';
+  $('fixedFlowPanel').classList.toggle('hidden', isPeriods);
+  $('periodFlowPanel').classList.toggle('hidden', !isPeriods);
+  syncHiddenSchedule();
+  updateMetrics();
+  validateForm();
 }
 
-function formatRtc(s) {
-  try {
-    const d = new Date(s);
-    if (isNaN(d)) return s;
-    return d.toLocaleString();
-  } catch (e) {
-    return s;
-  }
+document.querySelectorAll('input[name="flowMode"]').forEach(radio => {
+  radio.addEventListener('change', updateModeView);
+});
+
+// Duración y Espera en Modo Fijo
+function getWaitSeconds() {
+  return minSecToSec($('waitMin').value, $('waitSec').value);
 }
 
-function safePresetName(name) {
-  return /^[A-Za-z0-9_-]{1,23}$/.test(name) && !name.includes('..');
+function getFixedDurationSeconds() {
+  if ($('durationMode').value === 'infinite') return INF;
+  return minSecToSec($('durMin').value, $('durSec').value);
 }
 
-function sectionTotal() {
-  return flowSections.reduce((sum, s) => sum + Number(s.durationSeconds || 0), 0);
-}
-
-function validateFlowConfig() {
-  let msg = '';
-  if (flowMode() === 'fixed') {
-    const f = parseFloat($('targetFlow').value);
-    if ($('durationMode').value !== 'infinite' && durationSeconds() <= 0) msg = 'Duración total debe ser mayor a 0 o elegir sin límite.';
-    if (isNaN(f) || f < 0 || f > 8) msg = 'Flujo fijo debe estar entre 0 y 8 L/min.';
-  } else if (!flowSections.length) {
-    msg = 'Agregue al menos un tramo o use una plantilla.';
+function setFixedDuration(seconds) {
+  if (seconds === 'infinite' || Number(seconds) === INF) {
+    $('durationMode').value = 'infinite';
+    $('durationTimeField').classList.add('hidden');
   } else {
-    for (let i = 0; i < flowSections.length; i++) {
-      const s = flowSections[i];
-      if (!s.durationSeconds || s.durationSeconds <= 0) {
-        msg = `Tramo ${i + 1}: duración debe ser mayor a 0.`;
-        break;
-      }
-      if (s.targetFlow === '' || isNaN(s.targetFlow) || s.targetFlow < 0 || s.targetFlow > 8) {
-        msg = `Tramo ${i + 1}: flujo debe estar entre 0 y 8 L/min.`;
-        break;
-      }
-    }
-    if (!msg && sectionTotal() <= 0) msg = 'La suma de tramos debe ser mayor a 0.';
+    $('durationMode').value = 'finite';
+    $('durationTimeField').classList.remove('hidden');
+    const t = secToMinSec(seconds);
+    $('durMin').value = t.min;
+    $('durSec').value = t.sec;
   }
-  $('flowWarning').textContent = msg;
-  return !msg;
+  updateMetrics();
+  validateForm();
 }
 
-function syncScheduleField() {
-  $('flowSchedule').value = flowMode() === 'periods'
-    ? JSON.stringify(flowSections.map(s => ({
-        durationSeconds: Number(s.durationSeconds),
-        targetFlow: Number(s.targetFlow)
-      })))
-    : '[]';
-}
-
-function updateCaptureSummary() {
-  if (!$('captureSummary')) return;
-  const periods = flowMode() === 'periods';
-  const last = flowSections[flowSections.length - 1];
-  const finalFlow = periods
-    ? (last && last.targetFlow !== '' && !isNaN(last.targetFlow) ? `${Number(last.targetFlow).toFixed(1)} L/min` : 'Sin definir')
-    : ($('targetFlow').value ? `${Number($('targetFlow').value).toFixed(1)} L/min` : 'Sin definir');
-  $('summaryWait').textContent = formatDuration(waitSeconds());
-  $('summaryDuration').textContent = periods ? `${formatDuration(sectionTotal())} calculada` : formatDuration(durationSeconds());
-  $('summaryMode').textContent = periods ? 'Perfil por tramos' : 'Flujo fijo';
-  $('summaryFinalFlow').textContent = finalFlow;
-}
-
-function updateScheduleStatus() {
-  if (!$('scheduleStatus')) return;
-  const total = sectionTotal();
-  if (flowMode() === 'periods') {
-    const last = flowSections[flowSections.length - 1];
-    const lastFlow = last && last.targetFlow !== '' && !isNaN(last.targetFlow) ? ` · flujo final ${Number(last.targetFlow).toFixed(1)} L/min` : '';
-    $('scheduleStatus').textContent = flowSections.length
-      ? `${flowSections.length} tramo${flowSections.length === 1 ? '' : 's'} · duración total calculada: ${formatDuration(total)}${lastFlow}`
-      : 'Sin tramos: agregue uno o use una plantilla.';
+$('durationMode').addEventListener('change', e => {
+  if (e.target.value === 'infinite') {
+    $('durationTimeField').classList.add('hidden');
   } else {
-    $('scheduleStatus').textContent = `Flujo fijo${$('targetFlow').value ? ': ' + $('targetFlow').value + ' L/min' : ' sin definir'}`;
+    $('durationTimeField').classList.remove('hidden');
   }
-  syncScheduleField();
-  updateCaptureSummary();
-  validateFlowConfig();
-}
+  updateMetrics();
+  validateForm();
+});
 
-function renderSections() {
-  const body = $('sectionsBody');
-  if (!flowSections.length) {
-    body.innerHTML = '<div class="sections-empty"><strong>Sin tramos</strong><span>Agrega uno o usa una plantilla para armar la secuencia.</span></div>';
-    updateScheduleStatus();
-    return;
-  }
-  body.innerHTML = `
-    <div class="sections-table" role="table" aria-label="Perfil de flujo por tramos">
-      <div class="sections-row sections-head" role="row">
-        <span>Tramo</span><span>Inicio</span><span>Duración</span><span>Fin</span><span>Flujo</span><span>Acciones</span>
-      </div>
-      ${flowSections.map((s, i) => {
-        const start = sectionStart(i);
-        const duration = Number(s.durationSeconds || 0);
-        const end = start + duration;
-        const timeObj = duration ? secToMinSec(duration) : { min: '', sec: '' };
-        const flowValue = s.targetFlow === '' || s.targetFlow === null || s.targetFlow === undefined ? '' : Number(s.targetFlow || 0).toFixed(1);
-        const fill = Math.max(0, Math.min(100, Number(s.targetFlow || 0) / 8 * 100));
-        return `
-          <div class="sections-row flow-section-card" role="row">
-            <div class="section-index" data-label="Tramo"><span>${i + 1}</span></div>
-            <div class="section-time" data-label="Inicio"><strong>${formatDuration(start)}</strong></div>
-            <div class="section-duration" data-label="Duración">
-              <div class="time-inputs-container compact-time">
-                <div class="time-field">
-                  <input data-section-min="${i}" type="number" min="0" max="1440" placeholder="Min" value="${timeObj.min}">
-                  <span class="time-unit">M</span>
-                </div>
-                <div class="time-field-separator">:</div>
-                <div class="time-field">
-                  <input data-section-sec="${i}" type="number" min="0" max="59" placeholder="Seg" value="${timeObj.sec}">
-                  <span class="time-unit">S</span>
-                </div>
-              </div>
-            </div>
-            <div class="section-time" data-label="Fin"><strong>${formatDuration(end)}</strong></div>
-            <div class="section-flow" data-label="Flujo">
-              <input id="sectionFlow${i}" data-section-flow="${i}" type="number" min="0" max="8" step="0.1" placeholder="0.0" value="${flowValue}" aria-label="Flujo tramo ${i + 1}">
-              <div class="flow-rail" aria-hidden="true"><span style="width:${fill}%"></span></div>
-            </div>
-            <div class="section-actions" data-label="Acciones">
-              <button type="button" title="Subir" data-section-move="${i}" data-direction="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
-              <button type="button" title="Bajar" data-section-move="${i}" data-direction="1" ${i === flowSections.length - 1 ? 'disabled' : ''}>↓</button>
-              <button type="button" title="Duplicar" data-section-duplicate="${i}">Duplicar</button>
-              <button type="button" class="btn-section-remove" data-section-remove="${i}">Quitar</button>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-  updateScheduleStatus();
-}
-
-function setSections(sections) {
-  flowSections = (sections || []).slice(0, MAX_SECTIONS).map(s => ({
-    durationSeconds: Number(s.durationSeconds || 0),
-    targetFlow: s.targetFlow === '' ? '' : Number(s.targetFlow || 0)
-  }));
-  renderSections();
-}
-
-function applyConfig(c) {
-  const w = secToMinSec(c.waitSeconds || 0);
-  $('waitMin').value = w.min;
-  $('waitSec').value = w.sec;
-  $('targetFlow').value = Number(c.targetFlow || 0).toFixed(1);
-  const loadedSections = c.flowSections || [];
-  setDuration(Number(c.durationSeconds) === INF ? 'infinite' : c.durationSeconds || 300);
-  setSections(loadedSections);
-  setFlowMode(loadedSections.length ? 'periods' : 'fixed');
-  updateScheduleStatus();
-}
-
-function setSystemState(cls) {
-  const el = $('systemSummary');
-  el.classList.remove('state-ok', 'state-warn', 'state-error');
-  if (cls) el.classList.add(cls);
-}
-
-async function loadStatus() {
-  try {
-    const r = await fetch('/api/status');
-    if (!r.ok) throw new Error('status_failed');
-    const s = await r.json();
-    const rtcText = formatRtc(s.rtc);
-    $('statusPills').innerHTML = `
-      <span class="pill ${s.sdReady ? 'ok' : 'bad'}">SD: ${s.sdStatus.toLowerCase()}</span>
-      <span class="pill">RTC: ${rtcText}</span>
-    `;
-    $('systemStateText').textContent = s.sdReady ? 'Listo para configurar' : 'Revisar la tarjeta SD';
-    $('systemStateDetails').textContent = `SD: ${s.sdStatus.toLowerCase()} · RTC: ${rtcText}`;
-    setSystemState(s.sdReady ? 'state-ok' : 'state-warn');
-    if (s.defaults) applyConfig(s.defaults);
-    $('setupStatus').textContent = 'Listo';
-    if (s.motor && $('motorStatusText')) {
-      const phase = s.motor.ignitionPhase || 'off';
-      const kicks = s.motor.kickCount || 0;
-      const stall = s.motor.stallDetected;
-      const phaseLabel = {off: 'Apagado', kick: 'Arrancando…', run: 'En marcha'}[phase] || phase;
-      $('motorStatusText').textContent = `${phaseLabel} · kicks: ${kicks}${stall ? ' · ⚠ STALL' : ''}`;
-    }
-  } catch (e) {
-    console.warn('Error fetching status', e);
-    $('statusPills').innerHTML = '<span class="pill bad">Sin conexión</span>';
-    $('systemStateText').textContent = 'No se pudo leer el estado';
-    $('systemStateDetails').textContent = 'Asegúrate de estar conectado a la red del dispositivo.';
-    setSystemState('state-error');
-    $('setupStatus').textContent = 'Error de conexión';
+// Sincronización del input oculto para el backend
+function syncHiddenSchedule() {
+  if (activeMode() === 'periods') {
+    const arr = flowBlocks.map(b => ({
+      durationSeconds: Number(b.durationSeconds || 0),
+      targetFlow: Number(b.targetFlow || 0)
+    }));
+    $('flowSchedule').value = JSON.stringify(arr);
+  } else {
+    $('flowSchedule').value = '[]';
   }
 }
 
-function updateLogStatBar() {
-  const bar = $('logStatBar');
-  if (!bar) return;
-  if (!logFiles.length) {
-    bar.innerHTML = '<span>Sin archivos en la SD</span>';
-    return;
-  }
-  const totalBytes = logFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-  bar.innerHTML = `<strong>${logFiles.length}</strong> archivo${logFiles.length !== 1 ? 's' : ''} <span class="log-stat-sep">·</span> <strong>${fmtSize(totalBytes)}</strong> en total`;
-}
+// Métricas en Tiempo Real (Duración, Caudal Ponderado, Volumen Teórico, Espera)
+function updateMetrics() {
+  const isPeriods = activeMode() === 'periods';
+  const waitSec = getWaitSeconds();
 
-async function loadLogs() {
-  const body = $('logsBody');
-  body.innerHTML = '<tr><td colspan="3" class="empty-table">Cargando registros...</td></tr>';
-  try {
-    const r = await fetch('/api/logs');
-    if (!r.ok) {
-      body.innerHTML = '<tr><td colspan="3" class="empty-table">SD no disponible</td></tr>';
-      logFiles = [];
-      updateLogStatBar();
-      return;
-    }
-    const j = await r.json();
-    logFiles = j.files || [];
-    updateLogStatBar();
-    if (!logFiles.length) {
-      body.innerHTML = '<tr><td colspan="3" class="empty-table">No hay archivos CSV en la SD</td></tr>';
-      return;
-    }
-    body.innerHTML = logFiles.map(f => `
-      <tr>
-        <td data-label="Archivo">${f.name}</td>
-        <td data-label="Tamaño">${fmtSize(f.size)}</td>
-        <td class="text-right" data-label="Acciones">
-          <div class="row-actions">
-            <button class="log-action action-view" data-preview="${f.name}">Ver</button>
-            <a class="log-action action-download" href="/download?file=${encodeURIComponent(f.name)}">Descargar</a>
-            <button class="log-action action-delete" data-delete-log="${f.name}">Borrar</button>
-          </div>
-        </td>
-      </tr>
-    `).join('');
-  } catch (e) {
-    body.innerHTML = '<tr><td colspan="3" class="empty-table">Error al listar registros</td></tr>';
-    logFiles = [];
-    updateLogStatBar();
-  }
-}
+  // Espera
+  $('metricWait').textContent = formatDuration(waitSec);
+  $('metricWaitSub').textContent = waitSec > 0 ? `Inicio en +${formatDuration(waitSec)}` : 'Arranque inmediato';
 
-async function preview(name) {
-  $('preview').textContent = 'Cargando...';
-  try {
-    const r = await fetch('/api/logs/preview?file=' + encodeURIComponent(name));
-    if (!r.ok) {
-      $('preview').textContent = 'No se pudo cargar la vista previa.';
-      return;
-    }
-    const j = await r.json();
-    $('preview').textContent = [j.header].concat(j.rows || []).join('\n');
-  } catch (e) {
-    $('preview').textContent = 'Error al procesar la vista previa.';
-  }
-}
+  if (!isPeriods) {
+    // Modo Flujo Fijo
+    const durSec = getFixedDurationSeconds();
+    const flow = parseFloat($('targetFlow').value) || 0;
 
-async function deleteLog(name) {
-  if (!confirm(`¿Está seguro de que desea eliminar el registro '${name}' permanentemente de la tarjeta SD?`)) return;
-  try {
-    const fd = new URLSearchParams();
-    fd.set('file', name);
-    const r = await fetch('/api/logs/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: fd
-    });
-    const j = await r.json();
-    if (r.ok && j.ok) {
-      notify('Registro eliminado con éxito', 'success');
-      loadLogs();
-      if ($('preview').textContent.startsWith(name) || $('preview').textContent.includes(name)) {
-        $('preview').textContent = 'Seleccione un archivo CSV del explorador superior.';
-      }
+    $('metricDuration').textContent = formatDuration(durSec);
+    $('metricDurationSub').textContent = durSec === INF ? 'Sin límite de tiempo' : 'Fija';
+
+    $('metricAvgFlow').textContent = `${flow.toFixed(1)} L/min`;
+    $('metricAvgFlowSub').textContent = 'Constante';
+
+    if (durSec === INF) {
+      $('metricVolume').textContent = '—';
     } else {
-      notify('Error al eliminar: ' + (j.error || 'respuesta incorrecta'), 'error');
+      const vol = (flow * durSec) / 60.0;
+      $('metricVolume').textContent = `${vol.toFixed(1)} L`;
     }
-  } catch (e) {
-    notify('Error al enviar solicitud de eliminación', 'error');
+  } else {
+    // Modo Perfil por Bloques Continuos
+    const totalSec = flowBlocks.reduce((acc, b) => acc + Number(b.durationSeconds || 0), 0);
+    const count = flowBlocks.length;
+
+    $('metricDuration').textContent = formatDuration(totalSec);
+    $('metricDurationSub').textContent = `${count} bloque${count === 1 ? '' : 's'} en secuencia`;
+
+    if (totalSec > 0) {
+      const weightedSum = flowBlocks.reduce((acc, b) => acc + (Number(b.targetFlow || 0) * Number(b.durationSeconds || 0)), 0);
+      const avgFlow = weightedSum / totalSec;
+      const totalVol = weightedSum / 60.0;
+
+      $('metricAvgFlow').textContent = `${avgFlow.toFixed(1)} L/min`;
+      $('metricAvgFlowSub').textContent = 'Ponderado por tiempo';
+      $('metricVolume').textContent = `${totalVol.toFixed(1)} L`;
+    } else {
+      $('metricAvgFlow').textContent = '0.0 L/min';
+      $('metricAvgFlowSub').textContent = 'Sin duración';
+      $('metricVolume').textContent = '0.0 L';
+    }
   }
 }
 
-async function loadPresets() {
-  const grid = $('presetsGrid');
-  grid.innerHTML = '<div class="presets-empty">Cargando presets...</div>';
-  try {
-    const r = await fetch('/api/presets');
-    if (!r.ok) throw new Error('presets_failed');
-    const j = await r.json();
-    presets = j.presets || [];
-    if (!presets.length) {
-      grid.innerHTML = '<div class="presets-empty">No hay presets guardados.</div>';
-      return;
-    }
-    grid.innerHTML = presets.map(p => {
-      const dFmt = secToMinSec(p.durationSeconds);
-      const dStr = Number(p.durationSeconds) === INF ? 'Sin límite' : `${dFmt.min}m ${dFmt.sec}s`;
-      return `
-        <div class="preset-card">
-          <div class="preset-card-title">${p.name}</div>
-          <div class="preset-card-details">
-            <span>Flujo: ${Number(p.targetFlow).toFixed(1)} L/min</span>
-            <span>Duración: ${dStr}</span>
-            <span>Tramos: ${p.flowSectionCount || 0}</span>
+// ===== RENDERIZADO DEL TIMELINE INTERACTIVO =====
+function renderTimeline() {
+  const bar = $('timelineBar');
+  const ticks = $('timelineTicks');
+  const meta = $('timelineMeta');
+  const counter = $('blocksCounter');
+
+  if (!bar || !ticks) return;
+  counter.textContent = `${flowBlocks.length} / ${MAX_BLOCKS} bloques`;
+
+  if (flowBlocks.length === 0) {
+    bar.innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-size:12px;">Sin bloques configurados</div>';
+    ticks.innerHTML = '<span>00:00</span><span>--:--</span>';
+    meta.textContent = 'Agrega un bloque o carga una plantilla para comenzar';
+    return;
+  }
+
+  const totalSec = flowBlocks.reduce((acc, b) => acc + Number(b.durationSeconds || 0), 0);
+  meta.textContent = `Secuencia continua · ${formatDuration(totalSec)} total`;
+
+  let accumulatedSec = 0;
+  let barHtml = '';
+  let tickList = ['00:00'];
+
+  flowBlocks.forEach((b, idx) => {
+    const dur = Number(b.durationSeconds || 0);
+    const flow = Number(b.targetFlow || 0);
+    const startSec = accumulatedSec;
+    accumulatedSec += dur;
+    const endSec = accumulatedSec;
+    tickList.push(formatTime(endSec));
+
+    const flexWeight = Math.max(dur, 20);
+    const bgColor = getFlowColor(flow);
+
+    barHtml += `
+      <div class="timeline-segment" data-block-index="${idx}" style="flex:${flexWeight}; background-color:${bgColor};" title="Bloque ${idx + 1}: ${formatTime(startSec)} a ${formatTime(endSec)} (${flow.toFixed(1)} L/min)">
+        <span class="timeline-seg-title">B${idx + 1} · ${formatTime(dur)}</span>
+        <span class="timeline-seg-flow">${flow.toFixed(1)} L/m</span>
+      </div>
+    `;
+  });
+
+  bar.innerHTML = barHtml;
+
+  // Renderizar marcas de tiempo (inicio, hitos y fin)
+  if (tickList.length <= 5) {
+    ticks.innerHTML = tickList.map(t => `<span>${t}</span>`).join('');
+  } else {
+    ticks.innerHTML = `<span>${tickList[0]}</span><span>${tickList[Math.floor(tickList.length / 2)]}</span><span>${tickList[tickList.length - 1]}</span>`;
+  }
+
+  // Interacción al hacer click en el timeline
+  bar.querySelectorAll('.timeline-segment').forEach(seg => {
+    seg.addEventListener('click', () => {
+      const idx = Number(seg.dataset.blockIndex);
+      highlightBlock(idx);
+    });
+  });
+}
+
+function highlightBlock(index) {
+  document.querySelectorAll('.block-card').forEach((card, idx) => {
+    card.classList.toggle('focused', idx === index);
+  });
+  const targetCard = $(`blockCard_${index}`);
+  if (targetCard) {
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// ===== RENDERIZADO DE TARJETAS DE BLOQUES =====
+function renderBlocks() {
+  const container = $('blocksList');
+  if (!container) return;
+
+  if (flowBlocks.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>No hay bloques continuos definidos.</p>
+        <p style="margin-top:4px; font-size:12px; color:var(--text-dim);">Haz clic en &ldquo;+ Agregar bloque&rdquo; o selecciona una plantilla rápida superior.</p>
+      </div>
+    `;
+    $('addBlockBtn').disabled = false;
+    renderTimeline();
+    updateMetrics();
+    syncHiddenSchedule();
+    validateForm();
+    return;
+  }
+
+  $('addBlockBtn').disabled = flowBlocks.length >= MAX_BLOCKS;
+
+  let accumulatedSec = 0;
+  container.innerHTML = flowBlocks.map((b, idx) => {
+    const dur = Number(b.durationSeconds || 0);
+    const startSec = accumulatedSec;
+    accumulatedSec += dur;
+    const endSec = accumulatedSec;
+    const timeObj = secToMinSec(dur);
+    const flowVal = Number(b.targetFlow || 0).toFixed(1);
+
+    return `
+      <div class="block-card" id="blockCard_${idx}">
+        <div class="block-card-header">
+          <div class="block-meta">
+            <span class="block-index-badge">Bloque ${idx + 1}</span>
+            <span class="block-window">${formatTime(startSec)} &rarr; ${formatTime(endSec)} (${formatDuration(dur)})</span>
           </div>
-          <div class="preset-card-actions">
-            <button type="button" class="btn-card-load" data-load-preset="${p.name}">Cargar</button>
-            <button type="button" class="btn-card-delete" data-delete-preset="${p.name}">Borrar</button>
+          <div class="block-actions">
+            <button type="button" class="btn-icon-sm" data-move-block="${idx}" data-dir="-1" title="Mover antes" ${idx === 0 ? 'disabled' : ''}>&uarr;</button>
+            <button type="button" class="btn-icon-sm" data-move-block="${idx}" data-dir="1" title="Mover despues" ${idx === flowBlocks.length - 1 ? 'disabled' : ''}>&darr;</button>
+            <button type="button" class="btn-icon-sm" data-dup-block="${idx}" title="Duplicar bloque" ${flowBlocks.length >= MAX_BLOCKS ? 'disabled' : ''}>Duplicar</button>
+            <button type="button" class="btn-icon-sm btn-icon-danger" data-del-block="${idx}" title="Eliminar bloque">Quitar</button>
           </div>
         </div>
-      `;
-    }).join('');
-  } catch (e) {
-    grid.innerHTML = '<div class="presets-empty">Presets no disponibles</div>';
-  }
+
+        <div class="block-card-body">
+          <div class="field-col">
+            <label class="field-label">Duraci&oacute;n del bloque</label>
+            <div class="time-control-group">
+              <div class="time-inputs">
+                <div class="time-input-wrap">
+                  <input type="number" min="0" max="1440" value="${timeObj.min}" placeholder="0" data-blk-min="${idx}" aria-label="Minutos bloque ${idx + 1}">
+                  <span class="unit">min</span>
+                </div>
+                <span class="time-sep">:</span>
+                <div class="time-input-wrap">
+                  <input type="number" min="0" max="59" value="${timeObj.sec}" placeholder="0" data-blk-sec="${idx}" aria-label="Segundos bloque ${idx + 1}">
+                  <span class="unit">seg</span>
+                </div>
+              </div>
+              <div class="quick-chips">
+                <button type="button" class="chip" data-blk-add-min="${idx}" data-val="1">+1m</button>
+                <button type="button" class="chip" data-blk-add-min="${idx}" data-val="5">+5m</button>
+                <button type="button" class="chip" data-blk-set-min="${idx}" data-val="1">1 min</button>
+                <button type="button" class="chip" data-blk-set-min="${idx}" data-val="3">3 min</button>
+                <button type="button" class="chip" data-blk-set-min="${idx}" data-val="5">5 min</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-col">
+            <label class="field-label">Caudal objetivo (L/min)</label>
+            <div class="flow-input-group">
+              <input type="number" min="0" max="8" step="0.1" value="${flowVal}" placeholder="5.0" data-blk-flow="${idx}" class="text-input flow-num" aria-label="Caudal bloque ${idx + 1}">
+              <div class="quick-chips">
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="2.0">2.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="4.0">4.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="5.0">5.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="6.0">6.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="8.0">8.0</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  renderTimeline();
+  updateMetrics();
+  syncHiddenSchedule();
+  validateForm();
 }
 
-function formBody(extra) {
-  syncScheduleField();
-  const periods = flowMode() === 'periods';
-  const waitVal = waitSeconds();
-  const last = flowSections[flowSections.length - 1];
-  const durVal = periods ? sectionTotal() : durationSeconds();
-  const targetVal = periods && last ? Number(last.targetFlow || 0).toFixed(1) : $('targetFlow').value;
-  const fd = new URLSearchParams();
-  fd.set('waitSeconds', waitVal);
-  fd.set('durationSeconds', durVal);
-  fd.set('targetFlow', targetVal);
-  fd.set('flowSchedule', $('flowSchedule').value);
-  if (!periods && $('durationMode').value === 'infinite') fd.set('durationMode', 'infinite');
-  if (extra) {
-    Object.keys(extra).forEach(k => fd.set(k, extra[k]));
-  }
-  return fd;
+function setBlocks(blocks) {
+  flowBlocks = (blocks || []).slice(0, MAX_BLOCKS).map(b => ({
+    durationSeconds: Math.max(1, Number(b.durationSeconds || 300)),
+    targetFlow: Math.max(0, Math.min(8.0, Number(b.targetFlow !== undefined ? b.targetFlow : 5.0)))
+  }));
+  renderBlocks();
 }
 
-async function loadPreset(name) {
-  try {
-    const r = await fetch('/api/presets/load?name=' + encodeURIComponent(name));
-    const j = await r.json();
-    if (r.ok && j.config) {
-      applyConfig(j.config);
-      $('presetName').value = j.name;
-      notify('Preset cargado correctamente', 'success');
-    } else {
-      notify('No se pudo cargar el preset', 'error');
-    }
-  } catch (e) {
-    notify('Error de conexión cargando preset', 'error');
-  }
-}
-
-async function savePreset() {
-  const name = $('presetName').value.trim();
-  if (!safePresetName(name)) {
-    notify('Nombre de preset inválido. Use solo letras, números, _ o - (máx 23)', 'error');
+function addBlock(duration = 300, flow = 5.0) {
+  if (flowBlocks.length >= MAX_BLOCKS) {
+    notify(`Límite máximo de ${MAX_BLOCKS} bloques alcanzado`, 'error');
     return;
   }
-  if (!validateFlowConfig()) {
-    notify('Configuración de flujo o tramos inválida', 'error');
+  flowBlocks.push({ durationSeconds: duration, targetFlow: flow });
+  renderBlocks();
+  highlightBlock(flowBlocks.length - 1);
+}
+
+function duplicateBlock(index) {
+  if (flowBlocks.length >= MAX_BLOCKS) {
+    notify(`Límite máximo de ${MAX_BLOCKS} bloques alcanzado`, 'error');
     return;
   }
-  try {
-    const r = await fetch('/api/presets/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody({ name })
-    });
-    const j = await r.json();
-    if (r.ok && j.ok) {
-      notify('Preset guardado con éxito', 'success');
-      loadPresets();
-    } else {
-      notify('Error al guardar preset: ' + (j.error || ''), 'error');
-    }
-  } catch (e) {
-    notify('Error de red guardando preset', 'error');
+  const source = flowBlocks[index];
+  flowBlocks.splice(index + 1, 0, { ...source });
+  renderBlocks();
+  highlightBlock(index + 1);
+}
+
+function removeBlock(index) {
+  flowBlocks.splice(index, 1);
+  renderBlocks();
+}
+
+function moveBlock(index, direction) {
+  const target = index + direction;
+  if (target >= 0 && target < flowBlocks.length) {
+    const [item] = flowBlocks.splice(index, 1);
+    flowBlocks.splice(target, 0, item);
+    renderBlocks();
+    highlightBlock(target);
   }
 }
 
-async function deletePreset(name) {
-  if (!confirm(`¿Está seguro de que desea eliminar el preset '${name}'?`)) return;
-  try {
-    const fd = new URLSearchParams();
-    fd.set('name', name);
-    const r = await fetch('/api/presets/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: fd
-    });
-    const j = await r.json();
-    if (r.ok && j.ok) {
-      notify('Preset borrado con éxito', 'success');
-      loadPresets();
-    } else {
-      notify('Error al borrar preset: ' + (j.error || ''), 'error');
-    }
-  } catch (e) {
-    notify('Error de red eliminando preset', 'error');
-  }
-}
-
-function applySectionTemplate(name) {
+function applyTemplate(name) {
+  const currentFixedFlow = parseFloat($('targetFlow').value) || 5.0;
   const templates = {
-    constant: [{ durationSeconds: 300, targetFlow: Number($('targetFlow').value || 5) }],
+    constant: [{ durationSeconds: 300, targetFlow: currentFixedFlow }],
     stairs: [
-      { durationSeconds: 300, targetFlow: 2 },
-      { durationSeconds: 300, targetFlow: 4 },
-      { durationSeconds: 300, targetFlow: 6 }
+      { durationSeconds: 180, targetFlow: 2.0 },
+      { durationSeconds: 180, targetFlow: 4.0 },
+      { durationSeconds: 180, targetFlow: 6.0 }
     ],
-    flush: [
-      { durationSeconds: 120, targetFlow: 8 },
-      { durationSeconds: 180, targetFlow: 5 },
-      { durationSeconds: 60, targetFlow: 0 }
+    sample15: [
+      { durationSeconds: 300, targetFlow: 5.0 },
+      { durationSeconds: 300, targetFlow: 8.0 },
+      { durationSeconds: 300, targetFlow: 5.0 }
     ],
     empty: []
   };
-  setSections(templates[name] || []);
-  setFlowMode('periods');
+
+  setBlocks(templates[name] || []);
+  setMode('periods');
 }
 
-// Event delegation listeners
-document.addEventListener('click', e => {
-  const t = e.target.closest('button');
-  if (!t) return;
-  
-  if (t.dataset.wait !== undefined) {
-    const waitSecs = Number(t.dataset.wait);
-    const w = secToMinSec(waitSecs);
-    $('waitMin').value = w.min;
-    $('waitSec').value = w.sec;
-    updateScheduleStatus();
-  }
-  if (t.dataset.duration !== undefined) {
-    setDuration(t.dataset.duration);
-  }
-  if (t.dataset.preview !== undefined) preview(t.dataset.preview);
-  if (t.dataset.deleteLog !== undefined) deleteLog(t.dataset.deleteLog);
-  if (t.dataset.loadPreset !== undefined) loadPreset(t.dataset.loadPreset);
-  if (t.dataset.deletePreset !== undefined) deletePreset(t.dataset.deletePreset);
-  
-  if (t.dataset.template !== undefined) {
-    applySectionTemplate(t.dataset.template);
-  }
-  if (t.dataset.sectionRemove !== undefined) {
-    flowSections.splice(Number(t.dataset.sectionRemove), 1);
-    renderSections();
-  }
-  if (t.dataset.sectionDuplicate !== undefined) {
-    if (flowSections.length >= MAX_SECTIONS) {
-      notify('Máximo programable de ' + MAX_SECTIONS + ' tramos superado', 'error');
+// ===== VALIDACIÓN DEL FORMULARIO =====
+function validateForm() {
+  let error = '';
+  const isPeriods = activeMode() === 'periods';
+
+  if (!isPeriods) {
+    const flow = parseFloat($('targetFlow').value);
+    if (isNaN(flow) || flow < 0 || flow > 8) {
+      error = 'El caudal objetivo debe estar entre 0.0 y 8.0 L/min.';
+    } else if ($('durationMode').value !== 'infinite' && getFixedDurationSeconds() <= 0) {
+      error = 'La duración debe ser mayor a 0 segundos.';
+    }
+  } else {
+    if (flowBlocks.length === 0) {
+      error = 'Agrega al menos un bloque de captura.';
     } else {
-      const idx = Number(t.dataset.sectionDuplicate);
-      flowSections.splice(idx + 1, 0, { ...flowSections[idx] });
-      renderSections();
+      for (let i = 0; i < flowBlocks.length; i++) {
+        const b = flowBlocks[i];
+        if (!b.durationSeconds || b.durationSeconds <= 0) {
+          error = `El bloque ${i + 1} debe tener una duración mayor a 0 s.`;
+          break;
+        }
+        if (isNaN(b.targetFlow) || b.targetFlow < 0 || b.targetFlow > 8) {
+          error = `El caudal del bloque ${i + 1} debe estar entre 0.0 y 8.0 L/min.`;
+          break;
+        }
+      }
     }
   }
-  if (t.dataset.sectionMove !== undefined) {
-    const idx = Number(t.dataset.sectionMove);
-    const next = idx + Number(t.dataset.direction || 0);
-    if (next >= 0 && next < flowSections.length) {
-      const [item] = flowSections.splice(idx, 1);
-      flowSections.splice(next, 0, item);
-      renderSections();
-    }
+
+  const warnEl = $('flowWarning');
+  const statusEl = $('setupStatus');
+  if (error) {
+    warnEl.textContent = error;
+    warnEl.classList.remove('hidden');
+    statusEl.textContent = 'Parámetros incompletos';
+    $('confirmBtn').disabled = true;
+    return false;
+  } else {
+    warnEl.textContent = '';
+    warnEl.classList.add('hidden');
+    statusEl.textContent = 'Listo para iniciar captura';
+    $('confirmBtn').disabled = false;
+    return true;
   }
-  validateFlowConfig();
+}
+
+// ===== DELEGACIÓN DE EVENTOS DE CLIC & INPUT =====
+document.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  // Espera inicial quick chips
+  if (btn.dataset.wait !== undefined) {
+    const s = Number(btn.dataset.wait);
+    const t = secToMinSec(s);
+    $('waitMin').value = t.min;
+    $('waitSec').value = t.sec;
+    updateMetrics();
+    validateForm();
+  }
+
+  // Duración fija quick chips
+  if (btn.dataset.duration !== undefined) {
+    setFixedDuration(Number(btn.dataset.duration));
+  }
+
+  // Caudal fijo quick chips
+  if (btn.dataset.setFlow !== undefined) {
+    $('targetFlow').value = Number(btn.dataset.setFlow).toFixed(1);
+    updateMetrics();
+    validateForm();
+  }
+
+  // Plantillas de perfil
+  if (btn.dataset.template !== undefined) {
+    applyTemplate(btn.dataset.template);
+  }
+
+  // Acciones de bloque
+  if (btn.dataset.delBlock !== undefined) {
+    removeBlock(Number(btn.dataset.delBlock));
+  }
+  if (btn.dataset.dupBlock !== undefined) {
+    duplicateBlock(Number(btn.dataset.dupBlock));
+  }
+  if (btn.dataset.moveBlock !== undefined) {
+    moveBlock(Number(btn.dataset.moveBlock), Number(btn.dataset.dir || 0));
+  }
+
+  // Ajustes de minutos en bloque (+1m, +5m)
+  if (btn.dataset.blkAddMin !== undefined) {
+    const idx = Number(btn.dataset.blkAddMin);
+    const addSec = Number(btn.dataset.val) * 60;
+    flowBlocks[idx].durationSeconds = (Number(flowBlocks[idx].durationSeconds) || 0) + addSec;
+    renderBlocks();
+  }
+
+  // Fijar minutos en bloque (1m, 3m, 5m)
+  if (btn.dataset.blkSetMin !== undefined) {
+    const idx = Number(btn.dataset.blkSetMin);
+    const min = Number(btn.dataset.val);
+    const curSec = secToMinSec(flowBlocks[idx].durationSeconds).sec;
+    flowBlocks[idx].durationSeconds = (min * 60) + curSec;
+    renderBlocks();
+  }
+
+  // Fijar caudal en bloque
+  if (btn.dataset.blkSetFlow !== undefined) {
+    const idx = Number(btn.dataset.blkSetFlow);
+    flowBlocks[idx].targetFlow = Number(btn.dataset.val);
+    renderBlocks();
+  }
 });
 
+// Eventos de entrada de texto/números
 document.addEventListener('input', e => {
   const t = e.target;
-  if (t.dataset.sectionMin !== undefined) {
-    const idx = Number(t.dataset.sectionMin);
-    const minInput = t;
-    const secInput = document.querySelector(`[data-section-sec="${idx}"]`);
-    flowSections[idx].durationSeconds = !minInput.value && !secInput.value ? '' : normalizeTimePair(minInput, secInput);
-    updateScheduleStatus();
+
+  // Espera o duración fija
+  if (t.id === 'waitMin' || t.id === 'waitSec' || t.id === 'durMin' || t.id === 'durSec' || t.id === 'targetFlow') {
+    updateMetrics();
+    validateForm();
   }
-  if (t.dataset.sectionSec !== undefined) {
-    const idx = Number(t.dataset.sectionSec);
-    const minInput = document.querySelector(`[data-section-min="${idx}"]`);
-    const secInput = t;
-    flowSections[idx].durationSeconds = !minInput.value && !secInput.value ? '' : normalizeTimePair(minInput, secInput);
-    updateScheduleStatus();
-  }
-  if (t.dataset.sectionFlow !== undefined) {
-    const idx = Number(t.dataset.sectionFlow);
-    flowSections[idx].targetFlow = t.value === '' ? '' : Number(t.value);
-    const card = t.closest('.flow-section-card');
-    if (card) {
-      const value = flowSections[idx].targetFlow;
-      const fill = Math.max(0, Math.min(100, Number(value || 0) / 8 * 100));
-      const rail = card.querySelector('.flow-rail span');
-      if (rail) rail.style.width = fill + '%';
+
+  // Inputs en bloques individuales
+  if (t.dataset.blkMin !== undefined || t.dataset.blkSec !== undefined) {
+    const idx = Number(t.dataset.blkMin !== undefined ? t.dataset.blkMin : t.dataset.blkSec);
+    const minEl = document.querySelector(`input[data-blk-min="${idx}"]`);
+    const secEl = document.querySelector(`input[data-blk-sec="${idx}"]`);
+    if (minEl && secEl) {
+      flowBlocks[idx].durationSeconds = minSecToSec(minEl.value, secEl.value);
+      renderTimeline();
+      updateMetrics();
+      syncHiddenSchedule();
+      validateForm();
     }
-    updateScheduleStatus();
+  }
+
+  if (t.dataset.blkFlow !== undefined) {
+    const idx = Number(t.dataset.blkFlow);
+    flowBlocks[idx].targetFlow = t.value === '' ? 0 : Number(t.value);
+    renderTimeline();
+    updateMetrics();
+    syncHiddenSchedule();
+    validateForm();
   }
 });
 
 document.addEventListener('focusout', e => {
   const t = e.target;
-  if (t.dataset && (t.dataset.sectionMin !== undefined || t.dataset.sectionSec !== undefined)) renderSections();
+  if (t.dataset.blkMin !== undefined || t.dataset.blkSec !== undefined || t.dataset.blkFlow !== undefined) {
+    renderBlocks();
+  }
 });
 
-function bindTimePair(minId, secId) {
-  const minInput = $(minId);
-  const secInput = $(secId);
-  [minInput, secInput].forEach(el => {
-    el.addEventListener('input', () => {
-      normalizeTimePair(minInput, secInput);
-      updateScheduleStatus();
-    });
-    el.addEventListener('blur', () => {
-      normalizeTimePair(minInput, secInput);
-      updateScheduleStatus();
-    });
-  });
+$('addBlockBtn').addEventListener('click', () => addBlock(300, 5.0));
+
+// Aplicar configuración cargada
+function applyLoadedConfig(cfg) {
+  if (!cfg) return;
+  const w = secToMinSec(cfg.waitSeconds || 0);
+  $('waitMin').value = w.min;
+  $('waitSec').value = w.sec;
+  $('targetFlow').value = Number(cfg.targetFlow !== undefined ? cfg.targetFlow : 5.0).toFixed(1);
+
+  const sections = cfg.flowSections || [];
+  if (sections.length > 0) {
+    setBlocks(sections);
+    setMode('periods');
+  } else {
+    setFixedDuration(Number(cfg.durationSeconds) === INF ? 'infinite' : (cfg.durationSeconds || 300));
+    setBlocks([]);
+    setMode('fixed');
+  }
 }
 
-// Manual form input bindings
-bindTimePair('waitMin', 'waitSec');
-bindTimePair('durMin', 'durSec');
-$('targetFlow').addEventListener('input', updateScheduleStatus);
-document.querySelectorAll('input[name="flowMode"]').forEach(el => el.addEventListener('change', updateFlowModeUI));
+// ===== CARGAR ESTADO INICIAL DEL DRON =====
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('Error al consultar estado');
+    const data = await res.json();
 
-$('durationMode').addEventListener('change', e => {
-  setDuration(e.target.value === 'infinite' ? 'infinite' : minSecToSec($('durMin').value, $('durSec').value) || 300);
+    const sdReady = !!data.sdReady;
+    const sdStatus = String(data.sdStatus || 'ok').toUpperCase();
+    const rtcStr = formatRtc(data.rtc);
+
+    $('sdBadge').textContent = `SD: ${sdStatus}`;
+    $('sdBadge').className = `status-badge ${sdReady ? 'ok' : 'bad'}`;
+
+    $('rtcBadge').textContent = `RTC: ${rtcStr}`;
+
+    const staBadge = $('staBadge');
+    if (staBadge) {
+      if (data.staConnected && data.staIp) {
+        staBadge.textContent = `LAN: ${data.staIp}`;
+        staBadge.className = 'status-badge ok';
+        staBadge.classList.remove('hidden');
+      } else {
+        staBadge.classList.add('hidden');
+      }
+    }
+
+    if (data.defaults) {
+      applyLoadedConfig(data.defaults);
+    }
+  } catch (err) {
+    console.warn('Fallo al obtener status:', err);
+    $('sdBadge').textContent = 'SD: DESCONECTADO';
+    $('sdBadge').className = 'status-badge bad';
+    $('rtcBadge').textContent = 'RTC: --';
+    if ($('staBadge')) $('staBadge').classList.add('hidden');
+  }
+}
+
+// ===== CONFIRMAR E INICIAR SESIÓN DE CAPTURA =====
+$('setupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!validateForm()) return;
+
+  const btn = $('confirmBtn');
+  btn.disabled = true;
+  btn.textContent = 'Guardando e iniciando...';
+
+  syncHiddenSchedule();
+  const isPeriods = activeMode() === 'periods';
+  const waitVal = getWaitSeconds();
+  const durVal = isPeriods ? flowBlocks.reduce((acc, b) => acc + Number(b.durationSeconds || 0), 0) : getFixedDurationSeconds();
+  const targetVal = isPeriods && flowBlocks.length > 0 ? Number(flowBlocks[0].targetFlow || 5.0).toFixed(1) : $('targetFlow').value;
+
+  const body = new URLSearchParams();
+  body.set('waitSeconds', waitVal);
+  body.set('durationSeconds', durVal);
+  body.set('targetFlow', targetVal);
+  body.set('flowSchedule', $('flowSchedule').value);
+  if (!isPeriods && $('durationMode').value === 'infinite') {
+    body.set('durationMode', 'infinite');
+  }
+
+  try {
+    const res = await fetch('/api/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    });
+
+    if (res.ok) {
+      notify('Configuración guardada. El Wi-Fi se desconectará e iniciará la captura.', 'success', 5000);
+      $('setupStatus').textContent = 'Sesión confirmada';
+    } else {
+      const j = await res.json().catch(() => null);
+      notify('Error al confirmar: ' + (j && j.error ? j.error : 'parámetros inválidos'), 'error');
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión de captura';
+    }
+  } catch (err) {
+    notify('Error de comunicación con el dron', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Iniciar sesión de captura';
+  }
 });
 
-$('addSection').addEventListener('click', () => {
-  if (flowSections.length >= MAX_SECTIONS) {
-    notify('Máximo programable de ' + MAX_SECTIONS + ' tramos superado', 'error');
+// ===== PRESETS =====
+async function loadPresets() {
+  const grid = $('presetsGrid');
+  grid.innerHTML = '<div class="empty-state">Cargando presets...</div>';
+  try {
+    const res = await fetch('/api/presets');
+    if (!res.ok) throw new Error('Error al cargar presets');
+    const data = await res.json();
+    presets = data.presets || [];
+
+    if (presets.length === 0) {
+      grid.innerHTML = '<div class="empty-state">No hay presets guardados en el dispositivo.</div>';
+      return;
+    }
+
+    grid.innerHTML = presets.map(p => {
+      const durStr = Number(p.durationSeconds) === INF ? 'Sin límite' : formatDuration(p.durationSeconds);
+      const isBlocks = p.flowSectionCount && p.flowSectionCount > 0;
+      const typeStr = isBlocks ? `${p.flowSectionCount} bloques` : `${Number(p.targetFlow).toFixed(1)} L/min`;
+
+      return `
+        <div class="preset-card">
+          <div>
+            <div class="preset-title">${p.name}</div>
+            <div class="preset-stats">
+              <span>Modo: ${isBlocks ? 'Perfil por bloques' : 'Flujo constante'}</span>
+              <span>Caudal: ${typeStr}</span>
+              <span>Duración: ${durStr}</span>
+            </div>
+          </div>
+          <div class="preset-actions">
+            <button type="button" class="btn-primary btn-sm" data-load-preset="${p.name}">Cargar</button>
+            <button type="button" class="btn-secondary btn-sm" data-del-preset="${p.name}">Eliminar</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    grid.querySelectorAll('[data-load-preset]').forEach(b => {
+      b.addEventListener('click', () => loadPreset(b.dataset.loadPreset));
+    });
+
+    grid.querySelectorAll('[data-del-preset]').forEach(b => {
+      b.addEventListener('click', () => deletePreset(b.dataset.delPreset));
+    });
+  } catch (err) {
+    grid.innerHTML = '<div class="empty-state">Error al consultar presets.</div>';
+  }
+}
+
+async function loadPreset(name) {
+  try {
+    const res = await fetch('/api/presets/load?name=' + encodeURIComponent(name));
+    const data = await res.json();
+    if (res.ok && data.config) {
+      applyLoadedConfig(data.config);
+      $('presetName').value = data.name;
+      notify(`Preset '${data.name}' cargado`, 'success');
+      // Cambiar a la pestaña de configuración
+      document.querySelector('.tab-btn[data-target="view-config"]').click();
+    } else {
+      notify('No se pudo cargar el preset', 'error');
+    }
+  } catch (err) {
+    notify('Error al cargar preset', 'error');
+  }
+}
+
+async function savePreset() {
+  const name = $('presetName').value.trim();
+  if (!name || !/^[A-Za-z0-9_-]{1,23}$/.test(name)) {
+    notify('Nombre de preset inválido (solo letras, números, _ o -, máx 23 caracteres)', 'error');
     return;
   }
-  flowSections.push({ durationSeconds: '', targetFlow: '' });
-  renderSections();
-});
-
-$('clearSections').addEventListener('click', () => setSections([]));
-$('refreshLogs').addEventListener('click', loadLogs);
-$('downloadAll').addEventListener('click', () => {
-  if (!logFiles.length) {
-    notify('No hay archivos CSV para descargar', 'info');
+  if (!validateForm()) {
+    notify('La configuración actual tiene parámetros inválidos', 'error');
     return;
   }
-  logFiles.forEach(f => {
-    const a = document.createElement('a');
-    a.href = '/download?file=' + encodeURIComponent(f.name);
-    a.setAttribute('download', f.name);
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  });
-});
+
+  syncHiddenSchedule();
+  const isPeriods = activeMode() === 'periods';
+  const waitVal = getWaitSeconds();
+  const durVal = isPeriods ? flowBlocks.reduce((acc, b) => acc + Number(b.durationSeconds || 0), 0) : getFixedDurationSeconds();
+  const targetVal = isPeriods && flowBlocks.length > 0 ? Number(flowBlocks[0].targetFlow || 5.0).toFixed(1) : $('targetFlow').value;
+
+  const body = new URLSearchParams();
+  body.set('name', name);
+  body.set('waitSeconds', waitVal);
+  body.set('durationSeconds', durVal);
+  body.set('targetFlow', targetVal);
+  body.set('flowSchedule', $('flowSchedule').value);
+  if (!isPeriods && $('durationMode').value === 'infinite') {
+    body.set('durationMode', 'infinite');
+  }
+
+  try {
+    const res = await fetch('/api/presets/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    });
+    const j = await res.json();
+    if (res.ok && j.ok) {
+      notify(`Preset '${name}' guardado correctamente`, 'success');
+      loadPresets();
+    } else {
+      notify('Error al guardar preset: ' + (j.error || ''), 'error');
+    }
+  } catch (err) {
+    notify('Error de comunicación guardando preset', 'error');
+  }
+}
+
+async function deletePreset(name) {
+  if (!confirm(`¿Eliminar el preset '${name}'?`)) return;
+  try {
+    const body = new URLSearchParams();
+    body.set('name', name);
+    const res = await fetch('/api/presets/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    });
+    const j = await res.json();
+    if (res.ok && j.ok) {
+      notify(`Preset '${name}' eliminado`, 'success');
+      loadPresets();
+    } else {
+      notify('Error al eliminar preset', 'error');
+    }
+  } catch (err) {
+    notify('Error al comunicar eliminación de preset', 'error');
+  }
+}
+
 $('refreshPresets').addEventListener('click', loadPresets);
 $('savePreset').addEventListener('click', savePreset);
 
-$('setupForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  if (!validateFlowConfig()) {
-    notify('La configuración contiene parámetros inválidos', 'error');
+// ===== REGISTROS CSV EN SD (EXPLORADOR & PREVIEW) =====
+let currentPreviewFile = null;
+let currentPreviewText = '';
+let logSearchFilter = '';
+
+function renderLogsTable() {
+  const tbody = $('logsBody');
+  if (!tbody) return;
+
+  const countBadge = $('filesCountBadge');
+  if (countBadge) {
+    countBadge.textContent = `${logFiles.length} archivo${logFiles.length === 1 ? '' : 's'}`;
+  }
+
+  if (logFiles.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">No hay archivos CSV en la tarjeta SD</td></tr>';
     return;
   }
-  const btn = $('confirmBtn');
-  btn.disabled = true;
-  const orig = btn.textContent;
-  btn.textContent = 'Enviando...';
+
+  const filter = (logSearchFilter || '').toLowerCase();
+  const filtered = filter ? logFiles.filter(f => f.name.toLowerCase().includes(filter)) : logFiles;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Ning&uacute;n archivo coincide con "${logSearchFilter}"</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(f => {
+    const isActive = currentPreviewFile && currentPreviewFile.name === f.name;
+    return `
+      <tr class="${isActive ? 'active-row' : ''}" data-file-row="${f.name}">
+        <td class="file-name-cell"><strong>${f.name}</strong></td>
+        <td class="file-size-cell">${fmtBytes(f.size)}</td>
+        <td class="text-right">
+          <div class="table-actions">
+            <button type="button" class="btn-secondary btn-sm" data-preview-log="${f.name}">Ver</button>
+            <a href="/download?file=${encodeURIComponent(f.name)}" class="btn-primary btn-sm" download="${f.name}" style="text-decoration:none;">Descargar</a>
+            <button type="button" class="btn-secondary btn-sm btn-icon-danger" data-del-log="${f.name}">Borrar</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Delegación o asignación de eventos a botones y filas
+  tbody.querySelectorAll('[data-preview-log]').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      previewLog(b.dataset.previewLog);
+    });
+  });
+
+  tbody.querySelectorAll('[data-del-log]').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteLog(b.dataset.delLog);
+    });
+  });
+
+  tbody.querySelectorAll('tr[data-file-row]').forEach(tr => {
+    tr.addEventListener('click', e => {
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      previewLog(tr.dataset.fileRow);
+    });
+  });
+}
+
+async function loadLogs() {
+  const tbody = $('logsBody');
+  tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">Consultando archivos en la tarjeta SD...</td></tr>';
+
   try {
-    const r = await fetch('/api/confirm', {
+    const res = await fetch('/api/logs');
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">Tarjeta SD no disponible</td></tr>';
+      $('logStatSummary').textContent = 'SD no disponible';
+      return;
+    }
+    const data = await res.json();
+    logFiles = data.files || [];
+
+    const totalBytes = logFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    $('logStatSummary').textContent = `${logFiles.length} archivo${logFiles.length === 1 ? '' : 's'} (${fmtBytes(totalBytes)})`;
+
+    renderLogsTable();
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">Error al listar registros CSV</td></tr>';
+    $('logStatSummary').textContent = 'Error de lectura';
+  }
+}
+
+async function previewLog(filename) {
+  const fileObj = logFiles.find(f => f.name === filename);
+  currentPreviewFile = { name: filename, size: fileObj ? fileObj.size : 0 };
+
+  // Actualizar fila activa en la tabla
+  document.querySelectorAll('#logsBody tr[data-file-row]').forEach(tr => {
+    tr.classList.toggle('active-row', tr.dataset.fileRow === filename);
+  });
+
+  $('previewFilename').textContent = filename;
+  $('previewFilename').title = filename;
+
+  const sizeTag = $('previewFileSize');
+  if (sizeTag) {
+    if (fileObj && fileObj.size !== undefined) {
+      sizeTag.textContent = fmtBytes(fileObj.size);
+      sizeTag.classList.remove('hidden');
+    } else {
+      sizeTag.classList.add('hidden');
+    }
+  }
+
+  $('preview').textContent = 'Cargando vista previa del archivo...';
+  $('copyPreviewBtn').disabled = true;
+  $('downloadPreviewBtn').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/logs/preview?file=' + encodeURIComponent(filename));
+    if (!res.ok) {
+      $('preview').textContent = 'No se pudo leer la vista previa.';
+      $('previewRowsCount').textContent = '0 filas';
+      return;
+    }
+    const data = await res.json();
+    const rows = data.rows || [];
+    const lines = [data.header || ''].concat(rows).filter(Boolean);
+    currentPreviewText = lines.join('\n');
+    $('preview').textContent = currentPreviewText;
+    
+    $('previewRowsCount').textContent = `${rows.length} fila${rows.length === 1 ? '' : 's'}`;
+    $('copyPreviewBtn').disabled = false;
+
+    const dlBtn = $('downloadPreviewBtn');
+    dlBtn.href = '/download?file=' + encodeURIComponent(filename);
+    dlBtn.download = filename;
+    dlBtn.classList.remove('hidden');
+  } catch (err) {
+    $('preview').textContent = 'Error al obtener la vista previa del registro.';
+    $('previewRowsCount').textContent = 'Error';
+    $('copyPreviewBtn').disabled = true;
+    $('downloadPreviewBtn').classList.add('hidden');
+  }
+}
+
+function resetPreview() {
+  currentPreviewFile = null;
+  currentPreviewText = '';
+  $('previewFilename').textContent = 'Ningún archivo seleccionado';
+  $('previewFilename').title = '';
+  if ($('previewFileSize')) $('previewFileSize').classList.add('hidden');
+  $('previewRowsCount').textContent = '0 filas';
+  $('preview').textContent = 'Selecciona un archivo del explorador a la izquierda para inspeccionar sus filas.';
+  $('copyPreviewBtn').disabled = true;
+  $('downloadPreviewBtn').classList.add('hidden');
+}
+
+async function deleteLog(filename) {
+  if (!confirm(`¿Eliminar permanentemente el archivo '${filename}' de la SD?`)) return;
+  try {
+    const body = new URLSearchParams();
+    body.set('file', filename);
+    const res = await fetch('/api/logs/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody()
+      body: body
     });
-    if (r.ok) {
-      notify('Configuración confirmada. El Wi‑Fi se desconectará y comenzará la sesión.', 'success');
-      $('preview').textContent = 'Configuración guardada e inicio de sesión confirmado.';
+    const j = await res.json();
+    if (res.ok && j.ok) {
+      notify(`Archivo '${filename}' eliminado`, 'success');
+      if (currentPreviewFile && currentPreviewFile.name === filename) {
+        resetPreview();
+      }
+      loadLogs();
     } else {
-      const j = await r.json().catch(() => null);
-      notify('Error al confirmar: ' + (j && j.error ? j.error : 'parámetros inválidos'), 'error');
+      notify('No se pudo eliminar el archivo', 'error');
     }
-  } catch (e) {
-    notify('Error de red al enviar confirmación', 'error');
+  } catch (err) {
+    notify('Error de comunicación eliminando archivo', 'error');
   }
-  btn.disabled = false;
-  btn.textContent = orig;
+}
+
+// Búsqueda en tiempo real
+if ($('logSearchInput')) {
+  $('logSearchInput').addEventListener('input', e => {
+    logSearchFilter = e.target.value.trim();
+    renderLogsTable();
+  });
+}
+
+// Copiar vista previa al portapapeles
+if ($('copyPreviewBtn')) {
+  $('copyPreviewBtn').addEventListener('click', () => {
+    if (!currentPreviewText) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(currentPreviewText).then(() => {
+        notify('Datos CSV copiados al portapapeles', 'success');
+      }).catch(() => {
+        fallbackCopyText(currentPreviewText);
+      });
+    } else {
+      fallbackCopyText(currentPreviewText);
+    }
+  });
+}
+
+function fallbackCopyText(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    notify('Datos CSV copiados al portapapeles', 'success');
+  } catch (_) {
+    notify('No se pudo copiar automáticamente al portapapeles', 'error');
+  }
+}
+
+$('refreshLogs').addEventListener('click', loadLogs);
+$('downloadAll').addEventListener('click', () => {
+  if (!logFiles.length) {
+    notify('No hay archivos para descargar', 'info');
+    return;
+  }
+  logFiles.forEach((f, i) => {
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = '/download?file=' + encodeURIComponent(f.name);
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }, i * 300);
+  });
 });
 
-async function igniteMotor() {
-  try {
-    const r = await fetch('/api/motor/ignite', {method: 'POST'});
-    const d = await r.json();
-    notify(d.ok ? 'Kick de arranque enviado al motor' : 'Error: ' + (d.error || '?'), d.ok ? 'success' : 'error');
-    setTimeout(loadStatus, 600);
-  } catch (e) {
-    notify('Error al comunicar con el dispositivo', 'error');
-  }
-}
-
-// ===== DEBUG PWM MODE =====
-let _debugActive = false;
-let _debugRefreshTimer = null;
-let _debugMaxPwm = 255;
-
-function setDebugUiActive(active) {
-  _debugActive = active;
-  $('debugWarnBanner').classList.toggle('hidden', active);
-  $('debugActivePanel').classList.toggle('hidden', !active);
-}
-
+// ===== DIAGNÓSTICO & CONTROL DIRECTO DE MOTOR (DEBUG PWM) =====
 async function enterDebugMode() {
   const btn = $('enterDebugBtn');
   btn.disabled = true;
   btn.textContent = 'Activando...';
+
   try {
-    const r = await fetch('/api/debug/enter', { method: 'POST' });
-    const d = await r.json();
-    if (r.ok && d.ok) {
-      notify('Modo debug activado. El servidor Wi-Fi sigue activo.', 'success');
-      setDebugUiActive(true);
+    const res = await fetch('/api/debug/enter', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      _debugActive = true;
+      $('debugWarnCard').classList.add('hidden');
+      $('debugActiveCard').classList.remove('hidden');
+      notify('Modo diagnóstico activado', 'success');
       startDebugRefresh();
     } else {
-      notify('No se pudo activar el modo debug', 'error');
+      notify('No se pudo activar el modo diagnóstico', 'error');
       btn.disabled = false;
-      btn.textContent = 'Entrar modo debug';
+      btn.textContent = 'Activar diagnóstico';
     }
-  } catch (e) {
-    notify('Error de conexión al activar debug', 'error');
+  } catch (err) {
+    notify('Error activando diagnóstico', 'error');
     btn.disabled = false;
-    btn.textContent = 'Entrar modo debug';
+    btn.textContent = 'Activar diagnóstico';
   }
 }
 
 async function applyDebugPwm(pct) {
   try {
-    const fd = new URLSearchParams();
-    fd.set('pct', pct.toFixed(1));
-    const r = await fetch('/api/debug/pwm', {
+    const body = new URLSearchParams();
+    body.set('pct', pct.toFixed(1));
+    const res = await fetch('/api/debug/pwm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: fd
+      body: body
     });
-    const d = await r.json();
-    if (!r.ok || !d.ok) notify('Error aplicando PWM: ' + (d.error || '?'), 'error');
-  } catch (e) {
-    notify('Error de red aplicando PWM', 'error');
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      notify('Error aplicando potencia: ' + (data.error || ''), 'error');
+    }
+  } catch (err) {
+    notify('Error aplicando potencia', 'error');
   }
 }
 
-async function loadDebugStatus() {
+async function loadDebugTelemetry() {
   if (!_debugActive) return;
   try {
-    const r = await fetch('/api/debug/status');
-    if (!r.ok) return;
-    const d = await r.json();
-    _debugMaxPwm = d.maxPwm || 255;
+    const res = await fetch('/api/debug/status');
+    if (!res.ok) return;
+    const d = await res.json();
+
+    _debugMaxPwm = d.maxPwm || 2047;
     $('debugMaxPwmLabel').textContent = _debugMaxPwm;
-    $('debugPwmRawLabel').textContent = d.pwm ?? '—';
-    $('debugReadPwm').textContent = d.pwm ?? '—';
-    const pct = d.pct != null ? d.pct.toFixed(1) + ' %' : '—';
-    $('debugReadPct').textContent = pct;
+    $('debugPwmRawLabel').textContent = d.pwm !== undefined ? d.pwm : '--';
+    $('debugReadPwm').textContent = d.pwm !== undefined ? `${d.pwm} / ${_debugMaxPwm}` : '--';
+    $('debugReadPct').textContent = d.pct !== undefined ? `${d.pct.toFixed(1)}%` : '--';
+
     if (d.flow) {
-      const lpm = d.flow.valid ? d.flow.lpm.toFixed(2) + ' L/min' : 'sin datos';
-      $('debugReadFlow').textContent = lpm;
-      $('debugFlowPill').textContent = 'Flujo: ' + (d.flow.valid ? d.flow.lpm.toFixed(2) + ' L/min' : '—');
+      $('debugReadFlow').textContent = d.flow.valid ? `${d.flow.lpm.toFixed(2)} L/min` : 'Sin lectura';
     }
+
     if (d.motorTempValid) {
-      const t = Number(d.motorTemp).toFixed(1) + ' °C';
-      $('debugReadTemp').textContent = t;
-      $('debugTempPill').textContent = 'Temp: ' + t;
+      $('debugReadTemp').textContent = `${Number(d.motorTemp).toFixed(1)} °C`;
     } else {
-      $('debugReadTemp').textContent = '—';
-      $('debugTempPill').textContent = 'Temp: —';
+      $('debugReadTemp').textContent = 'N/A';
     }
-    const oh = !!d.overheat;
-    $('debugOverheatPill').classList.toggle('hidden', !oh);
   } catch (_) {}
 }
 
 function startDebugRefresh() {
-  if (_debugRefreshTimer) clearInterval(_debugRefreshTimer);
-  loadDebugStatus();
-  _debugRefreshTimer = setInterval(loadDebugStatus, 1000);
+  stopDebugRefresh();
+  loadDebugTelemetry();
+  _debugTimer = setInterval(loadDebugTelemetry, 1000);
 }
 
 function stopDebugRefresh() {
-  if (_debugRefreshTimer) { clearInterval(_debugRefreshTimer); _debugRefreshTimer = null; }
+  if (_debugTimer) {
+    clearInterval(_debugTimer);
+    _debugTimer = null;
+  }
 }
 
-// Pause/resume debug refresh when switching views
-document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const target = btn.dataset.target;
-    if (target === 'view-debug' && _debugActive) startDebugRefresh();
-    else stopDebugRefresh();
-  });
+$('enterDebugBtn').addEventListener('click', enterDebugMode);
+
+$('debugPwmSlider').addEventListener('input', e => {
+  $('debugPwmPctLabel').textContent = e.target.value;
 });
 
-// Slider live label
-if ($('debugPwmSlider')) {
-  $('debugPwmSlider').addEventListener('input', () => {
-    $('debugPwmPctLabel').textContent = $('debugPwmSlider').value;
-  });
-}
+$('applyDebugPwmBtn').addEventListener('click', () => {
+  const pct = Number($('debugPwmSlider').value);
+  applyDebugPwm(pct).then(loadDebugTelemetry);
+});
 
-if ($('enterDebugBtn')) $('enterDebugBtn').addEventListener('click', enterDebugMode);
+$('stopDebugMotorBtn').addEventListener('click', () => {
+  $('debugPwmSlider').value = 0;
+  $('debugPwmPctLabel').textContent = '0';
+  applyDebugPwm(0).then(loadDebugTelemetry);
+});
 
-if ($('applyDebugPwmBtn')) {
-  $('applyDebugPwmBtn').addEventListener('click', () => {
-    const pct = Number($('debugPwmSlider').value);
-    applyDebugPwm(pct).then(loadDebugStatus);
-  });
-}
+$('igniteMotorBtn').addEventListener('click', async () => {
+  const btn = $('igniteMotorBtn');
+  btn.disabled = true;
+  btn.textContent = 'Enviando pulso...';
+  try {
+    const res = await fetch('/api/motor/ignite', { method: 'POST' });
+    const d = await res.json();
+    if (res.ok && d.ok) {
+      const dur = d.durationMs || 300;
+      notify(`Pulso de arranque ejecutado (${dur} ms)`, 'success');
+      $('debugPwmSlider').value = 0;
+      $('debugPwmPctLabel').textContent = '0';
+      setTimeout(loadDebugTelemetry, 350);
+    } else {
+      notify('Error en pulso: ' + (d.error || 'error'), 'error');
+    }
+  } catch (_) {
+    notify('Error enviando pulso de arranque', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Pulso de arranque';
+  }
+});
 
-if ($('stopDebugMotorBtn')) {
-  $('stopDebugMotorBtn').addEventListener('click', () => {
-    $('debugPwmSlider').value = 0;
-    $('debugPwmPctLabel').textContent = '0';
-    applyDebugPwm(0).then(loadDebugStatus);
-  });
-}
-
-// Initialization
+// ===== INICIALIZACIÓN DE LA APLICACIÓN =====
 initTheme();
-updateFlowModeUI();
-if ($('igniteMotorBtn')) $('igniteMotorBtn').addEventListener('click', igniteMotor);
-loadStatus().then(loadLogs).then(loadPresets);
+setMode('fixed');
+loadStatus().then(loadPresets).then(loadLogs);

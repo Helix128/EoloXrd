@@ -339,8 +339,11 @@ private:
             ++stats.consecutiveFailures;
             stats.lastFailureMs = now;
             stats.lastErrorCode = error;
-            stats.state = stats.lastSuccessMs == 0 || stats.consecutiveFailures >= 2
-                ? RS485EndpointState::Offline : RS485EndpointState::Degraded;
+            if (stats.lastSuccessMs == 0 || stats.consecutiveFailures >= 6) {
+                stats.state = RS485EndpointState::Offline;
+            } else if (stats.consecutiveFailures >= 3) {
+                stats.state = RS485EndpointState::Degraded;
+            }
         }
         newState = stats.state;
         portEXIT_CRITICAL(&_statsMux);

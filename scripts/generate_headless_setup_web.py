@@ -26,11 +26,12 @@ def minify_css(css):
 
 def minify_js(js):
     js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
-    js = re.sub(r"^[ \t]*//.*$", "", js, flags=re.M)
-    js = re.sub(r"^[ \t]+", "", js, flags=re.M)
-    js = re.sub(r"\n{2,}", "\n", js)
-    js = re.sub(r"\s*([{}();,:=<>+*?/|-])\s*", r"\1", js)
-    return js.strip()
+    lines = []
+    for line in js.splitlines():
+        line_clean = re.sub(r"\s*//(?![^\'\"`]*[\'\"`]).*$", "", line)
+        if line_clean.strip():
+            lines.append(line_clean)
+    return "\n".join(lines)
 
 
 def minify_html(html):
