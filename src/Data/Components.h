@@ -21,6 +21,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "Profiler.h"
+#include "../Utility/SystemDiagnostics.h"
 
 struct Components {
 #ifndef FEATURE_HEADLESS
@@ -78,6 +79,7 @@ private:
   }
 
   void i2cWorker() {
+    SystemDiagnostics::instance().registerCurrentTask();
     I2CBus &bus = I2CBus::getInstance();
     bus.begin();
 
@@ -89,6 +91,8 @@ private:
 
     uint32_t warmupLogMs = 0;
     while (!bus.warmupComplete()) {
+      SystemDiagnostics::instance().i2cBeat();
+      SystemDiagnostics::instance().feedWatchdog();
       uint32_t now = millis();
       if (now - warmupLogMs >= 1000UL) {
         LOG_F("I2C en warmup; faltan %lu ms\n",
@@ -165,6 +169,14 @@ private:
 
     while (true) {
       now = millis();
+#ifdef EOLO_WDT_FAULT_INJECTION
+      if (SystemDiagnostics::instance().consumeI2cHang()) {
+        SystemDiagnostics::instance().setPhase("fault.i2c");
+        while (true) vTaskDelay(pdMS_TO_TICKS(1000));
+      }
+#endif
+      SystemDiagnostics::instance().i2cBeat();
+      SystemDiagnostics::instance().feedWatchdog();
 
       // Los diagnósticos solicitados desde la consola se ejecutan aquí,
       // junto con el resto de operaciones del bus. Nunca se hace scan/reset
@@ -213,8 +225,15 @@ private:
         if (bmeInitialized) bmeFailures = 0;
         else if (bmeFailures < 255) ++bmeFailures;
         reportHealth("BME280", bmeInitialized, bmeFailures, bmeDegraded, bmeLastLog);
-        nextBme = now + (bmeInitialized ? 1000UL : retryDelayMs(bmeFailures));
+        const bool absent = !bmeInitialized && bmeFailures >= 5 &&
+                            bme.lastInitFailure.load() == BME280::InitFailure::Nack7677;
+        nextBme = now + (bmeInitialized ? 1000UL :
+                         (absent ? 60000UL : retryDelayMs(bmeFailures)));
         nextBmeInit = nextBme;
+        if (!bmeInitialized && (bmeFailures == 1 || bmeFailures == 5))
+          LOG_F("BME280 no disponible: causa=%s; proximo_intento=%lu ms\n",
+                bme.lastInitFailureName(),
+                (unsigned long)(absent ? 60000UL : retryDelayMs(bmeFailures)));
         maybeRecoverBus();
       } else if (bmeInitialized && (int32_t)(now - nextBme) >= 0) {
         bool success = bme.readData();

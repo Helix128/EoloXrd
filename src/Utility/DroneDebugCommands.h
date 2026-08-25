@@ -7,6 +7,8 @@
 #include "DebugCommandRouter.h"
 #include "../Board/CaptureSwitches.h"
 #include "../Data/Context.h"
+#include "SystemDiagnostics.h"
+#include <WiFi.h>
 
 class DroneDebugCommands : public ConsoleCommandHandler
 {
@@ -366,6 +368,48 @@ public:
 
   bool handle(const String &line, Print &out) override
   {
+    if (line == "system status") {
+      SystemDiagnostics::instance().print(out);
+      if (_ctx != nullptr)
+        out.printf("app boot=%s captura=%s SD=%s\n",
+                   _ctx->bootInitComplete.load() ? "lista" : "iniciando",
+                   _ctx->isCaptureActive() ? "activa" : "inactiva",
+                   sdStatusText(_ctx->sdStatus()));
+      return true;
+    }
+#ifdef EOLO_WDT_FAULT_INJECTION
+    if (line == "system wdt loop confirm") {
+      out.println("Inyectando bloqueo del loop; watchdog debe reiniciar en 15 s.");
+      SystemDiagnostics::instance().setPhase("fault.loop");
+      while (true) delay(1000);
+    }
+    if (line == "system wdt i2c confirm") {
+      out.println("Inyectando bloqueo I2C; watchdog debe reiniciar en 15 s.");
+      SystemDiagnostics::instance().requestI2cHang();
+      return true;
+    }
+#endif
+    if (line == "wifi status") {
+      const wifi_mode_t mode = WiFi.getMode();
+      out.printf("AP activo=%s ip=%s clientes=%u canal=%d URLs=http://192.168.4.1/ http://eolo.setup/\n",
+                 (mode == WIFI_AP || mode == WIFI_AP_STA) ? "si" : "no",
+                 WiFi.softAPIP().toString().c_str(), WiFi.softAPgetStationNum(), WiFi.channel());
+      out.printf("LAN conectado=%s ip=%s rssi=%d URL=http://eolo-dron.local/\n",
+                 WiFi.status() == WL_CONNECTED ? "si" : "no",
+                 WiFi.localIP().toString().c_str(),
+                 WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0);
+      return true;
+    }
+    if (line == "logs index status") {
+      if (_ctx == nullptr) { out.println("Contexto Dron no adjuntado."); return true; }
+      LogIndexService::ReconcileSummary summary = _ctx->logIndexSummary();
+      out.printf("indice examinados=%lu actuales=%lu recuperados=%lu incompatibles=%lu errores=%lu filas_validas=%lu ignoradas=%lu reconstruido=%s\n",
+                 (unsigned long)summary.examined, (unsigned long)summary.current,
+                 (unsigned long)summary.recovered, (unsigned long)summary.incompatible,
+                 (unsigned long)summary.errors, (unsigned long)summary.validRows,
+                 (unsigned long)summary.ignoredRows, summary.rebuiltIndex ? "si" : "no");
+      return true;
+    }
     if (!(line == "drone" || line.startsWith("drone ")))
       return false;
 

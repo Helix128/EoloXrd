@@ -217,6 +217,16 @@ void test_index_entry_uses_exact_start_and_end_times()
     TEST_ASSERT_EQUAL_STRING("2024-01-01", entry.endDate.c_str());
     TEST_ASSERT_EQUAL_STRING("00:01:05", entry.endTime.c_str());
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1.23456f, entry.capturedVolume);
+    TEST_ASSERT_TRUE(entry.volumeAvailable);
+    TEST_ASSERT_EQUAL_STRING("recorded", LogIndexService::volumeSourceName(entry.volumeSource));
+}
+
+void test_master_index_exposes_volume_source()
+{
+    TEST_ASSERT_TRUE(String(LogIndexService::CsvHeader).endsWith(",volume_source"));
+    TEST_ASSERT_EQUAL_STRING("recorded", LogIndexService::volumeSourceName(LogIndexService::VolumeSource::Recorded));
+    TEST_ASSERT_EQUAL_STRING("estimated_flow", LogIndexService::volumeSourceName(LogIndexService::VolumeSource::EstimatedFlow));
+    TEST_ASSERT_EQUAL_STRING("unavailable", LogIndexService::volumeSourceName(LogIndexService::VolumeSource::Unavailable));
 }
 
 void setup()
@@ -232,6 +242,7 @@ void setup()
     RUN_TEST(test_log_record_row_matches_header_and_formats_volume);
     RUN_TEST(test_final_row_uses_closing_state);
     RUN_TEST(test_index_entry_uses_exact_start_and_end_times);
+    RUN_TEST(test_master_index_exposes_volume_source);
     UNITY_END();
 }
 

@@ -15,6 +15,7 @@
 #include "HeadlessSetupTypes.h"
 #include "HeadlessSetupWebPage.h"
 #include "../Data/Context.h"
+#include "../Utility/SystemDiagnostics.h"
 
 #ifndef HEADLESS_SETUP_AP_SSID
 #define HEADLESS_SETUP_AP_SSID "eolo-dron"
@@ -38,6 +39,22 @@ enum class StaConnectionState : uint8_t
   Connecting,
   Connected,
   Abandoned
+};
+
+class DiagnosticWebServer : public WebServer
+{
+public:
+  explicit DiagnosticWebServer(int port) : WebServer(port) {}
+  void beginRequest() { _lastResponseCode = 200; }
+  int lastResponseCode() const { return _lastResponseCode; }
+  void send(int code, const char *contentType = nullptr, const String &content = String(""))
+  {
+    _lastResponseCode = code;
+    WebServer::send(code, contentType, content);
+  }
+
+private:
+  int _lastResponseCode = 200;
 };
 
 class HeadlessSetupServer
@@ -66,10 +83,33 @@ public:
 
     WiFi.persistent(false);
     WiFi.setAutoReconnect(false);
+    WiFi.mode(WIFI_AP_STA);
     IPAddress apIP(192, 168, 4, 1);
-    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-    WiFi.softAP(ApSsid, ApPassword);
+    const bool apConfigured = WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+    const bool apStarted = apConfigured && WiFi.softAP(ApSsid, ApPassword);
+    if (!apStarted) {
+      LOG_LN("ERROR: no se pudo iniciar el AP eolo-dron");
+      WiFi.mode(WIFI_AP);
+      return;
+    }
     _dnsServer.start(DnsPort, "*", WiFi.softAPIP());
+
+    _wifiEventId = WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
+      if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+        _staAttempts = 0;
+        _lastDisconnectReason = 0;
+      } else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+        _lastDisconnectReason = info.wifi_sta_disconnected.reason;
+        LOG_F("Wi-Fi LAN desconectada: motivo=%u; AP activo con %u cliente(s)\n",
+              _lastDisconnectReason, WiFi.softAPgetStationNum());
+        if (_mdnsRunning) { MDNS.end(); _mdnsRunning = false; }
+        if (_staState != StaConnectionState::Disabled) {
+          _staState = StaConnectionState::Connecting;
+          _staStartMs = millis();
+          scheduleStaRetry();
+        }
+      }
+    });
 
     // Cargar credenciales de red local (Preferences o macro en compilacion)
     char staSsid[33] = "";
@@ -93,12 +133,14 @@ public:
 
     if (staSsid[0] != '\0')
     {
-      LOG_OUT("Intentando conexion unica a Wi-Fi local: ");
+      strlcpy(_staSsid, staSsid, sizeof(_staSsid));
+      strlcpy(_staPass, staPass, sizeof(_staPass));
+      LOG_OUT("Intentando conexion a Wi-Fi local: ");
       LOG_OUT_LN(staSsid);
-      WiFi.mode(WIFI_AP_STA);
       WiFi.begin(staSsid, staPass);
       _staState = StaConnectionState::Connecting;
       _staStartMs = millis();
+      _staAttempts = 1;
     }
     else
     {
@@ -106,26 +148,33 @@ public:
       _staState = StaConnectionState::Disabled;
     }
 
-    _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-    _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
-    _server.on("/api/logs", HTTP_GET, [this]() { handleLogs(); });
-    _server.on("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
-    _server.on("/download", HTTP_GET, [this]() { handleDownload(); });
-    _server.on("/api/logs/delete", HTTP_POST, [this]() { handleLogDelete(); });
-    _server.on("/api/confirm", HTTP_POST, [this]() { handleConfirm(); });
-    _server.on("/api/presets", HTTP_GET, [this]() { handlePresets(); });
-    _server.on("/api/presets/load", HTTP_GET, [this]() { handlePresetLoad(); });
-    _server.on("/api/presets/save", HTTP_POST, [this]() { handlePresetSave(); });
-    _server.on("/api/presets/delete", HTTP_POST, [this]() { handlePresetDelete(); });
-    _server.on("/api/motor/ignite", HTTP_POST, [this]() { handleIgnite(); });
-    _server.on("/api/debug/enter", HTTP_POST, [this]() { handleDebugEnter(); });
-    _server.on("/api/debug/pwm", HTTP_POST, [this]() { handleDebugPwm(); });
-    _server.on("/api/debug/status", HTTP_GET, [this]() { handleDebugStatus(); });
-    _server.on("/favicon.ico", HTTP_GET, [this]() {
+    route("/", HTTP_GET, [this]() { handleRoot(); });
+    route("/healthz", HTTP_GET, [this]() { handleHealthz(); });
+    route("/api/diagnostics", HTTP_GET, [this]() { handleDiagnostics(); });
+    route("/api/status", HTTP_GET, [this]() { handleStatus(); });
+    route("/api/logs", HTTP_GET, [this]() { handleLogs(); });
+    route("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
+    route("/download", HTTP_GET, [this]() { handleDownload(); });
+    route("/api/logs/delete", HTTP_POST, [this]() { handleLogDelete(); });
+    route("/api/confirm", HTTP_POST, [this]() { handleConfirm(); });
+    route("/api/presets", HTTP_GET, [this]() { handlePresets(); });
+    route("/api/presets/load", HTTP_GET, [this]() { handlePresetLoad(); });
+    route("/api/presets/save", HTTP_POST, [this]() { handlePresetSave(); });
+    route("/api/presets/delete", HTTP_POST, [this]() { handlePresetDelete(); });
+    route("/api/motor/ignite", HTTP_POST, [this]() { handleIgnite(); });
+    route("/api/debug/enter", HTTP_POST, [this]() { handleDebugEnter(); });
+    route("/api/debug/pwm", HTTP_POST, [this]() { handleDebugPwm(); });
+    route("/api/debug/status", HTTP_GET, [this]() { handleDebugStatus(); });
+    route("/favicon.ico", HTTP_GET, [this]() {
       _server.send(204, "image/x-icon", "");
     });
     registerCaptivePortalEndpoints();
-    _server.onNotFound([this]() { handleNotFound(); });
+    _server.onNotFound([this]() {
+      _server.beginRequest();
+      SystemDiagnostics::instance().httpBegin(_server.uri());
+      handleNotFound();
+      SystemDiagnostics::instance().httpEnd(_server.lastResponseCode());
+    });
     _server.begin();
     _running = true;
 
@@ -137,6 +186,7 @@ public:
     LOG_OUT_LN(PortalUrl);
     LOG_OUT("IP setup: ");
     LOG_OUT_LN(WiFi.softAPIP());
+    LOG_LN("LAN (si conecta): IP asignada o http://eolo-dron.local/");
   }
 
   void pollStaConnection()
@@ -149,18 +199,32 @@ public:
       _staState = StaConnectionState::Connected;
       LOG_OUT("Wi-Fi local conectada! IP asignada: ");
       LOG_OUT_LN(WiFi.localIP());
-      if (MDNS.begin(MdnsHost))
+      if (!_mdnsRunning && MDNS.begin(MdnsHost))
       {
+        _mdnsRunning = true;
         MDNS.addService("http", "tcp", 80);
         LOG_LN("mDNS activo: http://eolo-dron.local/");
       }
     }
-    else if (millis() - _staStartMs >= kStaTimeoutMs)
+    else if (millis() - _staStartMs >= kStaTimeoutMs &&
+             (int32_t)(millis() - _nextStaRetryMs) >= 0)
     {
-      _staState = StaConnectionState::Abandoned;
-      WiFi.disconnect(true, false); // Apagar interfaz station
-      WiFi.mode(WIFI_AP);           // Quedar en solo AP sin reintentos ni escaneos
-      LOG_LN("No se detecto Wi-Fi de red local. Cancelando reintentos (modo terreno AP).");
+      if (WiFi.softAPgetStationNum() > 0) {
+        _nextStaRetryMs = millis() + 10000UL;
+        return;
+      }
+      if (_staAttempts >= kMaxStaAttempts) {
+        _staState = StaConnectionState::Abandoned;
+        WiFi.disconnect(false, false);
+        LOG_LN("Wi-Fi LAN no disponible; AP sigue activo. Reintentos agotados.");
+        return;
+      }
+      ++_staAttempts;
+      LOG_F("Reintento Wi-Fi LAN %u/%u; AP permanece activo\n", _staAttempts, kMaxStaAttempts);
+      WiFi.disconnect(false, false);
+      WiFi.begin(_staSsid, _staPass);
+      _staStartMs = millis();
+      scheduleStaRetry();
     }
   }
 
@@ -186,6 +250,7 @@ public:
       MDNS.end();
     }
     WiFi.disconnect(true, true);
+    WiFi.removeEvent(_wifiEventId);
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     _running = false;
@@ -199,7 +264,7 @@ public:
 private:
   Context &_ctx;
   CaptureSwitches &_switches;
-  WebServer _server;
+  DiagnosticWebServer _server;
   DNSServer _dnsServer;
   HeadlessSetupConfig _defaults;
   HeadlessSetupConfig _confirmedConfig;
@@ -209,6 +274,31 @@ private:
   bool _running = false;
   bool _confirmed = false;
   bool _debugMode = false;
+  bool _mdnsRunning = false;
+  wifi_event_id_t _wifiEventId = 0;
+  char _staSsid[33] = {};
+  char _staPass[65] = {};
+  uint8_t _staAttempts = 0;
+  uint8_t _lastDisconnectReason = 0;
+  unsigned long _nextStaRetryMs = 0;
+  static constexpr uint8_t kMaxStaAttempts = 5;
+
+  void scheduleStaRetry()
+  {
+    uint8_t shift = _staAttempts > 4 ? 4 : _staAttempts;
+    _nextStaRetryMs = millis() + (1000UL << shift);
+  }
+
+  template <typename Handler>
+  void route(const char *uri, HTTPMethod method, Handler handler)
+  {
+    _server.on(uri, method, [this, handler]() {
+      _server.beginRequest();
+      SystemDiagnostics::instance().httpBegin(_server.uri());
+      handler();
+      SystemDiagnostics::instance().httpEnd(_server.lastResponseCode());
+    });
+  }
 
   static const char *sdStatusText(SDStatus status)
   {
@@ -335,15 +425,15 @@ private:
 
   void registerCaptivePortalEndpoints()
   {
-    _server.on("/generate_204", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/gen_204", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/mobile/status.php", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/hotspot-detect.html", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/library/test/success.html", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/success.txt", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/connecttest.txt", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/ncsi.txt", HTTP_GET, [this]() { redirectToPortal(); });
-    _server.on("/fwlink", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/generate_204", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/gen_204", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/mobile/status.php", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/hotspot-detect.html", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/library/test/success.html", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/success.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/connecttest.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/ncsi.txt", HTTP_GET, [this]() { redirectToPortal(); });
+    route("/fwlink", HTTP_GET, [this]() { redirectToPortal(); });
   }
 
   void handleNotFound()
@@ -383,6 +473,93 @@ private:
     _server.sendHeader("Cache-Control", "no-store");
     _server.sendHeader("Content-Encoding", "gzip");
     _server.send_P(200, "text/html; charset=utf-8", reinterpret_cast<PGM_P>(kHeadlessSetupHtmlGzip), kHeadlessSetupHtmlGzipSize);
+  }
+
+  void handleHealthz()
+  {
+    SystemDiagnostics::Snapshot snap = SystemDiagnostics::instance().snapshot();
+    char response[192];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"uptimeMs\":%lu,\"loopHeartbeat\":%lu,\"heap\":%lu}",
+             (unsigned long)snap.uptimeMs, (unsigned long)snap.loopHeartbeat,
+             (unsigned long)snap.freeHeap);
+    _server.sendHeader("Cache-Control", "no-store");
+    _server.send(200, "application/json", response);
+  }
+
+  void handleDiagnostics()
+  {
+    SystemDiagnostics::Snapshot snap = SystemDiagnostics::instance().snapshot();
+    I2CBus &bus = I2CBus::getInstance();
+    I2CBus::Stats i2c = bus.getStats();
+    LogIndexService::ReconcileSummary index = _ctx.logIndexSummary();
+    DynamicJsonDocument doc(4096);
+    doc["uptimeMs"] = snap.uptimeMs;
+    doc["core"] = snap.core;
+    doc["phase"] = snap.phase;
+    JsonObject loop = doc.createNestedObject("loop");
+    loop["heartbeat"] = snap.loopHeartbeat;
+    loop["lastDurationMs"] = snap.loopLastDurationMs;
+    loop["maxPauseMs"] = snap.loopMaxPauseMs;
+    JsonObject tasks = doc.createNestedObject("tasks");
+    tasks["i2cHeartbeat"] = snap.i2cHeartbeat;
+    tasks["i2cStackFreeWords"] = snap.i2cStackWords;
+    tasks["rs485Heartbeat"] = snap.rs485Heartbeat;
+    tasks["rs485StackFreeWords"] = snap.rs485StackWords;
+    JsonObject heap = doc.createNestedObject("heap");
+    heap["free"] = snap.freeHeap;
+    heap["minimum"] = snap.minFreeHeap;
+    JsonObject http = doc.createNestedObject("http");
+    http["lastRequest"] = snap.lastRequest;
+    http["lastDurationMs"] = snap.httpLastDurationMs;
+    http["lastCode"] = snap.httpLastCode;
+    http["slow"] = snap.httpSlow;
+    http["failed"] = snap.httpFailed;
+    JsonObject wifi = doc.createNestedObject("wifi");
+    wifi["apActive"] = WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA;
+    wifi["apIp"] = WiFi.softAPIP().toString();
+    wifi["apClients"] = WiFi.softAPgetStationNum();
+    wifi["channel"] = WiFi.channel();
+    wifi["staConnected"] = WiFi.status() == WL_CONNECTED;
+    wifi["staIp"] = WiFi.localIP().toString();
+    wifi["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+    wifi["lastDisconnectReason"] = _lastDisconnectReason;
+    wifi["attempts"] = _staAttempts;
+    JsonObject sd = doc.createNestedObject("sd");
+    sd["ready"] = _ctx.isSdReady();
+    sd["status"] = sdStatusText(_ctx.sdStatus());
+    JsonObject reconciliation = sd.createNestedObject("reconciliation");
+    reconciliation["examined"] = index.examined;
+    reconciliation["current"] = index.current;
+    reconciliation["recovered"] = index.recovered;
+    reconciliation["incompatible"] = index.incompatible;
+    reconciliation["errors"] = index.errors;
+    JsonObject i2cJson = doc.createNestedObject("i2c");
+    i2cJson["ready"] = bus.isReady();
+    i2cJson["transactions"] = i2c.transactions;
+    i2cJson["failures"] = i2c.failures;
+    i2cJson["recoveries"] = i2c.recoveries;
+    i2cJson["lastResult"] = I2CBus::resultName(i2c.lastResult);
+    i2cJson["bmeFailure"] = _ctx.components.bme.lastInitFailureName();
+    JsonArray addresses = i2cJson.createNestedArray("addresses");
+    for (uint8_t address : {uint8_t(ATTINY_ADDRESS), uint8_t(0x0A), uint8_t(0x68), uint8_t(0x76), uint8_t(0x77)}) {
+      I2CBus::AddressStats stats = bus.getAddressStats(address);
+      JsonObject item = addresses.createNestedObject();
+      item["address"] = address;
+      item["observed"] = stats.observed;
+      item["result"] = I2CBus::resultName(stats.lastResult);
+      item["failures"] = stats.consecutiveFailures;
+    }
+    JsonObject app = doc.createNestedObject("application");
+    app["bootComplete"] = _ctx.bootInitComplete.load();
+    app["capturing"] = _ctx.isCaptureActive();
+    app["logActive"] = _ctx.isLogActive();
+    app["uploadActive"] = _ctx.isUploadActive();
+    String response;
+    response.reserve(measureJson(doc) + 1);
+    serializeJson(doc, response);
+    _server.sendHeader("Cache-Control", "no-store");
+    _server.send(200, "application/json", response);
   }
 
   void handleDebugEnter()
@@ -570,6 +747,8 @@ private:
     File file = dir.openNextFile();
     while (file)
     {
+      SystemDiagnostics::instance().feedWatchdog();
+      delay(0);
       const char *rawName = file.name();
       const char *base = rawName;
       const char *slash = strrchr(rawName, '/');
@@ -658,6 +837,8 @@ private:
     size_t count = 0;
     while (file.available())
     {
+      SystemDiagnostics::instance().feedWatchdog();
+      delay(0);
       const uint32_t rowOffset = file.position();
       size_t rlen = file.readBytesUntil('\n', rowBuf, sizeof(rowBuf) - 1);
       rowBuf[rlen] = '\0';
@@ -733,7 +914,23 @@ private:
     char disp[320];
     snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", name.c_str());
     _server.sendHeader("Content-Disposition", disp);
-    _server.streamFile(file, "text/csv");
+    _server.setContentLength(file.size());
+    _server.send(200, "text/csv", "");
+    WiFiClient client = _server.client();
+    uint8_t buffer[1024];
+    while (file.available() && client.connected()) {
+      size_t count = file.read(buffer, sizeof(buffer));
+      if (count == 0) break;
+      size_t offset = 0;
+      while (offset < count && client.connected()) {
+        size_t written = client.write(buffer + offset, count - offset);
+        if (written == 0) break;
+        offset += written;
+        SystemDiagnostics::instance().feedWatchdog();
+        delay(0);
+      }
+      if (offset != count) break;
+    }
     file.close();
   }
 

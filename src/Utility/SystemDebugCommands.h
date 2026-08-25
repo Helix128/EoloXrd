@@ -28,6 +28,12 @@ private:
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
         out.println("  switches/sw       estado de switches de captura");
         out.println("  drone status      diagnostico compacto EOLO Dron");
+        out.println("  system status     salud de loop, tareas, heap y HTTP");
+        out.println("  wifi status       estado AP y LAN");
+        out.println("  logs index status resumen de reconciliacion");
+#ifdef EOLO_WDT_FAULT_INJECTION
+        out.println("  system wdt loop|i2c confirm  inyectar bloqueo para probar watchdog");
+#endif
 #endif
         out.println("  !                 entrar al terminal silencioso");
         out.println("  exit              salir del terminal silencioso");

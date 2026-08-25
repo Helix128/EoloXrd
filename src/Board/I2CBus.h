@@ -65,6 +65,7 @@ private:
     uint32_t _warmupUntilMs = 0;
     Stats _stats;
     AddressStats _addressStats[128] = {};
+    mutable portMUX_TYPE _statsMux = portMUX_INITIALIZER_UNLOCKED;
     QueueHandle_t _commandQueue = nullptr;
     bool _scanActive = false;
     bool _scanQueued = false;
@@ -234,11 +235,18 @@ public:
     }
 
     Stats getStats() const {
-        return _stats;
+        portENTER_CRITICAL(&_statsMux);
+        Stats copy = _stats;
+        portEXIT_CRITICAL(&_statsMux);
+        return copy;
     }
 
     AddressStats getAddressStats(uint8_t addr) const {
-        return addr < 128 ? _addressStats[addr] : AddressStats{};
+        if (addr >= 128) return AddressStats{};
+        portENTER_CRITICAL(&_statsMux);
+        AddressStats copy = _addressStats[addr];
+        portEXIT_CRITICAL(&_statsMux);
+        return copy;
     }
 
     bool enqueueCommand(Command command) {
@@ -273,6 +281,7 @@ public:
         uint32_t now = millis();
         uint8_t count = 0;
         bool bmePairCounted = false;
+        portENTER_CRITICAL(&_statsMux);
         for (uint8_t addr = 1; addr < 127; ++addr) {
             const AddressStats &entry = _addressStats[addr];
             // 0x76/0x77 son dos direcciones alternativas del mismo BME280;
@@ -286,6 +295,7 @@ public:
                     bmePairCounted = true;
             }
         }
+        portEXIT_CRITICAL(&_statsMux);
         return count;
     }
 
@@ -323,6 +333,8 @@ public:
 
     void recordResult(uint8_t addr, Result result, uint32_t elapsedMs,
                       size_t expected = 0, size_t received = 0) {
+        const uint32_t now = millis();
+        portENTER_CRITICAL(&_statsMux);
         _stats.transactions++;
         _stats.lastAddress = addr;
         _stats.lastResult = result;
@@ -332,7 +344,7 @@ public:
 
         if (result == Result::Ok) {
             _stats.successes++;
-            _stats.lastSuccessMs = millis();
+            _stats.lastSuccessMs = now;
             if (addr < 128) {
                 AddressStats &address = _addressStats[addr];
                 address.address = addr;
@@ -340,7 +352,7 @@ public:
                 address.consecutiveFailures = 0;
                 address.backoffMs = 0;
                 address.nextRetryMs = 0;
-                address.lastSuccessMs = millis();
+                address.lastSuccessMs = now;
                 address.lastResult = Result::Ok;
             }
         } else {
@@ -360,11 +372,12 @@ public:
                     ++address.consecutiveFailures;
                 address.backoffMs = I2CRetryPolicy::delayForFailures(
                     address.consecutiveFailures);
-                address.nextRetryMs = millis() + address.backoffMs;
-                address.lastFailureMs = millis();
+                address.nextRetryMs = now + address.backoffMs;
+                address.lastFailureMs = now;
                 address.lastResult = result;
             }
         }
+        portEXIT_CRITICAL(&_statsMux);
     }
 
     // Recuperación conservadora del periférico y, si hace falta, de un
@@ -407,7 +420,9 @@ public:
             Wire.setClock(I2C_CLOCK);
             Wire.setTimeOut(TRANSACTION_TIMEOUT_MS);
             _ready = true;
+            portENTER_CRITICAL(&_statsMux);
             _stats.recoveries++;
+            portEXIT_CRITICAL(&_statsMux);
         }
         return ok;
     }

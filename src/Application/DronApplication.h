@@ -14,6 +14,7 @@
 #include "../Data/Context.h"
 #include "../Utility/DebugConsole.h"
 #include "../Utility/RS485Monitor.h"
+#include "../Utility/SystemDiagnostics.h"
 #include "Profiler.h"
 
 // EOLO Dron has a different product flow from the display-based models.  The
@@ -52,6 +53,7 @@ public:
         _context.components.motor.begin(); // apagar motores
 
         Serial.begin(115200);
+        SystemDiagnostics::instance().begin();
 
 #ifdef FEATURE_MODEM
         _debugConsole.attachModemService(&_context.components.modemService);
@@ -71,6 +73,8 @@ public:
 
     void update()
     {
+        SystemDiagnostics &diagnostics = SystemDiagnostics::instance();
+        diagnostics.feedWatchdog();
         _debugConsole.poll();
 
         if (millis() - _lastFrameMs < kTargetMs)
@@ -81,10 +85,24 @@ public:
         _frameStartMs = millis();
         _lastFrameMs += kTargetMs;
 
+        diagnostics.setPhase("context.update");
         _context.update();
+        diagnostics.setPhase("drone.controller");
         updateDroneController();
 
+        if (_reportedDroneState != static_cast<uint8_t>(_droneState)) {
+            _reportedDroneState = static_cast<uint8_t>(_droneState);
+            LOG_F("Transicion aplicacion: estado=%s\n", droneStateName(_droneState));
+            diagnostics.print(Serial);
+        }
+
         const unsigned long frameExecutionMs = millis() - _frameStartMs;
+        diagnostics.loopBeat(frameExecutionMs);
+        diagnostics.setPhase("loop");
+        if (EoloDebug::verboseLogsEnabled() && millis() - _lastHealthLogMs >= 15000UL) {
+            diagnostics.print(Serial);
+            _lastHealthLogMs = millis();
+        }
         PROFILE_MARK("loop.frame", frameExecutionMs * 1000UL);
         RS485Monitor::getInstance().recordLoopFrameTime(frameExecutionMs);
         RS485Monitor::getInstance().checkAndReportViolations();
@@ -114,6 +132,22 @@ private:
     bool _droneFinishHandled = false;
     unsigned long _lastFrameMs = 0;
     unsigned long _frameStartMs = 0;
+    unsigned long _lastHealthLogMs = 0;
+    uint8_t _reportedDroneState = 0xFF;
+
+    static const char *droneStateName(DroneBootState state)
+    {
+        switch (state) {
+        case DroneBootState::Booting: return "booting";
+        case DroneBootState::Idle: return "idle";
+        case DroneBootState::Setup: return "setup";
+        case DroneBootState::Waiting: return "waiting";
+        case DroneBootState::Capturing: return "capturing";
+        case DroneBootState::Finished: return "finished";
+        case DroneBootState::Debug: return "debug";
+        }
+        return "unknown";
+    }
 
     void setDroneLed(StatusLedPattern pattern)
     {

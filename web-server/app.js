@@ -10,6 +10,7 @@ let logFiles = [];
 let presets = [];
 let _debugActive = false;
 let _debugTimer = null;
+let _diagTimer = null;
 let _debugMaxPwm = 2047;
 
 // Formateo de bytes
@@ -126,10 +127,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
     if ($(target)) $(target).classList.add('active');
 
-    if (target === 'view-debug' && _debugActive) {
-      startDebugRefresh();
+    if (target === 'view-debug') {
+      startDiagnosticsRefresh();
+      if (_debugActive) startDebugRefresh();
     } else {
       stopDebugRefresh();
+      stopDiagnosticsRefresh();
     }
   });
 });
@@ -1130,6 +1133,37 @@ $('downloadAll').addEventListener('click', () => {
 });
 
 // ===== DIAGNÓSTICO & CONTROL DIRECTO DE MOTOR (DEBUG PWM) =====
+async function loadSystemDiagnostics() {
+  try {
+    const res = await fetch('/api/diagnostics', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    $('diagLoop').textContent = `#${d.loop.heartbeat} · ${d.loop.lastDurationMs} ms · pausa máx ${d.loop.maxPauseMs} ms`;
+    $('diagHeap').textContent = `${fmtBytes(d.heap.free)} / ${fmtBytes(d.heap.minimum)}`;
+    $('diagWifi').textContent = `AP ${d.wifi.apActive ? 'OK' : 'OFF'} (${d.wifi.apClients}) · LAN ${d.wifi.staConnected ? d.wifi.staIp : 'sin conexión'}`;
+    $('diagI2c').textContent = `${d.i2c.lastResult} · BME ${d.i2c.bmeFailure}`;
+    const ix = d.sd.reconciliation;
+    $('diagSd').textContent = `${d.sd.status} · ${ix.current} actuales, ${ix.recovered} recuperados, ${ix.errors} errores`;
+    $('diagHttp').textContent = `${d.http.lastRequest || '—'} · ${d.http.lastDurationMs} ms · ${d.http.failed} fallidas`;
+    $('diagUpdated').textContent = `Actualizado · uptime ${formatDuration(Math.floor(d.uptimeMs / 1000))}`;
+  } catch (_) {
+    $('diagUpdated').textContent = 'Diagnóstico no disponible';
+  }
+}
+
+function startDiagnosticsRefresh() {
+  stopDiagnosticsRefresh();
+  loadSystemDiagnostics();
+  _diagTimer = setInterval(loadSystemDiagnostics, 2000);
+}
+
+function stopDiagnosticsRefresh() {
+  if (_diagTimer) {
+    clearInterval(_diagTimer);
+    _diagTimer = null;
+  }
+}
+
 async function enterDebugMode() {
   const btn = $('enterDebugBtn');
   btn.disabled = true;

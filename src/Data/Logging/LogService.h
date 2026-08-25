@@ -57,6 +57,7 @@ public:
                           bool includeAnemometer, bool includeNtc,
                           bool kickActive = false, bool finalRecord = false);
     bool logsIdle() const;
+    LogIndexService::ReconcileSummary indexSummary() const { return logIndex.reconciliationSummary(); }
     bool logData(const LogRecord &record, uint32_t sessionStartUnix,
                  bool includeState, bool includePlantower,
                  bool includeAnemometer, bool includeNtc,

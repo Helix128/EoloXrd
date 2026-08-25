@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 #include <atomic>
+#include "../Utility/SystemDiagnostics.h"
 #include <Eolo/Core/Communication/RS485Protocol.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -435,6 +436,7 @@ private:
     static void busTask(void* arg) {
         RS485Bus* self = static_cast<RS485Bus*>(arg);
         for (;;) {
+            SystemDiagnostics::instance().rs485Beat();
             Endpoint endpoint{};
             int index = -1;
             if (self->_initialized.load() && self->selectDueEndpoint(endpoint, index))
