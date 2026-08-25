@@ -95,8 +95,10 @@ Los datos se guardan en:
 El intervalo de registro es de 10 segundos. El CSV de EOLO Standard contiene:
 
 ```text
-time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct
+time,flow,flow_target,captured_volume,temperature,humidity,pressure,pm1,pm25,pm10,wind_speed,wind_direction,battery_pct
 ```
+
+`captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
 
 Cuando el modem esta disponible, el equipo puede preparar y subir datos por red. Si no hay senal o el modem no esta listo, la captura local en SD sigue siendo la referencia principal.
 

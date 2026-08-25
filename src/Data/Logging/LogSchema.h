@@ -89,7 +89,7 @@ namespace LogSchema
         String out = "time";
         if (includeState)
             out += ",state";
-        out += ",flow,flow_target,temperature,humidity,pressure";
+        out += ",flow,flow_target,captured_volume,temperature,humidity,pressure";
         if (includePlantower)
             out += ",pm1,pm25,pm10";
         if (includeAnemometer)
@@ -110,29 +110,29 @@ namespace LogSchema
         return bmeReady && isfinite(value) && value > -999.0f ? value : LogMissingValue;
     }
 
-    inline void printValue(File &file, float value)
+    inline void printValue(Print &file, float value)
     {
         file.print(value);
     }
 
-    inline void printValue(File &file, int value)
+    inline void printValue(Print &file, int value)
     {
         file.print(value);
     }
 
-    inline void printValue(File &file, const char *value)
+    inline void printValue(Print &file, const char *value)
     {
         file.print(value);
     }
 
-    inline void printComma(File &file)
+    inline void printComma(Print &file)
     {
         file.print(",");
     }
 
     // Serializador desacoplado de Context. El wrapper histórico de abajo se
     // mantiene para escenas/tests que todavía consultan sensores en el acto.
-    inline void writeRow(File &file, const LogRecord &record,
+    inline void writeRow(Print &file, const LogRecord &record,
                          bool includeState, bool includePlantower,
                          bool includeAnemometer, bool includeNtc,
                          const char *stateText = "Capturando")
@@ -148,6 +148,8 @@ namespace LogSchema
         printValue(file, missingIfInvalid(record.flow.valid, record.flow.flow));
         printComma(file);
         printValue(file, record.targetFlow);
+        printComma(file);
+        file.print(record.capturedVolume, 3);
         printComma(file);
         printValue(file, bmeValue(record.environment.valid, record.environment.temperature));
         printComma(file);
@@ -200,6 +202,8 @@ namespace LogSchema
         printComma(file);
 
         printValue(file, ctx.session.targetFlow);
+        printComma(file);
+        file.print(ctx.session.capturedVolume, 3);
         printComma(file);
         BME280Data bmeData;
         bool bmeValid = ctx.components.bme.getData(bmeData);

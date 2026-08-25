@@ -239,10 +239,10 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
     input.sampleId = flowData.sampleId;
     input.maxPwm = MAX_PWM;
     input.primaryMotor = primaryMotor;
-    input.hasFeedForward = useCalibrationSeed || !EoloConfig::useCalibrationSeed;
+    input.hasFeedForward = useCalibrationSeed;
     input.feedForwardPrimary = useCalibrationSeed
                                    ? (primaryMotor == 0 ? seed0 : seed1)
-                                   : FLOW_PID_BASE_PWM;
+                                   : 0;
     input.feedForwardSecondary = useCalibrationSeed
                                      ? (primaryMotor == 0 ? seed1 : seed0)
                                      : 0;

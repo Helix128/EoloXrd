@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 #include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <Preferences.h>
 #include <SD.h>
 #include <WebServer.h>
@@ -23,6 +24,22 @@
 #define HEADLESS_SETUP_AP_PASSWORD "eolo-dron"
 #endif
 
+#ifndef HEADLESS_SETUP_STA_SSID
+#define HEADLESS_SETUP_STA_SSID "udd-recicla"
+#endif
+
+#ifndef HEADLESS_SETUP_STA_PASSWORD
+#define HEADLESS_SETUP_STA_PASSWORD "R3c1claj3#udd-2019"
+#endif
+
+enum class StaConnectionState : uint8_t
+{
+  Disabled,
+  Connecting,
+  Connected,
+  Abandoned
+};
+
 class HeadlessSetupServer
 {
 public:
@@ -31,6 +48,7 @@ public:
   static constexpr const char *PortalHost = "eolo.setup";
   static constexpr const char *PortalUrl = "http://eolo.setup/";
   static constexpr const char *PortalIpUrl = "http://192.168.4.1/";
+  static constexpr const char *MdnsHost = "eolo-dron";
   static constexpr uint16_t DnsPort = 53;
 
   explicit HeadlessSetupServer(Context &context, CaptureSwitches &switches)
@@ -47,11 +65,46 @@ public:
     loadDefaults();
 
     WiFi.persistent(false);
-    WiFi.mode(WIFI_AP);
+    WiFi.setAutoReconnect(false);
     IPAddress apIP(192, 168, 4, 1);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     WiFi.softAP(ApSsid, ApPassword);
     _dnsServer.start(DnsPort, "*", WiFi.softAPIP());
+
+    // Cargar credenciales de red local (Preferences o macro en compilacion)
+    char staSsid[33] = "";
+    char staPass[65] = "";
+    Preferences wifiPrefs;
+    if (wifiPrefs.begin("eolo_wifi", false))
+    {
+      if (wifiPrefs.isKey("ssid"))
+      {
+        wifiPrefs.getString("ssid", staSsid, sizeof(staSsid));
+        wifiPrefs.getString("pass", staPass, sizeof(staPass));
+      }
+      wifiPrefs.end();
+    }
+
+    if (staSsid[0] == '\0' && strlen(HEADLESS_SETUP_STA_SSID) > 0)
+    {
+      strlcpy(staSsid, HEADLESS_SETUP_STA_SSID, sizeof(staSsid));
+      strlcpy(staPass, HEADLESS_SETUP_STA_PASSWORD, sizeof(staPass));
+    }
+
+    if (staSsid[0] != '\0')
+    {
+      LOG_OUT("Intentando conexion unica a Wi-Fi local: ");
+      LOG_OUT_LN(staSsid);
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.begin(staSsid, staPass);
+      _staState = StaConnectionState::Connecting;
+      _staStartMs = millis();
+    }
+    else
+    {
+      WiFi.mode(WIFI_AP);
+      _staState = StaConnectionState::Disabled;
+    }
 
     _server.on("/", HTTP_GET, [this]() { handleRoot(); });
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
@@ -86,11 +139,37 @@ public:
     LOG_OUT_LN(WiFi.softAPIP());
   }
 
+  void pollStaConnection()
+  {
+    if (_staState != StaConnectionState::Connecting)
+      return;
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      _staState = StaConnectionState::Connected;
+      LOG_OUT("Wi-Fi local conectada! IP asignada: ");
+      LOG_OUT_LN(WiFi.localIP());
+      if (MDNS.begin(MdnsHost))
+      {
+        MDNS.addService("http", "tcp", 80);
+        LOG_LN("mDNS activo: http://eolo-dron.local/");
+      }
+    }
+    else if (millis() - _staStartMs >= kStaTimeoutMs)
+    {
+      _staState = StaConnectionState::Abandoned;
+      WiFi.disconnect(true, false); // Apagar interfaz station
+      WiFi.mode(WIFI_AP);           // Quedar en solo AP sin reintentos ni escaneos
+      LOG_LN("No se detecto Wi-Fi de red local. Cancelando reintentos (modo terreno AP).");
+    }
+  }
+
   void handleClient()
   {
     if (!_running)
       return;
 
+    pollStaConnection();
     _dnsServer.processNextRequest();
     _server.handleClient();
   }
@@ -102,9 +181,15 @@ public:
 
     _server.stop();
     _dnsServer.stop();
+    if (_staState == StaConnectionState::Connected)
+    {
+      MDNS.end();
+    }
+    WiFi.disconnect(true, true);
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     _running = false;
+    _staState = StaConnectionState::Disabled;
   }
 
   bool confirmed() const { return _confirmed; }
@@ -118,6 +203,9 @@ private:
   DNSServer _dnsServer;
   HeadlessSetupConfig _defaults;
   HeadlessSetupConfig _confirmedConfig;
+  StaConnectionState _staState = StaConnectionState::Disabled;
+  unsigned long _staStartMs = 0;
+  static constexpr unsigned long kStaTimeoutMs = 3500UL;
   bool _running = false;
   bool _confirmed = false;
   bool _debugMode = false;
@@ -274,8 +362,15 @@ private:
     }
 
     String host = _server.hostHeader();
-    if (host.length() > 0 && !host.equals("192.168.4.1") && !host.equals("eolo.setup"))
+    if (host.length() > 0)
     {
+      if (host.equals("192.168.4.1") || host.equals("eolo.setup") ||
+          host.equals("eolo-dron.local") || host.startsWith("eolo-dron.local:") ||
+          (_staState == StaConnectionState::Connected && (host.equals(WiFi.localIP().toString()) || host.startsWith(WiFi.localIP().toString() + ":"))))
+      {
+        _server.send(404, "text/plain", "Not Found");
+        return;
+      }
       redirectToPortal();
       return;
     }
@@ -367,12 +462,36 @@ private:
 
   void handleIgnite()
   {
+    if (!_debugMode)
+    {
+      _server.send(403, "application/json", "{\"ok\":false,\"error\":\"not_in_debug\"}");
+      return;
+    }
+
+    int kickPwm = FLOW_PID_KICK_PWM;
+    if (kickPwm <= 0) kickPwm = static_cast<int>(MAX_PWM * 0.80f);
+    if (kickPwm > MAX_PWM) kickPwm = MAX_PWM;
+
+    unsigned long kickMs = FLOW_PID_KICK_MS;
+    if (kickMs == 0) kickMs = 300;
+
+    LOG_OUT("Ejecutando pulso de arranque diagnostico: PWM ");
+    LOG_OUT(kickPwm);
+    LOG_OUT(" durante ");
+    LOG_OUT(kickMs);
+    LOG_OUT_LN(" ms");
+
+    _ctx.components.motor.setPwmImmediate(kickPwm);
+    delay(kickMs);
+    _ctx.components.motor.setPwmImmediate(0);
+
 #if defined(FEATURE_FLOW_PID)
     _ctx.motorCapture.forceIgnition();
-    _server.send(200, "application/json", "{\"ok\":true}");
-#else
-    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"no PID\"}");
 #endif
+
+    char resp[128];
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"kickPwm\":%d,\"durationMs\":%lu}", kickPwm, kickMs);
+    _server.send(200, "application/json", resp);
   }
 
   void handleStatus()
@@ -382,6 +501,11 @@ private:
     doc["sdReady"] = _ctx.isSdReady();
     doc["sdStatus"] = sdStatusText(_ctx.sdStatus());
     doc["rtc"] = _ctx.components.rtc.now().timestamp();
+    doc["staConnected"] = (_staState == StaConnectionState::Connected);
+    if (_staState == StaConnectionState::Connected)
+    {
+      doc["staIp"] = WiFi.localIP().toString();
+    }
 
     JsonObject defaults = doc.createNestedObject("defaults");
     defaults["waitSeconds"] = _defaults.waitSeconds;

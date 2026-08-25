@@ -131,12 +131,14 @@ Los datos se guardan en la microSD:
 El intervalo de registro es de 10 segundos. El CSV del Dron usa estas columnas:
 
 ```text
-time,flow,flow_target,temperature,humidity,pressure,pm1,pm25,pm10,ntc_temperature,battery_pct
+time,state,flow,flow_target,captured_volume,temperature,humidity,pressure,ntc_temperature,battery_pct
 ```
 
 `ntc_temperature` registra la temperatura del termistor interno si el firmware fue compilado con NTC; si no esta disponible se guarda `-1`.
 
-En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de viento, y las columnas PM no representan una medicion de particulas en este modelo.
+`captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
+
+En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de particulas ni de viento. La columna `state` indica si el control de flujo esta arrancando o capturando.
 
 ## Solucion de problemas
 
