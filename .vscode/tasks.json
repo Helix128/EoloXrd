@@ -2,24 +2,18 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "EOLO: Definir nombre de version actual",
+      "label": "EOLO: Compilar versión",
       "type": "shell",
-      "command": "${workspaceFolder}/eolo tag \"${input:versionName}\"",
+      "command": "${workspaceFolder}/eolo build \"${input:buildTarget}\" --tag \"${input:buildName}\"",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
         "panel": "shared",
         "focus": true
-      }
-    },
-    {
-      "label": "EOLO: Limpiar nombre de version actual",
-      "type": "shell",
-      "command": "${workspaceFolder}/eolo untag",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
       }
     },
     {
@@ -71,27 +65,6 @@
       }
     },
     {
-      "label": "EOLO: Compilar y respaldar Express",
-      "type": "shell",
-      "command": "${workspaceFolder}/eolo build express",
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
-      "label": "EOLO: Compilar y respaldar Dron",
-      "type": "shell",
-      "command": "${workspaceFolder}/eolo build dron",
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
-      "label": "EOLO: Compilar y respaldar Standard",
-      "type": "shell",
-      "command": "${workspaceFolder}/eolo build standard",
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
       "label": "EOLO: Compilar demo",
       "type": "shell",
       "command": "${workspaceFolder}/eolo demo build ${input:demoChoice} ${input:modelChoice}",
@@ -129,10 +102,21 @@
   ],
   "inputs": [
     {
-      "id": "versionName",
+      "id": "buildTarget",
+      "type": "pickString",
+      "description": "Selecciona el target a compilar y respaldar:",
+      "options": [
+        "eolo_express",
+        "eolo_express_legacy",
+        "eolo_standard",
+        "eolo_dron",
+        "eolo_dron_low_power"
+      ]
+    },
+    {
+      "id": "buildName",
       "type": "promptString",
-      "description": "Ingresa el nombre o etiqueta de la version actual (ej. calibracion_afm07):",
-      "default": "version_test"
+      "description": "Ingresa un nombre obligatorio para esta versión (ej. release o calibracion_afm07):"
     },
     {
       "id": "renameTag",

@@ -24,7 +24,7 @@ Comandos de Versiones y Respaldos:
   ./eolo name-last <nombre>           Renombrar/etiquetar el último respaldo probado
   ./eolo backups                      Listar todos los respaldos por dispositivo y demo
   ./eolo snapshot <target> -n <nom>   Crear una versión formal de entrega con notas
-  ./eolo prune [--keep N]             Limpiar respaldos antiguos conservando los últimos N
+  ./eolo prune [--keep N]             Recortar históricos comprimidos (máximo 9 por target)
 
 Comandos de Compilación y Flasheo:
   ./eolo build <target> [--tag tag]   Compilar dispositivo (ej. express, dron, standard)
