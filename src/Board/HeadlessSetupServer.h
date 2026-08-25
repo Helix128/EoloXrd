@@ -758,7 +758,8 @@ private:
       return;
     }
 
-    if (SD.remove(pathBuf))
+    String name = _server.arg("file");
+    if (_ctx.removeLogAndIndex(name.c_str()))
     {
       _server.send(200, "application/json", "{\"ok\":true}");
     }

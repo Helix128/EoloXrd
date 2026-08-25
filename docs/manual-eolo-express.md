@@ -84,7 +84,14 @@ Los datos se guardan en:
 
 ```text
 /EOLO/logs/log_<fecha>.csv
+/EOLO/log_index.csv
+/EOLO/log_index.html
 ```
+
+`log_index.csv` es el indice maestro de capturas y `log_index.html` permite
+recorrerlo en un navegador, con enlaces a cada CSV. Copie o conserve la
+carpeta `/EOLO` completa para que los enlaces relativos sigan funcionando.
+El indice CSV usa las columnas `log_file,start_date,start_time,end_date,end_time,captured_volume_l`.
 
 El intervalo de registro es de 10 segundos. El CSV de EOLO Express contiene:
 
@@ -95,6 +102,11 @@ time,flow,flow_target,captured_volume,temperature,humidity,pressure,pm1,pm25,pm1
 EOLO Express no registra `wind_speed` ni `wind_direction`, porque no incluye anemometro. Las columnas PM corresponden al sensor Plantower.
 
 `captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
+
+Al finalizar manualmente o por tiempo, se agrega una ultima muestra con la
+hora real del RTC y luego se actualizan ambos indices. Si el equipo recupera
+un log historico tras un reinicio o corte, infiere el termino y el volumen
+desde la ultima fila valida disponible, que puede ser anterior al termino real.
 
 ## Reloj
 

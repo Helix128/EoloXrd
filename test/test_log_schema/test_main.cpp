@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
+#include "Data/Logging/LogIndexService.h"
 #include "Data/Logging/LogSchema.h"
 
 struct FakeSession
@@ -195,6 +196,29 @@ void test_log_record_row_matches_header_and_formats_volume()
     }
 }
 
+void test_final_row_uses_closing_state()
+{
+    LogRecord record;
+    record.timestampUnix = 1704067265UL;
+    StringPrint output;
+    LogSchema::writeRow(output, record, true, false, false, false, "Finalizado");
+    output.output.trim();
+    TEST_ASSERT_EQUAL_STRING("Finalizado", fieldAt(output.output, 1).c_str());
+}
+
+void test_index_entry_uses_exact_start_and_end_times()
+{
+    LogIndexService index;
+    LogIndexService::Entry entry;
+    TEST_ASSERT_TRUE(index.makeEntryFromCapture(
+        "log_2024_01_01T00_00_00.csv", 1704067200UL, 1704067265UL, 1.23456f, entry));
+    TEST_ASSERT_EQUAL_STRING("2024-01-01", entry.startDate.c_str());
+    TEST_ASSERT_EQUAL_STRING("00:00:00", entry.startTime.c_str());
+    TEST_ASSERT_EQUAL_STRING("2024-01-01", entry.endDate.c_str());
+    TEST_ASSERT_EQUAL_STRING("00:01:05", entry.endTime.c_str());
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1.23456f, entry.capturedVolume);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -206,6 +230,8 @@ void setup()
     RUN_TEST(test_bme_invalid_maps_to_missing_value);
     RUN_TEST(test_captured_volume_is_mandatory_and_follows_flow_target);
     RUN_TEST(test_log_record_row_matches_header_and_formats_volume);
+    RUN_TEST(test_final_row_uses_closing_state);
+    RUN_TEST(test_index_entry_uses_exact_start_and_end_times);
     UNITY_END();
 }
 

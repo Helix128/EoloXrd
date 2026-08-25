@@ -63,6 +63,13 @@ inline void CaptureController::resume(Context &ctx)
 
 inline void CaptureController::end(Context &ctx)
 {
+    if (isEnd)
+        return;
+
+    // Both manual and timed closes use a fresh RTC snapshot.  The final job
+    // remains in the SD queue until its capture row and master-index entry are
+    // safely written by the same worker.
+    ctx.enqueueFinalLogData();
     isCapturing = false;
     isEnd = true;
 
@@ -137,7 +144,6 @@ inline void CaptureController::update(Context &ctx)
             LOG_OUT("Duración establecida: ");
             LOG_OUT_LN(ctx.session.duration);
 
-            ctx.processCaptureSample();
             end(ctx);
             return;
         }

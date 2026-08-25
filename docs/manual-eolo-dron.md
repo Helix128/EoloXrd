@@ -74,7 +74,9 @@ Desde la pagina puede configurar:
 - Duracion: 5 min, 15 min, segundos manuales o infinita.
 - Flujo objetivo: 0.0 a 8.0 L/min.
 - Revision de estado de SD, hora RTC, switches y rango de calibracion disponible.
-- Listado, preview y descarga de archivos CSV en `/EOLO/logs`.
+- Listado, preview, descarga y borrado de archivos CSV en `/EOLO/logs`. Al
+  borrar desde el portal tambien se actualizan los indices; un archivo borrado
+  directamente desde un PC no se retira de ellos automaticamente.
 
 Al confirmar, el Wi-Fi se apaga, se guardan esos valores como defaults del formulario para la proxima vez y comienza la sesion configurada. La configuracion web no auto-inicia una captura futura: cada arranque con espera en `Off` requiere confirmar desde la pagina.
 
@@ -126,7 +128,14 @@ Los datos se guardan en la microSD:
 
 ```text
 /EOLO/logs/log_<fecha>.csv
+/EOLO/log_index.csv
+/EOLO/log_index.html
 ```
+
+`log_index.csv` es el indice maestro de capturas y `log_index.html` permite
+recorrerlo en un navegador, con enlaces a cada CSV. Copie o conserve la
+carpeta `/EOLO` completa para que los enlaces relativos sigan funcionando.
+El indice CSV usa las columnas `log_file,start_date,start_time,end_date,end_time,captured_volume_l`.
 
 El intervalo de registro es de 10 segundos. El CSV del Dron usa estas columnas:
 
@@ -138,7 +147,13 @@ time,state,flow,flow_target,captured_volume,temperature,humidity,pressure,ntc_te
 
 `captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
 
-En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de particulas ni de viento. La columna `state` indica si el control de flujo esta arrancando o capturando.
+Al finalizar por tiempo se agrega una ultima muestra con la hora real del RTC;
+el Dron espera a que esa fila y los indices queden escritos antes de entrar en
+deep sleep. Si el equipo recupera un log historico tras un reinicio o corte,
+infiere el termino y el volumen desde la ultima fila valida disponible, que
+puede ser anterior al termino real.
+
+En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de particulas ni de viento. La columna `state` indica si el control de flujo esta arrancando, capturando o finalizado.
 
 ## Solucion de problemas
 
