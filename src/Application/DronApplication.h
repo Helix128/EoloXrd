@@ -318,9 +318,10 @@ private:
 
         if (_droneState == DroneBootState::Finished && !_droneFinishHandled)
         {
+            if (!_context.logsIdle())
+                return;
 #ifdef FEATURE_MODEM
-            if (!_context.logsIdle() ||
-                _context.isUploadPending() || _context.isUploadActive() ||
+            if (_context.isUploadPending() || _context.isUploadActive() ||
                 _context.components.modemService.pendingCount() > 0)
             {
                 _context.components.modemService.shutdownWhenIdle();

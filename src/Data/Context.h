@@ -540,7 +540,7 @@ public:
                record.plantower.valid || record.anemometer.valid;
     }
 
-    void enqueueLogData()
+    void enqueueLogData(bool finalRecord = false)
     {
         if (!logging.hasLogQueue())
             logging.startLogTask();
@@ -575,9 +575,20 @@ public:
 #else
                                  false,
 #endif
-                                 kickActive);
+                                 kickActive && !finalRecord,
+                                 finalRecord);
+    }
+    void enqueueFinalLogData()
+    {
+        enqueueLogData(true);
+#ifdef FEATURE_MODEM
+        // Preserve the historical final remote snapshot as well as the new
+        // mandatory local closing row.
+        uploadData();
+#endif
     }
     bool logsIdle() const { return logging.logsIdle(); }
+    bool removeLogAndIndex(const char *logFile) { return logging.removeLogAndIndex(logFile); }
     void processCaptureSample()
     {
         enqueueLogData();

@@ -11,6 +11,7 @@
 #include "../../Board/SPIBus.h"
 #include "../../Config/Legacy.h"
 #include "LogSchema.h"
+#include "LogIndexService.h"
 
 class LogService
 {
@@ -26,12 +27,14 @@ class LogService
         bool includeAnemometer = false;
         bool includeNtc = false;
         bool kickActive = false;
+        bool finalRecord = false;
     };
 
     QueueHandle_t logQueue = nullptr;
     TaskHandle_t logTaskHandle = nullptr;
     bool sdInitAttempted = false;
     bool sdMissingLogReported = false;
+    LogIndexService logIndex;
 
     static void logTaskWorker(void *arg);
 
@@ -52,12 +55,14 @@ public:
     bool enqueueLogRecord(const LogRecord &record, uint32_t sessionStartUnix,
                           bool includeState, bool includePlantower,
                           bool includeAnemometer, bool includeNtc,
-                          bool kickActive = false);
+                          bool kickActive = false, bool finalRecord = false);
     bool logsIdle() const;
     bool logData(const LogRecord &record, uint32_t sessionStartUnix,
                  bool includeState, bool includePlantower,
                  bool includeAnemometer, bool includeNtc,
-                 const char *stateText = "Capturando");
+                 const char *stateText = "Capturando",
+                 String *writtenBasename = nullptr);
+    bool removeLogAndIndex(const char *logFile);
 };
 
 inline void LogService::logTaskWorker(void *arg)
@@ -69,10 +74,26 @@ inline void LogService::logTaskWorker(void *arg)
         if (xQueueReceive(service->logQueue, &job, portMAX_DELAY) == pdTRUE)
         {
             service->logActive = true;
-            service->logData(job.record, job.sessionStartUnix,
-                             job.includeState, job.includePlantower,
-                             job.includeAnemometer, job.includeNtc,
-                             job.kickActive ? "Arrancando" : "Capturando");
+            String writtenBasename;
+            const bool wroteLog = service->logData(
+                job.record, job.sessionStartUnix,
+                job.includeState, job.includePlantower,
+                job.includeAnemometer, job.includeNtc,
+                job.finalRecord ? "Finalizado" : (job.kickActive ? "Arrancando" : "Capturando"),
+                &writtenBasename);
+            if (wroteLog && job.finalRecord)
+            {
+                SPIBus::Guard spiGuard;
+                LogIndexService::Entry entry;
+                if (!service->logIndex.makeEntryFromCapture(
+                        writtenBasename.c_str(), job.sessionStartUnix,
+                        job.record.timestampUnix, job.record.capturedVolume, entry) ||
+                    !service->logIndex.upsert(entry))
+                {
+                    LOG_LN("No se pudo actualizar el indice maestro de capturas");
+                    service->markSdFailed();
+                }
+            }
             service->logActive = false;
             service->uploadPending = service->logQueue != nullptr &&
                                      uxQueueMessagesWaiting(service->logQueue) > 0;
@@ -178,6 +199,14 @@ inline bool LogService::initSD()
         LOG_LN("Directorio /EOLO/logs ya existe en SD");
     }
 
+    sdStatus = SD_WRITING;
+    if (!logIndex.reconcile(logsDir))
+    {
+        LOG_LN("No se pudo reconciliar el indice maestro de capturas");
+        markSdFailed();
+        return false;
+    }
+
     LOG_LN("SD inicializada");
     sdStatus = SD_OK;
     return true;
@@ -205,7 +234,8 @@ inline bool LogService::enqueueLogRecord(const LogRecord &record,
                                          bool includePlantower,
                                          bool includeAnemometer,
                                          bool includeNtc,
-                                         bool kickActive)
+                                         bool kickActive,
+                                         bool finalRecord)
 {
     if (logQueue == nullptr)
     {
@@ -221,20 +251,29 @@ inline bool LogService::enqueueLogRecord(const LogRecord &record,
     job.includeAnemometer = includeAnemometer;
     job.includeNtc = includeNtc;
     job.kickActive = kickActive;
+    job.finalRecord = finalRecord;
 
-    if (xQueueSend(logQueue, &job, 0) == pdTRUE)
+    // Set this before publishing the job.  It closes the cross-core window in
+    // which the worker can dequeue immediately but has not set logActive yet.
+    uploadPending = true;
+
+    // A closing sample is mandatory: wait for one queue slot instead of
+    // silently losing the capture terminus when several periodic samples are
+    // still being flushed.
+    if (xQueueSend(logQueue, &job, finalRecord ? portMAX_DELAY : 0) == pdTRUE)
     {
-        uploadPending = true;
         return true;
     }
 
+    uploadPending = uxQueueMessagesWaiting(logQueue) > 0 || logActive.load();
     LOG_LN("Cola de log llena; se omite log para no bloquear UI");
     return false;
 }
 
 inline bool LogService::logsIdle() const
 {
-    return !logActive.load() && (logQueue == nullptr || uxQueueMessagesWaiting(logQueue) == 0);
+    return !uploadPending.load() && !logActive.load() &&
+           (logQueue == nullptr || uxQueueMessagesWaiting(logQueue) == 0);
 }
 
 inline bool LogService::logData(const LogRecord &record,
@@ -243,7 +282,8 @@ inline bool LogService::logData(const LogRecord &record,
                                 bool includePlantower,
                                 bool includeAnemometer,
                                 bool includeNtc,
-                                const char *stateText)
+                                const char *stateText,
+                                String *writtenBasename)
 {
     PROFILE_SCOPE("sd.log");
     SPIBus::Guard spiGuard;
@@ -337,11 +377,39 @@ inline bool LogService::logData(const LogRecord &record,
     }
     file.close();
 
+    if (writtenBasename != nullptr)
+    {
+        int slash = filename.lastIndexOf('/');
+        *writtenBasename = slash >= 0 ? filename.substring(slash + 1) : filename;
+    }
+
     if (EoloDebug::verboseLogsEnabled())
     {
         LOG_LN("Archivo de log escrito!");
     }
     sdStatus = SD_OK;
+    return true;
+}
+
+inline bool LogService::removeLogAndIndex(const char *logFile)
+{
+    if (!isSdReady || logFile == nullptr)
+        return false;
+    String name(logFile);
+    if (!name.startsWith("log_") || !name.endsWith(".csv") ||
+        name.indexOf('/') >= 0 || name.indexOf('\\') >= 0)
+        return false;
+
+    SPIBus::Guard spiGuard;
+    String path = String(logsDir) + "/" + name;
+    if (!SD.exists(path.c_str()) || !SD.remove(path.c_str()))
+        return false;
+    if (!logIndex.remove(name.c_str()))
+    {
+        LOG_LN("Log eliminado, pero no se pudo regenerar el indice maestro: " + name);
+        markSdFailed();
+        return false;
+    }
     return true;
 }
 
