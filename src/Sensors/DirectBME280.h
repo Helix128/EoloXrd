@@ -9,25 +9,68 @@
 // operación quede serializada y con resultado verificable en I2CBus.
 class DirectBME280 {
 public:
+    enum class InitFailure : uint8_t {
+        None, Nack7677, WrongChipId, InvalidCalibration, ConfigurationFailed,
+        Timeout, BusBusy, BusStuck
+    };
+
+    static const char *failureName(InitFailure failure) {
+        switch (failure) {
+        case InitFailure::None: return "NONE";
+        case InitFailure::Nack7677: return "NACK_76_77";
+        case InitFailure::WrongChipId: return "WRONG_CHIP_ID";
+        case InitFailure::InvalidCalibration: return "INVALID_CALIBRATION";
+        case InitFailure::ConfigurationFailed: return "CONFIGURATION_FAILED";
+        case InitFailure::Timeout: return "TIMEOUT";
+        case InitFailure::BusBusy: return "BUS_BUSY";
+        case InitFailure::BusStuck: return "BUS_STUCK";
+        }
+        return "UNKNOWN";
+    }
+
     bool begin() {
+        _lastFailure = InitFailure::Nack7677;
+        if (I2CBus::getInstance().linesStuck()) {
+            _lastFailure = InitFailure::BusStuck;
+            return false;
+        }
         static constexpr uint8_t candidates[] = {0x76, 0x77};
         for (uint8_t candidate : candidates) {
-            if (I2CBus::getInstance().probe(candidate) != I2CBus::Result::Ok)
+            I2CBus::Result probe = I2CBus::getInstance().probe(candidate);
+            if (probe != I2CBus::Result::Ok) {
+                if (probe == I2CBus::Result::Timeout) _lastFailure = InitFailure::Timeout;
+                else if (probe == I2CBus::Result::Busy) _lastFailure = InitFailure::BusBusy;
                 continue;
+            }
             uint8_t id = 0;
-            if (!read(candidate, 0xD0, &id, 1) || id != 0x60)
+            if (!read(candidate, 0xD0, &id, 1)) {
+                setTransportFailure(candidate);
                 continue;
-            if (!loadCalibration(candidate))
+            }
+            if (id != 0x60) {
+                _lastFailure = InitFailure::WrongChipId;
                 continue;
-            if (!configure(candidate))
+            }
+            if (!loadCalibration(candidate)) {
+                if (_lastFailure != InitFailure::Timeout && _lastFailure != InitFailure::BusBusy)
+                    _lastFailure = InitFailure::InvalidCalibration;
                 continue;
+            }
+            if (!configure(candidate)) {
+                if (_lastFailure != InitFailure::Timeout && _lastFailure != InitFailure::BusBusy)
+                    _lastFailure = InitFailure::ConfigurationFailed;
+                continue;
+            }
             _address = candidate;
             _ready = true;
+            _lastFailure = InitFailure::None;
             return true;
         }
         _ready = false;
         return false;
     }
+
+    InitFailure lastFailure() const { return _lastFailure; }
 
     bool readData(float &temperatureC, float &humidityPct, float &pressureHpa) const {
         if (!_ready)
@@ -61,6 +104,13 @@ private:
     } _cal{};
     uint8_t _address = 0;
     bool _ready = false;
+    InitFailure _lastFailure = InitFailure::None;
+
+    void setTransportFailure(uint8_t address) {
+        I2CBus::Result result = I2CBus::getInstance().getAddressStats(address).lastResult;
+        if (result == I2CBus::Result::Timeout) _lastFailure = InitFailure::Timeout;
+        else if (result == I2CBus::Result::Busy) _lastFailure = InitFailure::BusBusy;
+    }
 
     static uint16_t u16le(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
     static int16_t s16le(const uint8_t *p) { return (int16_t)u16le(p); }

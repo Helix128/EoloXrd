@@ -17,7 +17,21 @@ public:
     static constexpr const char *CsvPath = "/EOLO/log_index.csv";
     static constexpr const char *HtmlPath = "/EOLO/log_index.html";
     static constexpr const char *CsvHeader =
-        "log_file,start_date,start_time,end_date,end_time,captured_volume_l";
+        "log_file,start_date,start_time,end_date,end_time,captured_volume_l,volume_source";
+
+    enum class VolumeSource : uint8_t { Recorded, EstimatedFlow, Unavailable };
+
+    struct ReconcileSummary
+    {
+        uint32_t examined = 0;
+        uint32_t current = 0;
+        uint32_t recovered = 0;
+        uint32_t incompatible = 0;
+        uint32_t errors = 0;
+        uint32_t validRows = 0;
+        uint32_t ignoredRows = 0;
+        bool rebuiltIndex = false;
+    };
 
     struct Entry
     {
@@ -27,6 +41,8 @@ public:
         String endDate;
         String endTime;
         float capturedVolume = 0.0f;
+        bool volumeAvailable = true;
+        VolumeSource volumeSource = VolumeSource::Recorded;
     };
 
     bool reconcile(const char *logsDir);
@@ -35,6 +51,8 @@ public:
     bool makeEntryFromCapture(const char *logFile, uint32_t startUnix,
                               uint32_t endUnix, float capturedVolume,
                               Entry &entry) const;
+    ReconcileSummary reconciliationSummary() const;
+    static const char *volumeSourceName(VolumeSource source);
 
 private:
     static bool parseTimestamp(const String &text, uint32_t &unixTime);
@@ -45,13 +63,36 @@ private:
     static bool validBasename(const String &name);
     static bool lessEntry(const Entry &a, const Entry &b);
     static String htmlEscape(const String &value);
-    bool readCapture(const char *path, const String &name, Entry &entry) const;
+    enum class ReadResult : uint8_t { OkCurrent, OkLegacy, Empty, MissingTime, NoValidTimestamp, ReadError };
+    bool readCapture(const char *path, const String &name, Entry &entry,
+                     ReadResult &result, uint32_t &validRows, uint32_t &ignoredRows) const;
     bool loadCsv(std::vector<Entry> &entries) const;
     bool writeCsv(const std::vector<Entry> &entries) const;
     bool writeHtml(const std::vector<Entry> &entries) const;
     bool replaceFile(const char *temporary, const char *destination) const;
     bool writeAll(std::vector<Entry> &entries) const;
+    mutable portMUX_TYPE _summaryMux = portMUX_INITIALIZER_UNLOCKED;
+    ReconcileSummary _summary;
 };
+
+inline const char *LogIndexService::volumeSourceName(VolumeSource source)
+{
+    switch (source)
+    {
+    case VolumeSource::Recorded: return "recorded";
+    case VolumeSource::EstimatedFlow: return "estimated_flow";
+    case VolumeSource::Unavailable: return "unavailable";
+    }
+    return "unavailable";
+}
+
+inline LogIndexService::ReconcileSummary LogIndexService::reconciliationSummary() const
+{
+    portENTER_CRITICAL(&_summaryMux);
+    ReconcileSummary copy = _summary;
+    portEXIT_CRITICAL(&_summaryMux);
+    return copy;
+}
 
 inline String LogIndexService::fieldAt(const String &row, int index)
 {
@@ -184,55 +225,103 @@ inline bool LogIndexService::makeEntryFromCapture(const char *logFile,
     splitTimestamp(startUnix, entry.startDate, entry.startTime);
     splitTimestamp(endUnix, entry.endDate, entry.endTime);
     entry.capturedVolume = isfinite(capturedVolume) ? capturedVolume : 0.0f;
+    entry.volumeAvailable = isfinite(capturedVolume);
+    entry.volumeSource = entry.volumeAvailable ? VolumeSource::Recorded : VolumeSource::Unavailable;
     return true;
 }
 
-inline bool LogIndexService::readCapture(const char *path, const String &name, Entry &entry) const
+inline bool LogIndexService::readCapture(const char *path, const String &name, Entry &entry,
+                                         ReadResult &result, uint32_t &validRows,
+                                         uint32_t &ignoredRows) const
 {
+    validRows = ignoredRows = 0;
     File file = SD.open(path, FILE_READ);
-    if (!file)
+    if (!file) {
+        result = ReadResult::ReadError;
         return false;
+    }
     String header = file.readStringUntil('\n');
     header.trim();
+    if (header.length() == 0) {
+        file.close();
+        result = ReadResult::Empty;
+        return false;
+    }
     const int timeColumn = fieldIndex(header, "time");
     const int volumeColumn = fieldIndex(header, "captured_volume");
-    if (timeColumn < 0 || volumeColumn < 0)
+    const int flowColumn = fieldIndex(header, "flow");
+    if (timeColumn < 0)
     {
         file.close();
+        result = ReadResult::MissingTime;
         return false;
     }
 
     uint32_t firstUnix = 0;
     uint32_t lastUnix = 0;
     float lastVolume = 0.0f;
+    float estimatedVolume = 0.0f;
+    bool foundVolume = false;
+    bool foundFlow = false;
     bool found = false;
+    bool sawDataRow = false;
     while (file.available())
     {
         String row = file.readStringUntil('\n');
         row.trim();
         if (row.length() == 0)
             continue;
+        sawDataRow = true;
         uint32_t rowUnix = 0;
-        String volumeText = fieldAt(row, volumeColumn);
-        char *end = nullptr;
-        const float volume = strtof(volumeText.c_str(), &end);
-        if (!parseTimestamp(fieldAt(row, timeColumn), rowUnix) || end == volumeText.c_str() ||
-            *end != '\0' || !isfinite(volume))
+        if (!parseTimestamp(fieldAt(row, timeColumn), rowUnix) ||
+            (found && rowUnix < lastUnix))
+        {
+            ++ignoredRows;
             continue;
+        }
         if (!found)
             firstUnix = rowUnix;
         lastUnix = rowUnix;
-        lastVolume = volume;
         found = true;
+        ++validRows;
+
+        if (volumeColumn >= 0) {
+            String text = fieldAt(row, volumeColumn);
+            char *end = nullptr;
+            float value = strtof(text.c_str(), &end);
+            if (end != text.c_str() && *end == '\0' && isfinite(value)) {
+                lastVolume = value;
+                foundVolume = true;
+            }
+        } else if (flowColumn >= 0) {
+            String text = fieldAt(row, flowColumn);
+            char *end = nullptr;
+            float flow = strtof(text.c_str(), &end);
+            if (end != text.c_str() && *end == '\0' && isfinite(flow) && flow >= 0.0f) {
+                estimatedVolume += flow * (10.0f / 60.0f);
+                foundFlow = true;
+            }
+        }
     }
     file.close();
-    if (!found)
+    if (!found) {
+        result = sawDataRow ? ReadResult::NoValidTimestamp : ReadResult::Empty;
         return false;
+    }
 
     uint32_t startUnix = 0;
     if (!timestampFromFilename(name, startUnix))
         startUnix = firstUnix;
-    return makeEntryFromCapture(name.c_str(), startUnix, lastUnix, lastVolume, entry);
+    const float volume = foundVolume ? lastVolume : (foundFlow ? estimatedVolume : NAN);
+    if (!makeEntryFromCapture(name.c_str(), startUnix, lastUnix, volume, entry)) {
+        result = ReadResult::ReadError;
+        return false;
+    }
+    entry.volumeAvailable = foundVolume || foundFlow;
+    entry.volumeSource = foundVolume ? VolumeSource::Recorded :
+                         (foundFlow ? VolumeSource::EstimatedFlow : VolumeSource::Unavailable);
+    result = volumeColumn >= 0 ? ReadResult::OkCurrent : ReadResult::OkLegacy;
+    return true;
 }
 
 inline bool LogIndexService::loadCsv(std::vector<Entry> &entries) const
@@ -261,12 +350,19 @@ inline bool LogIndexService::loadCsv(std::vector<Entry> &entries) const
         entry.endDate = fieldAt(row, 3);
         entry.endTime = fieldAt(row, 4);
         String volumeText = fieldAt(row, 5);
+        String sourceText = fieldAt(row, 6);
+        entry.volumeAvailable = volumeText.length() != 0;
         char *end = nullptr;
-        entry.capturedVolume = strtof(volumeText.c_str(), &end);
+        entry.capturedVolume = entry.volumeAvailable ? strtof(volumeText.c_str(), &end) : 0.0f;
+        if (sourceText == "recorded") entry.volumeSource = VolumeSource::Recorded;
+        else if (sourceText == "estimated_flow") entry.volumeSource = VolumeSource::EstimatedFlow;
+        else if (sourceText == "unavailable") entry.volumeSource = VolumeSource::Unavailable;
+        else { file.close(); entries.clear(); return false; }
         uint32_t ignoredStart = 0, ignoredEnd = 0;
         if (!validBasename(entry.logFile) || !parseTimestamp(entry.startDate + "T" + entry.startTime, ignoredStart) ||
             !parseTimestamp(entry.endDate + "T" + entry.endTime, ignoredEnd) ||
-            end == volumeText.c_str() || *end != '\0' || !isfinite(entry.capturedVolume))
+            (entry.volumeAvailable && (end == volumeText.c_str() || *end != '\0' || !isfinite(entry.capturedVolume))) ||
+            (!entry.volumeAvailable && entry.volumeSource != VolumeSource::Unavailable))
         {
             file.close();
             entries.clear();
@@ -326,7 +422,9 @@ inline bool LogIndexService::writeCsv(const std::vector<Entry> &entries) const
         file.print(entry.startTime); file.print(',');
         file.print(entry.endDate); file.print(',');
         file.print(entry.endTime); file.print(',');
-        file.println(entry.capturedVolume, 3);
+        if (entry.volumeAvailable) file.print(entry.capturedVolume, 3);
+        file.print(',');
+        file.println(volumeSourceName(entry.volumeSource));
     }
     file.close();
     return replaceFile(temporary, CsvPath);
@@ -359,7 +457,7 @@ inline bool LogIndexService::writeHtml(const std::vector<Entry> &entries) const
     if (!file)
         return false;
     file.println(F("<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Capturas EOLO</title>"));
-    file.println(F("<style>body{font-family:sans-serif;margin:2rem}table{border-collapse:collapse}th,td{border:1px solid #bbb;padding:.4rem;text-align:left}tbody tr:nth-child(even){background:#f4f4f4}</style><h1>Capturas EOLO</h1><table><thead><tr><th>Archivo</th><th>Fecha inicio</th><th>Hora inicio</th><th>Fecha fin</th><th>Hora fin</th><th>Volumen capturado (L)</th></tr></thead><tbody>"));
+    file.println(F("<style>body{font-family:sans-serif;margin:2rem}table{border-collapse:collapse}th,td{border:1px solid #bbb;padding:.4rem;text-align:left}tbody tr:nth-child(even){background:#f4f4f4}</style><h1>Capturas EOLO</h1><table><thead><tr><th>Archivo</th><th>Fecha inicio</th><th>Hora inicio</th><th>Fecha fin</th><th>Hora fin</th><th>Volumen capturado (L)</th><th>Origen</th></tr></thead><tbody>"));
     for (const Entry &entry : entries)
     {
         const String escaped = htmlEscape(entry.logFile);
@@ -367,7 +465,9 @@ inline bool LogIndexService::writeHtml(const std::vector<Entry> &entries) const
         file.print(escaped); file.print(F("</a></td><td>")); file.print(entry.startDate);
         file.print(F("</td><td>")); file.print(entry.startTime); file.print(F("</td><td>"));
         file.print(entry.endDate); file.print(F("</td><td>")); file.print(entry.endTime);
-        file.print(F("</td><td>")); file.print(entry.capturedVolume, 3); file.println(F("</td></tr>"));
+        file.print(F("</td><td>"));
+        if (entry.volumeAvailable) file.print(entry.capturedVolume, 3);
+        file.print(F("</td><td>")); file.print(volumeSourceName(entry.volumeSource)); file.println(F("</td></tr>"));
     }
     file.println(F("</tbody></table></html>"));
     file.close();
@@ -413,11 +513,12 @@ inline bool LogIndexService::reconcile(const char *logsDir)
 {
     std::vector<Entry> entries;
     const bool masterValid = loadCsv(entries);
-    if (!masterValid)
-    {
-        entries.clear();
-        LOG_LN("Indice maestro ausente o invalido; reconstruyendo desde los logs.");
-    }
+    ReconcileSummary summary;
+    summary.rebuiltIndex = !masterValid;
+    // Releer siempre los CSV hace que el índice sea autocurativo e idempotente,
+    // incluso si una escritura anterior quedó interrumpida o cambió el esquema.
+    entries.clear();
+    if (!masterValid) LOG_LN("Indice maestro ausente o con esquema anterior; reconstruyendo.");
 
     File directory = SD.open(logsDir);
     if (!directory || !directory.isDirectory())
@@ -430,28 +531,49 @@ inline bool LogIndexService::reconcile(const char *logsDir)
         file.close();
         int slash = fullName.lastIndexOf('/');
         String name = slash >= 0 ? fullName.substring(slash + 1) : fullName;
-        bool indexed = false;
-        for (const Entry &entry : entries)
-            if (entry.logFile == name)
-            {
-                indexed = true;
-                break;
-            }
-        if (!isDirectory && validBasename(name) && (!masterValid || !indexed))
+        if (!isDirectory && validBasename(name))
         {
+            ++summary.examined;
             Entry recovered;
             String path = String(logsDir) + "/" + name;
-            if (readCapture(path.c_str(), name, recovered))
+            ReadResult result = ReadResult::ReadError;
+            uint32_t validRows = 0, ignoredRows = 0;
+            if (readCapture(path.c_str(), name, recovered, result, validRows, ignoredRows)) {
                 entries.push_back(recovered);
-            else
-                LOG_LN("Log vacio o incompatible omitido del indice: " + name);
+                if (result == ReadResult::OkCurrent) ++summary.current;
+                else ++summary.recovered;
+                summary.validRows += validRows;
+                summary.ignoredRows += ignoredRows;
+                LOG_F("Indice: %s esquema=%s filas_validas=%lu ignoradas=%lu volumen=%s\n",
+                      name.c_str(), result == ReadResult::OkCurrent ? "actual" : "historico",
+                      (unsigned long)validRows, (unsigned long)ignoredRows,
+                      volumeSourceName(recovered.volumeSource));
+            } else {
+                const char *reason = "error_lectura";
+                if (result == ReadResult::Empty) reason = "archivo_vacio";
+                else if (result == ReadResult::MissingTime) reason = "columna_time_faltante";
+                else if (result == ReadResult::NoValidTimestamp) reason = "timestamp_invalido";
+                if (result == ReadResult::ReadError) ++summary.errors;
+                else ++summary.incompatible;
+                LOG_F("Indice: %s omitido motivo=%s filas_ignoradas=%lu\n",
+                      name.c_str(), reason, (unsigned long)ignoredRows);
+            }
         }
         file = directory.openNextFile();
     }
     directory.close();
     // Always rewrite both files: the HTML is a disposable view and this also
     // repairs stale/missing HTML after interrupted writes.
-    return writeAll(entries);
+    const bool written = writeAll(entries);
+    if (!written) ++summary.errors;
+    portENTER_CRITICAL(&_summaryMux);
+    _summary = summary;
+    portEXIT_CRITICAL(&_summaryMux);
+    LOG_F("Indice reconciliado: examinados=%lu actuales=%lu recuperados=%lu incompatibles=%lu errores=%lu\n",
+          (unsigned long)summary.examined, (unsigned long)summary.current,
+          (unsigned long)summary.recovered, (unsigned long)summary.incompatible,
+          (unsigned long)summary.errors);
+    return written;
 }
 
 #endif // EOLO_LOG_INDEX_SERVICE_H

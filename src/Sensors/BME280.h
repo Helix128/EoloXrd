@@ -21,25 +21,23 @@ private:
     bool _hasData = false;
 
 public:
+    using InitFailure = DirectBME280::InitFailure;
     float temperature = 0.0;
     float humidity = 0.0;
     float pressure = 0.0;
     std::atomic_bool isReady{false};
+    std::atomic<InitFailure> lastInitFailure{InitFailure::None};
 
     BME280() : _dataMutex(xSemaphoreCreateMutex()) {}
 
     bool begin()
     {
         if (isReady.load())
-        {
-            LOG_LN("BME280 ya inicializado, skipping...");
             return true;
-        }
-
-        LOG_LN("Iniciando BME280...");
         bool sensorReady = false;
 #if EOLO_I2C_DIRECT_DRIVERS
         sensorReady = directBme.begin();
+        lastInitFailure = directBme.lastFailure();
 #else
         {
             I2CBus::Guard guard;
@@ -47,20 +45,29 @@ public:
                 sensorReady = bme.begin(0x76) || bme.begin(0x77);
         }
         I2CBus::getInstance().applyProfile();
+        if (!sensorReady) {
+            I2CBus::AddressStats a76 = I2CBus::getInstance().getAddressStats(0x76);
+            I2CBus::AddressStats a77 = I2CBus::getInstance().getAddressStats(0x77);
+            lastInitFailure = (a76.lastResult == I2CBus::Result::Timeout || a77.lastResult == I2CBus::Result::Timeout)
+                                  ? InitFailure::Timeout : InitFailure::Nack7677;
+        }
 #endif
         if (!sensorReady)
         {
-            LOG_LN("Fallo al inicializar BME280");
             isReady = false;
             return false;
         }
 
-        LOG_LN("BME280 inicializado");
+        lastInitFailure = InitFailure::None;
         isReady = true;
 #if CHECK_SENSORS
         testSensor();
 #endif
         return true;
+    }
+
+    const char *lastInitFailureName() const {
+        return DirectBME280::failureName(lastInitFailure.load());
     }
 
     void testSensor()

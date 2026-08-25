@@ -99,6 +99,7 @@ public:
     SDStatus sdStatus() const { return logging.sdStatus; }
     bool isSdReady() const { return logging.isSdReady; }
     const char *logsDirectory() const { return logging.logsDir; }
+    LogIndexService::ReconcileSummary logIndexSummary() const { return logging.indexSummary(); }
 
     bool isLogActive() const { return logging.logActive.load(); }
     bool isUploadPending() const {
