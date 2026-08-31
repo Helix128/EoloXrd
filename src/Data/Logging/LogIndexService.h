@@ -45,7 +45,7 @@ public:
         VolumeSource volumeSource = VolumeSource::Recorded;
     };
 
-    bool reconcile(const char *logsDir);
+    bool reconcile(const char *logsDir, bool force = false);
     bool upsert(const Entry &entry);
     bool remove(const char *logFile);
     bool makeEntryFromCapture(const char *logFile, uint32_t startUnix,
@@ -343,6 +343,18 @@ inline bool LogIndexService::loadCsv(std::vector<Entry> &entries) const
         row.trim();
         if (row.length() == 0)
             continue;
+        int commaCount = 0;
+        for (size_t i = 0; i < row.length(); ++i)
+        {
+            if (row.charAt(i) == ',')
+                ++commaCount;
+        }
+        if (commaCount != 6)
+        {
+            file.close();
+            entries.clear();
+            return false;
+        }
         Entry entry;
         entry.logFile = fieldAt(row, 0);
         entry.startDate = fieldAt(row, 1);
@@ -495,7 +507,23 @@ inline bool LogIndexService::upsert(const Entry &entry)
         }
     if (!replaced)
         entries.push_back(entry);
-    return writeAll(entries);
+    const bool ok = writeAll(entries);
+    if (ok)
+    {
+        portENTER_CRITICAL(&_summaryMux);
+        _summary.examined = entries.size();
+        _summary.current = 0;
+        _summary.recovered = 0;
+        for (const Entry &e : entries)
+        {
+            if (e.volumeSource == VolumeSource::Recorded)
+                ++_summary.current;
+            else
+                ++_summary.recovered;
+        }
+        portEXIT_CRITICAL(&_summaryMux);
+    }
+    return ok;
 }
 
 inline bool LogIndexService::remove(const char *logFile)
@@ -506,23 +534,62 @@ inline bool LogIndexService::remove(const char *logFile)
     entries.erase(std::remove_if(entries.begin(), entries.end(),
                                  [logFile](const Entry &entry) { return entry.logFile == logFile; }),
                   entries.end());
-    return writeAll(entries);
+    const bool ok = writeAll(entries);
+    if (ok)
+    {
+        portENTER_CRITICAL(&_summaryMux);
+        _summary.examined = entries.size();
+        _summary.current = 0;
+        _summary.recovered = 0;
+        for (const Entry &e : entries)
+        {
+            if (e.volumeSource == VolumeSource::Recorded)
+                ++_summary.current;
+            else
+                ++_summary.recovered;
+        }
+        portEXIT_CRITICAL(&_summaryMux);
+    }
+    return ok;
 }
 
-inline bool LogIndexService::reconcile(const char *logsDir)
+inline bool LogIndexService::reconcile(const char *logsDir, bool force)
 {
     std::vector<Entry> entries;
-    const bool masterValid = loadCsv(entries);
+    const bool masterValid = !force && loadCsv(entries);
+    if (masterValid)
+    {
+        ReconcileSummary summary;
+        summary.examined = entries.size();
+        for (const Entry &e : entries)
+        {
+            if (e.volumeSource == VolumeSource::Recorded)
+                ++summary.current;
+            else
+                ++summary.recovered;
+        }
+        summary.rebuiltIndex = false;
+        portENTER_CRITICAL(&_summaryMux);
+        _summary = summary;
+        portEXIT_CRITICAL(&_summaryMux);
+        LOG_F("Indice maestro valido (%u capturas); reconciliacion omitida.\n",
+              (unsigned int)entries.size());
+
+        if (!SD.exists(HtmlPath))
+        {
+            writeHtml(entries);
+        }
+        return true;
+    }
+
     ReconcileSummary summary;
-    summary.rebuiltIndex = !masterValid;
-    // Releer siempre los CSV hace que el índice sea autocurativo e idempotente,
-    // incluso si una escritura anterior quedó interrumpida o cambió el esquema.
-    entries.clear();
-    if (!masterValid) LOG_LN("Indice maestro ausente o con esquema anterior; reconstruyendo.");
+    summary.rebuiltIndex = true;
+    LOG_LN("Indice maestro ausente o corrupto; ejecutando reconciliacion.");
 
     File directory = SD.open(logsDir);
     if (!directory || !directory.isDirectory())
         return false;
+    entries.clear();
     File file = directory.openNextFile();
     while (file)
     {

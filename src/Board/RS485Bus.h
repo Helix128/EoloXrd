@@ -365,14 +365,21 @@ private:
         }
     }
 
-    void scheduleNext(int index, const Endpoint& endpoint, uint32_t startedMs, bool success) {
+    void scheduleNext(int index, const Endpoint& endpoint, uint32_t completedMs, bool success) {
         if (index < 0) return;
         uint32_t nextDue;
         if (!success && !endpoint.critical) {
-            nextDue = startedMs + endpoint.offlineIntervalMs;
+            nextDue = completedMs + endpoint.offlineIntervalMs;
+        } else if (!success) {
+            // En endpoints críticos (AFM07), garantizar una pausa mínima tras fallo
+            // para que el bus y el sensor tengan tiempo de recuperarse y no disparar ráfagas.
+            const uint32_t periodicDue = EoloCore::RS485TimingModel::nextPeriodicDue(
+                endpoint.nextDueMs, completedMs, endpoint.intervalMs);
+            const uint32_t minFailureDue = completedMs + EoloCore::RS485TimingModel::kMinGapAfterFailureMs;
+            nextDue = EoloCore::RS485TimingModel::due(periodicDue, minFailureDue) ? periodicDue : minFailureDue;
         } else {
             nextDue = EoloCore::RS485TimingModel::nextPeriodicDue(
-                endpoint.nextDueMs, startedMs, endpoint.intervalMs);
+                endpoint.nextDueMs, completedMs, endpoint.intervalMs);
         }
         if (xSemaphoreTake(_endpointMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
             _endpoints[index].nextDueMs = nextDue;
@@ -415,7 +422,8 @@ private:
         const uint32_t started = millis();
         noteDeadlineMiss(index, started, endpoint.nextDueMs);
         const bool success = transact(endpoint, registers, error, lateBytes, unexpectedFrames);
-        const uint32_t latency = millis() - started;
+        const uint32_t completed = millis();
+        const uint32_t latency = completed - started;
         recordResult(endpoint, success, error, started, latency, lateBytes, unexpectedFrames);
         RS485Monitor::getInstance().recordRequestCompleted(success, error, endpoint.slaveId, latency);
 
@@ -426,7 +434,7 @@ private:
             _corruptFrameStreak = 0;
         }
 
-        scheduleNext(index, endpoint, started, success);
+        scheduleNext(index, endpoint, completed, success);
         if (endpoint.callback) {
             endpoint.callback(endpoint.context, success, success ? registers : nullptr,
                                endpoint.count, error);

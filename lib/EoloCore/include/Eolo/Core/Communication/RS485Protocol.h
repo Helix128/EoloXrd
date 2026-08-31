@@ -126,13 +126,14 @@ public:
     static constexpr uint32_t kAfmIntervalMs = 200;
     static constexpr uint32_t kAnemometerIntervalMs = 1100;
     static constexpr uint32_t kAnemometerOfflineIntervalMs = 5000;
+    static constexpr uint32_t kMinGapAfterFailureMs = 100;
     static constexpr uint32_t kResponseStartTimeoutMs = 250;
     static constexpr uint32_t kFrameCompletionTimeoutMs = 35;
     static constexpr uint32_t kBusQuietUs = 8000;
     // Incluye la espera máxima para despejar un bus ocupado, la respuesta
     // Modbus y la ventana de cierre de trama.
     static constexpr uint32_t kBusQuietTimeoutMs = 100;
-    static constexpr uint32_t kAnemometerSlotBudgetMs = 150;
+    static constexpr uint32_t kAnemometerSlotBudgetMs = 120;
 
     static bool due(uint32_t nowMs, uint32_t deadlineMs)
     {

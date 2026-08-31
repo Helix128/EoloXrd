@@ -100,6 +100,7 @@ public:
     bool isSdReady() const { return logging.isSdReady; }
     const char *logsDirectory() const { return logging.logsDir; }
     LogIndexService::ReconcileSummary logIndexSummary() const { return logging.indexSummary(); }
+    bool reconcileLogIndex(bool force = false) { return logging.reconcileIndex(force); }
 
     bool isLogActive() const { return logging.logActive.load(); }
     bool isUploadPending() const {

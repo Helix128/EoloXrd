@@ -245,7 +245,7 @@
       </div>
     </section>
 
-    <!-- VISTA 3: REGISTROS CSV EN SD (DOS COLUMNAS: EXPLORADOR Y PREVIEW) -->
+    <!-- VISTA 3: REGISTROS CSV EN SD (DOS COLUMNAS: EXPLORADOR Y PREVIEW INTERPRETADA) -->
     <section id="view-logs" class="view-panel">
       <div class="view-header">
         <div>
@@ -254,6 +254,8 @@
         </div>
         <div class="header-actions">
           <button type="button" class="btn-secondary btn-sm" id="refreshLogs">Actualizar</button>
+          <button type="button" class="btn-secondary btn-sm" id="previewIndexBtn">Ver &iacute;ndice</button>
+          <a href="/download?file=log_index.csv" class="btn-secondary btn-sm" id="downloadIndexCsvBtn" download="log_index.csv" style="text-decoration:none;">Descargar &iacute;ndice CSV</a>
           <button type="button" class="btn-secondary btn-sm" id="downloadAll">Descargar todos</button>
         </div>
       </div>
@@ -292,7 +294,7 @@
           </div>
         </div>
 
-        <!-- COLUMNA DERECHA: PREVIEW DE ARCHIVO -->
+        <!-- COLUMNA DERECHA: PREVIEW DE ARCHIVO INTERPRETADO EN TABLA -->
         <div class="files-col files-preview-col">
           <div class="card-section files-card">
             <div class="files-card-header">
@@ -301,18 +303,41 @@
                 <span class="preview-filename-badge" id="previewFilename">Ning&uacute;n archivo seleccionado</span>
               </div>
               <div class="preview-header-actions">
-                <button type="button" class="btn-secondary btn-sm" id="copyPreviewBtn" title="Copiar datos al portapapeles" disabled>Copiar</button>
+                <div class="view-mode-toggle" role="radiogroup" aria-label="Modo de visualizaci&oacute;n">
+                  <button type="button" class="btn-view-mode active" id="btnViewTable" title="Vista de tabla formateada">Tabla</button>
+                  <button type="button" class="btn-view-mode" id="btnViewRaw" title="Vista de texto plano CSV">CSV</button>
+                </div>
+                <button type="button" class="btn-secondary btn-sm" id="copyPreviewBtn" title="Copiar datos CSV al portapapeles" disabled>Copiar CSV</button>
+                <button type="button" class="btn-secondary btn-sm" id="copyTsvBtn" title="Copiar como tabla TSV para Excel" disabled>Copiar TSV</button>
                 <a id="downloadPreviewBtn" class="btn-primary btn-sm hidden" download="" style="text-decoration:none;">Descargar</a>
               </div>
             </div>
 
-            <div class="preview-meta-bar" id="previewMetaBar">
-              <span class="preview-meta-tag" id="previewRowsCount">0 filas</span>
-              <span class="preview-meta-tag" id="previewFormat">CSV</span>
-              <span class="preview-meta-tag hidden" id="previewFileSize">0 B</span>
+            <!-- Barra de Búsqueda y Metadatos de la Vista Previa -->
+            <div class="preview-toolbar">
+              <div class="preview-meta-bar" id="previewMetaBar">
+                <span class="preview-meta-tag" id="previewRowsCount">0 filas</span>
+                <span class="preview-meta-tag" id="previewFormat">CSV</span>
+                <span class="preview-meta-tag hidden" id="previewFileSize">0 B</span>
+                <span class="preview-meta-tag hidden" id="previewTimeRange">--</span>
+                <span class="preview-meta-tag hidden" id="previewVolumeTag">0.0 L</span>
+              </div>
+              <div class="preview-search-wrap">
+                <input type="search" id="previewSearchInput" class="text-input search-input" placeholder="Filtrar filas en vista..." aria-label="Filtrar filas en vista previa" disabled>
+              </div>
             </div>
 
-            <div class="preview-box-wrap">
+            <!-- Contenedor 1: Tabla de Datos CSV Parseada -->
+            <div class="preview-table-wrap" id="previewTableWrap">
+              <div class="empty-state" id="tableEmptyState">Selecciona un archivo del explorador a la izquierda o haz clic en &ldquo;Ver &iacute;ndice&rdquo; para inspeccionar sus filas.</div>
+              <table class="data-table log-data-table hidden" id="logDataTable">
+                <thead id="logTableHead"></thead>
+                <tbody id="logTableBody"></tbody>
+              </table>
+            </div>
+
+            <!-- Contenedor 2: Texto Plano CSV -->
+            <div class="preview-box-wrap hidden" id="previewRawWrap">
               <pre id="preview" class="preview-box">Selecciona un archivo del explorador a la izquierda para inspeccionar sus filas.</pre>
             </div>
           </div>

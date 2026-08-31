@@ -229,6 +229,39 @@ void test_master_index_exposes_volume_source()
     TEST_ASSERT_EQUAL_STRING("unavailable", LogIndexService::volumeSourceName(LogIndexService::VolumeSource::Unavailable));
 }
 
+void test_reconcile_summary_defaults()
+{
+    LogIndexService index;
+    LogIndexService::ReconcileSummary summary = index.reconciliationSummary();
+    TEST_ASSERT_EQUAL_UINT32(0, summary.examined);
+    TEST_ASSERT_EQUAL_UINT32(0, summary.current);
+    TEST_ASSERT_EQUAL_UINT32(0, summary.recovered);
+    TEST_ASSERT_EQUAL_UINT32(0, summary.incompatible);
+    TEST_ASSERT_EQUAL_UINT32(0, summary.errors);
+    TEST_ASSERT_FALSE(summary.rebuiltIndex);
+}
+
+void test_index_entry_invalid_filename_or_timestamps()
+{
+    LogIndexService index;
+    LogIndexService::Entry entry;
+    TEST_ASSERT_FALSE(index.makeEntryFromCapture(nullptr, 1704067200UL, 1704067265UL, 1.0f, entry));
+    TEST_ASSERT_FALSE(index.makeEntryFromCapture("invalid_name.txt", 1704067200UL, 1704067265UL, 1.0f, entry));
+    TEST_ASSERT_FALSE(index.makeEntryFromCapture("log_2024.csv", 0, 1704067265UL, 1.0f, entry));
+    TEST_ASSERT_FALSE(index.makeEntryFromCapture("log_2024.csv", 1704067200UL, 0, 1.0f, entry));
+}
+
+void test_index_entry_nan_volume_handling()
+{
+    LogIndexService index;
+    LogIndexService::Entry entry;
+    TEST_ASSERT_TRUE(index.makeEntryFromCapture(
+        "log_2024_01_01T00_00_00.csv", 1704067200UL, 1704067265UL, NAN, entry));
+    TEST_ASSERT_FALSE(entry.volumeAvailable);
+    TEST_ASSERT_EQUAL_STRING("unavailable", LogIndexService::volumeSourceName(entry.volumeSource));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, entry.capturedVolume);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -243,6 +276,9 @@ void setup()
     RUN_TEST(test_final_row_uses_closing_state);
     RUN_TEST(test_index_entry_uses_exact_start_and_end_times);
     RUN_TEST(test_master_index_exposes_volume_source);
+    RUN_TEST(test_reconcile_summary_defaults);
+    RUN_TEST(test_index_entry_invalid_filename_or_timestamps);
+    RUN_TEST(test_index_entry_nan_volume_handling);
     UNITY_END();
 }
 

@@ -58,6 +58,13 @@ public:
                           bool kickActive = false, bool finalRecord = false);
     bool logsIdle() const;
     LogIndexService::ReconcileSummary indexSummary() const { return logIndex.reconciliationSummary(); }
+    bool reconcileIndex(bool force = false)
+    {
+        if (!isSdReady)
+            return false;
+        SPIBus::Guard spiGuard;
+        return logIndex.reconcile(logsDir, force);
+    }
     bool logData(const LogRecord &record, uint32_t sessionStartUnix,
                  bool includeState, bool includePlantower,
                  bool includeAnemometer, bool includeNtc,
