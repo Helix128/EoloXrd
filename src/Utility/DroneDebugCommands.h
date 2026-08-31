@@ -337,6 +337,8 @@ private:
     out.println("  drone pid set [interval=800 deadband=0.15 kp=14 ki=0.3 kd=0 ilim=8 maxStep=16 trimMax=64 softStep=2 sens=0.8 recenter=5000 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
     out.println("  drone pid test [target=5.0]|stop");
     out.println("  drone pid ignite         kick manual de arranque");
+    out.println("  logs index status        resumen del indice maestro");
+    out.println("  logs index rebuild       fuerza reconciliacion del indice");
     out.println("  drone help         ayuda");
   }
 
@@ -408,6 +410,19 @@ public:
                  (unsigned long)summary.recovered, (unsigned long)summary.incompatible,
                  (unsigned long)summary.errors, (unsigned long)summary.validRows,
                  (unsigned long)summary.ignoredRows, summary.rebuiltIndex ? "si" : "no");
+      return true;
+    }
+    if (line == "logs index rebuild" || line == "logs index reconcile") {
+      if (_ctx == nullptr) { out.println("Contexto Dron no adjuntado."); return true; }
+      if (!_ctx->isSdReady()) { out.println("SD no disponible."); return true; }
+      out.println("Reconstruyendo indice maestro de capturas...");
+      const bool ok = _ctx->reconcileLogIndex(true);
+      LogIndexService::ReconcileSummary summary = _ctx->logIndexSummary();
+      out.printf("resultado=%s examinados=%lu actuales=%lu recuperados=%lu incompatibles=%lu errores=%lu\n",
+                 ok ? "ok" : "error",
+                 (unsigned long)summary.examined, (unsigned long)summary.current,
+                 (unsigned long)summary.recovered, (unsigned long)summary.incompatible,
+                 (unsigned long)summary.errors);
       return true;
     }
     if (!(line == "drone" || line.startsWith("drone ")))

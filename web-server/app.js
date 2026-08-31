@@ -892,10 +892,234 @@ async function deletePreset(name) {
 $('refreshPresets').addEventListener('click', loadPresets);
 $('savePreset').addEventListener('click', savePreset);
 
-// ===== REGISTROS CSV EN SD (EXPLORADOR & PREVIEW) =====
+// ===== REGISTROS CSV EN SD (EXPLORADOR & PREVIEW INTERPRETADA) =====
 let currentPreviewFile = null;
 let currentPreviewText = '';
+let currentParsedData = null;
+let previewViewMode = 'table';
 let logSearchFilter = '';
+let previewSearchFilter = '';
+
+const CSV_COLUMN_META = {
+  time: { label: 'Hora / Fecha', align: 'left', isMono: true },
+  state: { label: 'Estado', align: 'center', isState: true },
+  flow: { label: 'Caudal', unit: 'L/min', align: 'right', isNum: true, decimals: 2 },
+  flow_target: { label: 'Obj.', unit: 'L/min', align: 'right', isNum: true, decimals: 1 },
+  captured_volume: { label: 'Volumen', unit: 'L', align: 'right', isNum: true, decimals: 3 },
+  captured_volume_l: { label: 'Volumen', unit: 'L', align: 'right', isNum: true, decimals: 3 },
+  temperature: { label: 'Temp.', unit: '°C', align: 'right', isNum: true, decimals: 1 },
+  humidity: { label: 'Humedad', unit: '%', align: 'right', isNum: true, decimals: 1 },
+  pressure: { label: 'Presión', unit: 'hPa', align: 'right', isNum: true, decimals: 1 },
+  pm1: { label: 'PM 1.0', unit: 'µg/m³', align: 'right', isNum: true, decimals: 0 },
+  pm25: { label: 'PM 2.5', unit: 'µg/m³', align: 'right', isNum: true, decimals: 0 },
+  pm10: { label: 'PM 10', unit: 'µg/m³', align: 'right', isNum: true, decimals: 0 },
+  wind_speed: { label: 'Viento', unit: 'm/s', align: 'right', isNum: true, decimals: 1 },
+  wind_direction: { label: 'Dir. Viento', unit: '°', align: 'right', isNum: true, decimals: 0 },
+  ntc_temperature: { label: 'Temp. Motor', unit: '°C', align: 'right', isNum: true, decimals: 1 },
+  battery_pct: { label: 'Batería', unit: '%', align: 'right', isNum: true, decimals: 0 },
+  log_file: { label: 'Archivo de Registro', align: 'left', isMono: true, isLogLink: true },
+  start_date: { label: 'Fecha Inicio', align: 'left', isMono: true },
+  start_time: { label: 'Hora Inicio', align: 'left', isMono: true },
+  end_date: { label: 'Fecha Fin', align: 'left', isMono: true },
+  end_time: { label: 'Hora Fin', align: 'left', isMono: true },
+  volume_source: { label: 'Origen Volumen', align: 'center', isVolumeSource: true }
+};
+
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatTableCell(colKey, rawVal) {
+  if (rawVal === '' || rawVal === null || rawVal === undefined) {
+    return '<span class="val-na">&mdash;</span>';
+  }
+  const cleanVal = String(rawVal).trim();
+  if (cleanVal === '-1.0' || cleanVal === '-1' || cleanVal === '-1.000' || cleanVal === '-999' || cleanVal === '-999.0' || cleanVal === 'unavailable') {
+    return '<span class="val-na">&mdash;</span>';
+  }
+
+  const meta = CSV_COLUMN_META[colKey] || {};
+
+  if (meta.isState) {
+    if (cleanVal.toLowerCase().includes('captur')) {
+      return `<span class="badge-status badge-status-ok">${escapeHtml(cleanVal)}</span>`;
+    }
+    if (cleanVal.toLowerCase().includes('arranc')) {
+      return `<span class="badge-status badge-status-warn">${escapeHtml(cleanVal)}</span>`;
+    }
+    return `<span class="badge-status badge-status-info">${escapeHtml(cleanVal)}</span>`;
+  }
+
+  if (meta.isVolumeSource) {
+    if (cleanVal === 'recorded') {
+      return '<span class="badge-status badge-status-ok">Medido</span>';
+    }
+    if (cleanVal === 'estimated_flow') {
+      return '<span class="badge-status badge-status-warn">Estimado</span>';
+    }
+    return '<span class="badge-status val-na">N/D</span>';
+  }
+
+  if (meta.isLogLink) {
+    return `<strong><a href="#view-logs" data-open-log="${escapeHtml(cleanVal)}" style="color:var(--primary); text-decoration:underline;">${escapeHtml(cleanVal)}</a></strong>`;
+  }
+
+  if (meta.isNum) {
+    const num = parseFloat(cleanVal);
+    if (!isNaN(num)) {
+      return meta.decimals !== undefined ? num.toFixed(meta.decimals) : String(num);
+    }
+  }
+
+  return escapeHtml(cleanVal);
+}
+
+function renderParsedDataTable() {
+  const thead = $('logTableHead');
+  const tbody = $('logTableBody');
+  const table = $('logDataTable');
+  const emptyState = $('tableEmptyState');
+  if (!thead || !tbody || !table || !emptyState) return;
+
+  if (!currentParsedData || !currentParsedData.columns || currentParsedData.columns.length === 0) {
+    table.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    emptyState.textContent = 'Selecciona un archivo del explorador a la izquierda o haz clic en "Ver índice" para inspeccionar sus filas.';
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+  table.classList.remove('hidden');
+
+  const cols = currentParsedData.columns;
+  const rows = currentParsedData.rows;
+
+  // Render cabecera
+  let headerHtml = '<tr><th class="col-num">#</th>';
+  cols.forEach(colKey => {
+    const meta = CSV_COLUMN_META[colKey] || {};
+    const label = meta.label || colKey.replace(/_/g, ' ');
+    const unitBadge = meta.unit ? ` <span style="font-size:10px; font-weight:normal; opacity:0.8;">(${meta.unit})</span>` : '';
+    const alignClass = meta.align === 'right' ? 'text-right' : meta.align === 'center' ? 'cell-center' : '';
+    headerHtml += `<th class="${alignClass}">${escapeHtml(label)}${unitBadge}</th>`;
+  });
+  headerHtml += '</tr>';
+  thead.innerHTML = headerHtml;
+
+  // Filtrado de filas
+  const filter = (previewSearchFilter || '').toLowerCase();
+  const filteredRows = filter
+    ? rows.filter(r => r.some(cell => String(cell).toLowerCase().includes(filter)))
+    : rows;
+
+  const rowCountBadge = $('previewRowsCount');
+  if (rowCountBadge) {
+    if (filter) {
+      rowCountBadge.textContent = `${filteredRows.length} de ${rows.length} filas`;
+    } else {
+      rowCountBadge.textContent = `${rows.length} fila${rows.length === 1 ? '' : 's'}`;
+    }
+  }
+
+  if (filteredRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty-cell">Ninguna fila coincide con "${escapeHtml(previewSearchFilter)}"</td></tr>`;
+    return;
+  }
+
+  // Render filas
+  let bodyHtml = '';
+  filteredRows.forEach((r, rowIdx) => {
+    bodyHtml += `<tr><td class="col-num">${rowIdx + 1}</td>`;
+    cols.forEach((colKey, colIdx) => {
+      const cellVal = r[colIdx] !== undefined ? r[colIdx] : '';
+      const meta = CSV_COLUMN_META[colKey] || {};
+      const alignClass = meta.align === 'right' ? 'cell-num' : meta.align === 'center' ? 'cell-center' : '';
+      bodyHtml += `<td class="${alignClass}">${formatTableCell(colKey, cellVal)}</td>`;
+    });
+    bodyHtml += '</tr>';
+  });
+  tbody.innerHTML = bodyHtml;
+
+  // Delegar clicks en enlaces a otros logs (desde índice)
+  tbody.querySelectorAll('[data-open-log]').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const targetLog = link.dataset.openLog;
+      if (targetLog) {
+        previewLog(targetLog);
+      }
+    });
+  });
+}
+
+function updatePreviewSummaryMetrics(columns, rows) {
+  const timeIdx = columns.indexOf('time');
+  const volIdx = columns.indexOf('captured_volume') !== -1 ? columns.indexOf('captured_volume') : columns.indexOf('captured_volume_l');
+  const timeTag = $('previewTimeRange');
+  const volTag = $('previewVolumeTag');
+
+  if (timeTag) {
+    if (timeIdx !== -1 && rows.length > 0) {
+      const firstTime = rows[0][timeIdx] || '';
+      const lastTime = rows[rows.length - 1][timeIdx] || '';
+      const formatStamp = s => s.includes('T') ? s.split('T')[1] : s;
+      timeTag.textContent = `${formatStamp(firstTime)} → ${formatStamp(lastTime)}`;
+      timeTag.classList.remove('hidden');
+    } else {
+      timeTag.classList.add('hidden');
+    }
+  }
+
+  if (volTag) {
+    if (volIdx !== -1 && rows.length > 0) {
+      const lastVol = parseFloat(rows[rows.length - 1][volIdx]);
+      if (!isNaN(lastVol) && lastVol >= 0) {
+        volTag.textContent = `${lastVol.toFixed(3)} L`;
+        volTag.classList.remove('hidden');
+      } else {
+        volTag.classList.add('hidden');
+      }
+    } else {
+      volTag.classList.add('hidden');
+    }
+  }
+}
+
+function setPreviewViewMode(mode) {
+  previewViewMode = mode;
+  const isTable = mode === 'table';
+  $('btnViewTable').classList.toggle('active', isTable);
+  $('btnViewRaw').classList.toggle('active', !isTable);
+  $('previewTableWrap').classList.toggle('hidden', !isTable);
+  $('previewRawWrap').classList.toggle('hidden', isTable);
+}
+
+$('btnViewTable').addEventListener('click', () => setPreviewViewMode('table'));
+$('btnViewRaw').addEventListener('click', () => setPreviewViewMode('raw'));
 
 function renderLogsTable() {
   const tbody = $('logsBody');
@@ -915,7 +1139,7 @@ function renderLogsTable() {
   const filtered = filter ? logFiles.filter(f => f.name.toLowerCase().includes(filter)) : logFiles;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Ning&uacute;n archivo coincide con "${logSearchFilter}"</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Ning&uacute;n archivo coincide con "${escapeHtml(logSearchFilter)}"</td></tr>`;
     return;
   }
 
@@ -984,16 +1208,18 @@ async function loadLogs() {
 }
 
 async function previewLog(filename) {
+  const isIndex = (filename === 'log_index.csv' || filename === 'index.csv');
   const fileObj = logFiles.find(f => f.name === filename);
-  currentPreviewFile = { name: filename, size: fileObj ? fileObj.size : 0 };
+  currentPreviewFile = { name: filename, size: fileObj ? fileObj.size : 0, isIndex };
 
-  // Actualizar fila activa en la tabla
+  // Actualizar fila activa en la tabla de archivos
   document.querySelectorAll('#logsBody tr[data-file-row]').forEach(tr => {
     tr.classList.toggle('active-row', tr.dataset.fileRow === filename);
   });
 
-  $('previewFilename').textContent = filename;
-  $('previewFilename').title = filename;
+  const displayName = isIndex ? 'Índice Maestro (log_index.csv)' : filename;
+  $('previewFilename').textContent = displayName;
+  $('previewFilename').title = displayName;
 
   const sizeTag = $('previewFileSize');
   if (sizeTag) {
@@ -1005,34 +1231,62 @@ async function previewLog(filename) {
     }
   }
 
-  $('preview').textContent = 'Cargando vista previa del archivo...';
+  $('tableEmptyState').textContent = 'Cargando vista previa del archivo...';
+  $('tableEmptyState').classList.remove('hidden');
+  $('logDataTable').classList.add('hidden');
+  $('preview').textContent = 'Cargando datos crudos...';
   $('copyPreviewBtn').disabled = true;
+  $('copyTsvBtn').disabled = true;
   $('downloadPreviewBtn').classList.add('hidden');
+  if ($('previewSearchInput')) {
+    $('previewSearchInput').value = '';
+    $('previewSearchInput').disabled = true;
+  }
+  previewSearchFilter = '';
 
   try {
     const res = await fetch('/api/logs/preview?file=' + encodeURIComponent(filename));
     if (!res.ok) {
+      $('tableEmptyState').textContent = 'No se pudo leer la vista previa del archivo.';
       $('preview').textContent = 'No se pudo leer la vista previa.';
       $('previewRowsCount').textContent = '0 filas';
       return;
     }
     const data = await res.json();
-    const rows = data.rows || [];
-    const lines = [data.header || ''].concat(rows).filter(Boolean);
+    const headerStr = data.header || '';
+    const rawRows = data.rows || [];
+    const lines = [headerStr].concat(rawRows).filter(Boolean);
     currentPreviewText = lines.join('\n');
     $('preview').textContent = currentPreviewText;
-    
-    $('previewRowsCount').textContent = `${rows.length} fila${rows.length === 1 ? '' : 's'}`;
+
+    // Parsear datos CSV
+    const columns = parseCsvLine(headerStr);
+    const parsedRows = rawRows.map(r => parseCsvLine(r));
+    currentParsedData = {
+      header: headerStr,
+      columns: columns,
+      rows: parsedRows,
+      rawLines: lines
+    };
+
+    updatePreviewSummaryMetrics(columns, parsedRows);
+    renderParsedDataTable();
+
     $('copyPreviewBtn').disabled = false;
+    $('copyTsvBtn').disabled = false;
+    if ($('previewSearchInput')) $('previewSearchInput').disabled = false;
 
     const dlBtn = $('downloadPreviewBtn');
     dlBtn.href = '/download?file=' + encodeURIComponent(filename);
-    dlBtn.download = filename;
+    dlBtn.download = isIndex ? 'log_index.csv' : filename;
+    dlBtn.textContent = isIndex ? 'Descargar Índice' : 'Descargar';
     dlBtn.classList.remove('hidden');
   } catch (err) {
+    $('tableEmptyState').textContent = 'Error al obtener la vista previa del registro.';
     $('preview').textContent = 'Error al obtener la vista previa del registro.';
     $('previewRowsCount').textContent = 'Error';
     $('copyPreviewBtn').disabled = true;
+    $('copyTsvBtn').disabled = true;
     $('downloadPreviewBtn').classList.add('hidden');
   }
 }
@@ -1040,16 +1294,31 @@ async function previewLog(filename) {
 function resetPreview() {
   currentPreviewFile = null;
   currentPreviewText = '';
+  currentParsedData = null;
   $('previewFilename').textContent = 'Ningún archivo seleccionado';
   $('previewFilename').title = '';
   if ($('previewFileSize')) $('previewFileSize').classList.add('hidden');
+  if ($('previewTimeRange')) $('previewTimeRange').classList.add('hidden');
+  if ($('previewVolumeTag')) $('previewVolumeTag').classList.add('hidden');
   $('previewRowsCount').textContent = '0 filas';
+  $('tableEmptyState').textContent = 'Selecciona un archivo del explorador a la izquierda o haz clic en "Ver índice" para inspeccionar sus filas.';
+  $('tableEmptyState').classList.remove('hidden');
+  $('logDataTable').classList.add('hidden');
   $('preview').textContent = 'Selecciona un archivo del explorador a la izquierda para inspeccionar sus filas.';
   $('copyPreviewBtn').disabled = true;
+  $('copyTsvBtn').disabled = true;
+  if ($('previewSearchInput')) {
+    $('previewSearchInput').value = '';
+    $('previewSearchInput').disabled = true;
+  }
   $('downloadPreviewBtn').classList.add('hidden');
 }
 
 async function deleteLog(filename) {
+  if (filename === 'log_index.csv' || filename === 'index.csv') {
+    notify('El índice maestro no puede ser eliminado', 'error');
+    return;
+  }
   if (!confirm(`¿Eliminar permanentemente el archivo '${filename}' de la SD?`)) return;
   try {
     const body = new URLSearchParams();
@@ -1074,7 +1343,7 @@ async function deleteLog(filename) {
   }
 }
 
-// Búsqueda en tiempo real
+// Búsqueda en explorador de archivos
 if ($('logSearchInput')) {
   $('logSearchInput').addEventListener('input', e => {
     logSearchFilter = e.target.value.trim();
@@ -1082,23 +1351,46 @@ if ($('logSearchInput')) {
   });
 }
 
-// Copiar vista previa al portapapeles
-if ($('copyPreviewBtn')) {
-  $('copyPreviewBtn').addEventListener('click', () => {
-    if (!currentPreviewText) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(currentPreviewText).then(() => {
-        notify('Datos CSV copiados al portapapeles', 'success');
-      }).catch(() => {
-        fallbackCopyText(currentPreviewText);
-      });
-    } else {
-      fallbackCopyText(currentPreviewText);
-    }
+// Búsqueda / filtrado en filas de vista previa
+if ($('previewSearchInput')) {
+  $('previewSearchInput').addEventListener('input', e => {
+    previewSearchFilter = e.target.value.trim();
+    renderParsedDataTable();
   });
 }
 
-function fallbackCopyText(text) {
+// Copiar vista previa como CSV al portapapeles
+if ($('copyPreviewBtn')) {
+  $('copyPreviewBtn').addEventListener('click', () => {
+    if (!currentPreviewText) return;
+    copyToClipboard(currentPreviewText, 'Datos CSV copiados al portapapeles');
+  });
+}
+
+// Copiar vista previa como TSV (para pegar en Excel / Sheets)
+if ($('copyTsvBtn')) {
+  $('copyTsvBtn').addEventListener('click', () => {
+    if (!currentParsedData || !currentParsedData.columns) return;
+    const headerTsv = currentParsedData.columns.join('\t');
+    const rowsTsv = currentParsedData.rows.map(r => r.join('\t')).join('\n');
+    const fullTsv = headerTsv + (rowsTsv ? '\n' + rowsTsv : '');
+    copyToClipboard(fullTsv, 'Tabla copiada en formato TSV (lista para Excel)');
+  });
+}
+
+function copyToClipboard(text, successMsg) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      notify(successMsg || 'Copiado al portapapeles', 'success');
+    }).catch(() => {
+      fallbackCopyText(text, successMsg);
+    });
+  } else {
+    fallbackCopyText(text, successMsg);
+  }
+}
+
+function fallbackCopyText(text, successMsg) {
   try {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -1108,10 +1400,17 @@ function fallbackCopyText(text) {
     ta.select();
     document.execCommand('copy');
     ta.remove();
-    notify('Datos CSV copiados al portapapeles', 'success');
+    notify(successMsg || 'Copiado al portapapeles', 'success');
   } catch (_) {
     notify('No se pudo copiar automáticamente al portapapeles', 'error');
   }
+}
+
+// Botón para previsualizar el índice maestro
+if ($('previewIndexBtn')) {
+  $('previewIndexBtn').addEventListener('click', () => {
+    previewLog('log_index.csv');
+  });
 }
 
 $('refreshLogs').addEventListener('click', loadLogs);

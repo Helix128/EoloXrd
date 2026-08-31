@@ -214,12 +214,18 @@ static void test_rs485_schedule_reserves_afm07()
 {
     using Timing = EoloCore::RS485TimingModel;
     TEST_ASSERT_TRUE(Timing::kAnemometerSlotBudgetMs < Timing::kAfmIntervalMs);
+    TEST_ASSERT_EQUAL_UINT32(120, Timing::kAnemometerSlotBudgetMs);
+    TEST_ASSERT_EQUAL_UINT32(100, Timing::kMinGapAfterFailureMs);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(1199, Timing::kAfmIntervalMs);
-    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(100, 300, true, 150));
-    TEST_ASSERT_FALSE(Timing::optionalFitsBeforeCritical(100, 200, true, 150));
-    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(600, 100, true, 150));
+    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(100, 300, true, 120));
+    TEST_ASSERT_FALSE(Timing::optionalFitsBeforeCritical(100, 200, true, 120));
+    TEST_ASSERT_TRUE(Timing::optionalFitsBeforeCritical(600, 100, true, 120));
     TEST_ASSERT_EQUAL_UINT32(1300, Timing::nextPeriodicDue(1000, 1150, 300));
     TEST_ASSERT_EQUAL_UINT32(0x2CU, Timing::nextPeriodicDue(0xFFFFFF00U, 0xFFFFFFF0U, 100));
+
+    // Si la transacción tomó 275ms (timeout), la próxima periódica salta al siguiente múltiplo futuro
+    // y no genera un plazo en el pasado
+    TEST_ASSERT_EQUAL_UINT32(1400, Timing::nextPeriodicDue(1000, 1275, 200));
 }
 
 static void test_plantower_frame_and_checksum()

@@ -14,6 +14,7 @@
 #include "CaptureSwitches.h"
 #include "HeadlessSetupTypes.h"
 #include "HeadlessSetupWebPage.h"
+#include "SPIBus.h"
 #include "../Data/Context.h"
 #include "../Utility/SystemDiagnostics.h"
 
@@ -50,7 +51,14 @@ public:
   void send(int code, const char *contentType = nullptr, const String &content = String(""))
   {
     _lastResponseCode = code;
+    sendHeader("Connection", "close");
     WebServer::send(code, contentType, content);
+  }
+  void send_P(int code, PGM_P contentType, PGM_P content, size_t contentLength = 0)
+  {
+    _lastResponseCode = code;
+    sendHeader("Connection", "close");
+    WebServer::send_P(code, contentType, content, contentLength);
   }
 
 private:
@@ -194,6 +202,11 @@ public:
     if (_staState != StaConnectionState::Connecting)
       return;
 
+    const unsigned long now = millis();
+    if (now - _lastStaCheckMs < 200UL)
+      return;
+    _lastStaCheckMs = now;
+
     if (WiFi.status() == WL_CONNECTED)
     {
       _staState = StaConnectionState::Connected;
@@ -206,11 +219,11 @@ public:
         LOG_LN("mDNS activo: http://eolo-dron.local/");
       }
     }
-    else if (millis() - _staStartMs >= kStaTimeoutMs &&
-             (int32_t)(millis() - _nextStaRetryMs) >= 0)
+    else if (now - _staStartMs >= kStaTimeoutMs &&
+             (int32_t)(now - _nextStaRetryMs) >= 0)
     {
       if (WiFi.softAPgetStationNum() > 0) {
-        _nextStaRetryMs = millis() + 10000UL;
+        _nextStaRetryMs = now + 10000UL;
         return;
       }
       if (_staAttempts >= kMaxStaAttempts) {
@@ -223,7 +236,7 @@ public:
       LOG_F("Reintento Wi-Fi LAN %u/%u; AP permanece activo\n", _staAttempts, kMaxStaAttempts);
       WiFi.disconnect(false, false);
       WiFi.begin(_staSsid, _staPass);
-      _staStartMs = millis();
+      _staStartMs = now;
       scheduleStaRetry();
     }
   }
@@ -270,6 +283,7 @@ private:
   HeadlessSetupConfig _confirmedConfig;
   StaConnectionState _staState = StaConnectionState::Disabled;
   unsigned long _staStartMs = 0;
+  unsigned long _lastStaCheckMs = 0;
   static constexpr unsigned long kStaTimeoutMs = 3500UL;
   bool _running = false;
   bool _confirmed = false;
@@ -319,23 +333,25 @@ private:
   void loadDefaults()
   {
     Preferences prefs;
-    prefs.begin("eolo_headless", false);
-    _defaults.waitSeconds = prefs.getUInt("wait", 0);
-    _defaults.durationSeconds = prefs.getUInt("duration", 5UL * MINUTE);
-    _defaults.targetFlow = prefs.isKey("flow") ? prefs.getFloat("flow") : DRONE_TARGET_FLOW_LPM;
-    _defaults.flowSectionCount = prefs.getUChar("flowSecCount", 0);
-    if (_defaults.flowSectionCount > MaxFlowSections)
-      _defaults.flowSectionCount = 0;
-    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    if (prefs.begin("eolo_headless", false))
     {
-      char durKey[12];
-      char flowKey[12];
-      snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
-      snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
-      _defaults.flowSections[i].durationSeconds = prefs.getUInt(durKey, 0);
-      _defaults.flowSections[i].targetFlow = prefs.isKey(flowKey) ? prefs.getFloat(flowKey) : DRONE_TARGET_FLOW_LPM;
+      _defaults.waitSeconds = prefs.getUInt("wait", 0);
+      _defaults.durationSeconds = prefs.getUInt("duration", 5UL * MINUTE);
+      _defaults.targetFlow = prefs.isKey("flow") ? prefs.getFloat("flow") : DRONE_TARGET_FLOW_LPM;
+      _defaults.flowSectionCount = prefs.getUChar("flowSecCount", 0);
+      if (_defaults.flowSectionCount > MaxFlowSections)
+        _defaults.flowSectionCount = 0;
+      for (uint8_t i = 0; i < MaxFlowSections; i++)
+      {
+        char durKey[12];
+        char flowKey[12];
+        snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
+        snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
+        _defaults.flowSections[i].durationSeconds = prefs.getUInt(durKey, 0);
+        _defaults.flowSections[i].targetFlow = prefs.isKey(flowKey) ? prefs.getFloat(flowKey) : DRONE_TARGET_FLOW_LPM;
+      }
+      prefs.end();
     }
-    prefs.end();
 
     if (!HeadlessSetup::validateConfig(_defaults))
       _defaults = HeadlessSetupConfig();
@@ -344,21 +360,23 @@ private:
   void saveDefaults(const HeadlessSetupConfig &config)
   {
     Preferences prefs;
-    prefs.begin("eolo_headless", false);
-    prefs.putUInt("wait", config.waitSeconds);
-    prefs.putUInt("duration", config.durationSeconds);
-    prefs.putFloat("flow", config.targetFlow);
-    prefs.putUChar("flowSecCount", config.flowSectionCount);
-    for (uint8_t i = 0; i < MaxFlowSections; i++)
+    if (prefs.begin("eolo_headless", false))
     {
-      char durKey[12];
-      char flowKey[12];
-      snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
-      snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
-      prefs.putUInt(durKey, i < config.flowSectionCount ? config.flowSections[i].durationSeconds : 0);
-      prefs.putFloat(flowKey, i < config.flowSectionCount ? config.flowSections[i].targetFlow : DRONE_TARGET_FLOW_LPM);
+      prefs.putUInt("wait", config.waitSeconds);
+      prefs.putUInt("duration", config.durationSeconds);
+      prefs.putFloat("flow", config.targetFlow);
+      prefs.putUChar("flowSecCount", config.flowSectionCount);
+      for (uint8_t i = 0; i < MaxFlowSections; i++)
+      {
+        char durKey[12];
+        char flowKey[12];
+        snprintf(durKey, sizeof(durKey), "secDur%u", (unsigned int)i);
+        snprintf(flowKey, sizeof(flowKey), "secFlow%u", (unsigned int)i);
+        prefs.putUInt(durKey, i < config.flowSectionCount ? config.flowSections[i].durationSeconds : 0);
+        prefs.putFloat(flowKey, i < config.flowSectionCount ? config.flowSections[i].targetFlow : DRONE_TARGET_FLOW_LPM);
+      }
+      prefs.end();
     }
-    prefs.end();
   }
 
   bool parseFlowSchedule(HeadlessSetupConfig &config)
@@ -732,6 +750,7 @@ private:
       return;
     }
 
+    SPIBus::Guard spiGuard;
     File dir = SD.open(_ctx.logsDirectory());
     if (!dir || !dir.isDirectory())
     {
@@ -740,9 +759,10 @@ private:
     }
 
     _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    _server.send(200, "application/json", "");
-    _server.sendContent("{\"available\":true,\"files\":[");
+    _server.send(200, "application/json", "{\"available\":true,\"files\":[");
 
+    String buffer;
+    buffer.reserve(1024);
     bool first = true;
     File file = dir.openNextFile();
     while (file)
@@ -758,20 +778,27 @@ private:
       {
         if (!first)
         {
-          _server.sendContent(",");
+          buffer += ",";
         }
         first = false;
 
-        char fileJson[256];
+        char fileJson[128];
         snprintf(fileJson, sizeof(fileJson), "{\"name\":\"%s\",\"size\":%u}", base, (uint32_t)file.size());
-        _server.sendContent(fileJson);
+        buffer += fileJson;
+
+        if (buffer.length() >= 1024)
+        {
+          _server.sendContent(buffer);
+          buffer = "";
+        }
       }
       file.close();
       file = dir.openNextFile();
     }
     dir.close();
 
-    _server.sendContent("]}");
+    buffer += "]}";
+    _server.sendContent(buffer);
     _server.sendContent(""); // end chunked stream
   }
 
@@ -795,8 +822,21 @@ private:
       return;
     }
 
+    String name = _server.arg("file");
+    bool isIndexRequest = (name == "log_index.csv" || name == "index.csv" || name == "index" || _server.hasArg("index"));
     char pathBuf[256];
-    if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)) || !SD.exists(pathBuf))
+    if (isIndexRequest)
+    {
+      strlcpy(pathBuf, LogIndexService::CsvPath, sizeof(pathBuf));
+    }
+    else if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)))
+    {
+      _server.send(400, "application/json", "{\"error\":\"invalid_name\"}");
+      return;
+    }
+
+    SPIBus::Guard spiGuard;
+    if (!SD.exists(pathBuf))
     {
       _server.send(404, "application/json", "{\"error\":\"file_not_found\"}");
       return;
@@ -858,32 +898,39 @@ private:
     const size_t start = count > kPreviewRows ? count % kPreviewRows : 0;
     const size_t total = count > kPreviewRows ? kPreviewRows : count;
 
-    // Stream the preview output to save heap memory
+    // Stream the preview output with buffered chunks to minimize TCP packets
     _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    _server.send(200, "application/json", "");
-    _server.sendContent("{\"header\":\"");
-    _server.sendContent(headerBuf);
-    _server.sendContent("\",\"rows\":[");
+    String initial = "{\"header\":\"" + String(headerBuf) + "\",\"rows\":[";
+    _server.send(200, "application/json", initial);
 
+    String rowChunk;
+    rowChunk.reserve(1024);
     for (size_t i = 0; i < total; i++)
     {
       if (i > 0)
       {
-        _server.sendContent(",");
+        rowChunk += ",";
       }
-      _server.sendContent("\"");
+      rowChunk += "\"";
       const uint32_t rowOffset = rowOffsets[(start + i) % kPreviewRows];
       if (file.seek(rowOffset))
       {
         size_t rlen = file.readBytesUntil('\n', rowBuf, sizeof(rowBuf) - 1);
         rowBuf[rlen] = '\0';
         if (rlen > 0 && rowBuf[rlen - 1] == '\r') rowBuf[rlen - 1] = '\0';
-        _server.sendContent(rowBuf);
+        rowChunk += rowBuf;
       }
-      _server.sendContent("\"");
+      rowChunk += "\"";
+
+      if (rowChunk.length() >= 1024)
+      {
+        _server.sendContent(rowChunk);
+        rowChunk = "";
+      }
     }
 
-    _server.sendContent("]}");
+    rowChunk += "]}";
+    _server.sendContent(rowChunk);
     _server.sendContent(""); // end chunked stream
     file.close();
   }
@@ -897,8 +944,23 @@ private:
     }
 
     String name = _server.arg("file");
+    bool isIndexRequest = (name == "log_index.csv" || name == "index.csv" || name == "index" || _server.hasArg("index"));
     char pathBuf[256];
-    if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)) || !SD.exists(pathBuf))
+    const char *downloadFilename = name.c_str();
+
+    if (isIndexRequest)
+    {
+      strlcpy(pathBuf, LogIndexService::CsvPath, sizeof(pathBuf));
+      downloadFilename = "log_index.csv";
+    }
+    else if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)))
+    {
+      _server.send(400, "text/plain", "Nombre invalido");
+      return;
+    }
+
+    SPIBus::Guard spiGuard;
+    if (!SD.exists(pathBuf))
     {
       _server.send(404, "text/plain", "Archivo no encontrado");
       return;
@@ -912,25 +974,9 @@ private:
     }
 
     char disp[320];
-    snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", name.c_str());
+    snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", downloadFilename);
     _server.sendHeader("Content-Disposition", disp);
-    _server.setContentLength(file.size());
-    _server.send(200, "text/csv", "");
-    WiFiClient client = _server.client();
-    uint8_t buffer[1024];
-    while (file.available() && client.connected()) {
-      size_t count = file.read(buffer, sizeof(buffer));
-      if (count == 0) break;
-      size_t offset = 0;
-      while (offset < count && client.connected()) {
-        size_t written = client.write(buffer + offset, count - offset);
-        if (written == 0) break;
-        offset += written;
-        SystemDiagnostics::instance().feedWatchdog();
-        delay(0);
-      }
-      if (offset != count) break;
-    }
+    _server.streamFile(file, "text/csv");
     file.close();
   }
 
@@ -942,6 +988,13 @@ private:
       return;
     }
 
+    String name = _server.arg("file");
+    if (name == "log_index.csv" || name == "index.csv" || name == "index")
+    {
+      _server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_name\"}");
+      return;
+    }
+
     char pathBuf[256];
     if (!safeLogPathFromRequest(pathBuf, sizeof(pathBuf)))
     {
@@ -949,13 +1002,13 @@ private:
       return;
     }
 
+    SPIBus::Guard spiGuard;
     if (!SD.exists(pathBuf))
     {
       _server.send(404, "application/json", "{\"ok\":false,\"error\":\"file_not_found\"}");
       return;
     }
 
-    String name = _server.arg("file");
     if (_ctx.removeLogAndIndex(name.c_str()))
     {
       _server.send(200, "application/json", "{\"ok\":true}");
@@ -1060,20 +1113,22 @@ private:
     DynamicJsonDocument doc(2048);
     JsonArray presets = doc.createNestedArray("presets");
     Preferences prefs;
-    prefs.begin("eolo_presets", true);
-    for (uint8_t i = 0; i < HeadlessSetup::kMaxPresets; i++)
+    if (prefs.begin("eolo_presets", false))
     {
-      HeadlessSetupPreset preset;
-      loadPresetSlot(prefs, i, preset);
-      if (!HeadlessSetup::isSafePresetName(preset.name) || !HeadlessSetup::validateConfig(preset.config))
-        continue;
-      JsonObject obj = presets.createNestedObject();
-      obj["name"] = preset.name;
-      obj["durationSeconds"] = preset.config.durationSeconds;
-      obj["targetFlow"] = preset.config.targetFlow;
-      obj["flowSectionCount"] = preset.config.flowSectionCount;
+      for (uint8_t i = 0; i < HeadlessSetup::kMaxPresets; i++)
+      {
+        HeadlessSetupPreset preset;
+        loadPresetSlot(prefs, i, preset);
+        if (!HeadlessSetup::isSafePresetName(preset.name) || !HeadlessSetup::validateConfig(preset.config))
+          continue;
+        JsonObject obj = presets.createNestedObject();
+        obj["name"] = preset.name;
+        obj["durationSeconds"] = preset.config.durationSeconds;
+        obj["targetFlow"] = preset.config.targetFlow;
+        obj["flowSectionCount"] = preset.config.flowSectionCount;
+      }
+      prefs.end();
     }
-    prefs.end();
 
     size_t needed = measureJson(doc) + 1;
     char *buf = (char *)malloc(needed);
@@ -1096,7 +1151,11 @@ private:
     }
 
     Preferences prefs;
-    prefs.begin("eolo_presets", true);
+    if (!prefs.begin("eolo_presets", false))
+    {
+      _server.send(404, "application/json", "{\"ok\":false,\"error\":\"not_found\"}");
+      return;
+    }
     int slot = findPresetSlot(prefs, name.c_str());
     if (slot < 0)
     {

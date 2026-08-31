@@ -984,15 +984,61 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Selector de modo de vista (Tabla / CSV Plano) */
+.view-mode-toggle {
+  display: inline-flex;
+  background-color: var(--bg-surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.btn-view-mode {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-view-mode:hover {
+  color: var(--text-main);
+}
+
+.btn-view-mode.active {
+  background-color: var(--primary);
+  color: var(--primary-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
 }
 
 .preview-meta-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
 }
 
 .preview-meta-tag {
@@ -1004,6 +1050,125 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-dim);
+}
+
+.preview-search-wrap {
+  flex: 1;
+  max-width: 220px;
+  min-width: 140px;
+}
+
+/* Contenedor de Tabla de Datos Parseada */
+.preview-table-wrap {
+  flex: 1;
+  overflow: auto;
+  max-height: 540px;
+  min-height: 480px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  position: relative;
+}
+
+.log-data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-xs);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.log-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--bg-surface-alt);
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 11.5px;
+}
+
+.log-data-table th.col-num {
+  width: 40px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.log-data-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  vertical-align: middle;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.log-data-table td.col-num {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.log-data-table tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="light"] .log-data-table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.log-data-table tbody tr:hover {
+  background-color: rgba(14, 165, 233, 0.08);
+}
+
+.log-data-table .cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-data-table .cell-center {
+  text-align: center;
+}
+
+/* Badges de estado en tabla */
+.badge-status {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  font-family: var(--font-sans);
+}
+
+.badge-status-ok {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-status-warn {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-status-info {
+  background-color: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.val-na {
+  color: var(--text-dim);
+  font-style: normal;
+  opacity: 0.6;
 }
 
 .files-table-wrap {
@@ -1115,18 +1280,21 @@ body {
 }
 
 .files-table-wrap::-webkit-scrollbar,
+.preview-table-wrap::-webkit-scrollbar,
 .preview-box::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
 .files-table-wrap::-webkit-scrollbar-thumb,
+.preview-table-wrap::-webkit-scrollbar-thumb,
 .preview-box::-webkit-scrollbar-thumb {
   background-color: var(--border-strong);
   border-radius: 4px;
 }
 
 .files-table-wrap::-webkit-scrollbar-track,
+.preview-table-wrap::-webkit-scrollbar-track,
 .preview-box::-webkit-scrollbar-track {
   background-color: transparent;
 }
