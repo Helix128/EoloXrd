@@ -12,3 +12,4 @@ __pycache__/
 .cave/worktrees
 firmware_backups/
 .build_tag
+artifacts/

@@ -110,7 +110,7 @@
             </label>
             <label class="segment-option">
               <input type="radio" name="flowMode" value="periods">
-              <span class="segment-label">Perfil por bloques continuos</span>
+              <span class="segment-label">Bloques</span>
             </label>
           </div>
         </div>
@@ -255,8 +255,13 @@
         <div class="header-actions">
           <button type="button" class="btn-secondary btn-sm" id="refreshLogs">Actualizar</button>
           <button type="button" class="btn-secondary btn-sm" id="previewIndexBtn">Ver &iacute;ndice</button>
-          <a href="/download?file=log_index.csv" class="btn-secondary btn-sm" id="downloadIndexCsvBtn" download="log_index.csv" style="text-decoration:none;">Descargar &iacute;ndice CSV</a>
-          <button type="button" class="btn-secondary btn-sm" id="downloadAll">Descargar todos</button>
+          <div class="dropdown" id="downloadMenuWrap">
+            <button type="button" class="btn-secondary btn-sm" id="downloadMenuBtn">Descargar &#9662;</button>
+            <div class="dropdown-menu hidden" id="downloadMenu">
+              <a href="/download?file=log_index.csv" class="dropdown-item" download="log_index.csv">&Iacute;ndice CSV</a>
+              <button type="button" class="dropdown-item" id="downloadAll">Todos los archivos</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -303,10 +308,6 @@
                 <span class="preview-filename-badge" id="previewFilename">Ning&uacute;n archivo seleccionado</span>
               </div>
               <div class="preview-header-actions">
-                <div class="view-mode-toggle" role="radiogroup" aria-label="Modo de visualizaci&oacute;n">
-                  <button type="button" class="btn-view-mode active" id="btnViewTable" title="Vista de tabla formateada">Tabla</button>
-                  <button type="button" class="btn-view-mode" id="btnViewRaw" title="Vista de texto plano CSV">CSV</button>
-                </div>
                 <button type="button" class="btn-secondary btn-sm" id="copyPreviewBtn" title="Copiar datos CSV al portapapeles" disabled>Copiar CSV</button>
                 <button type="button" class="btn-secondary btn-sm" id="copyTsvBtn" title="Copiar como tabla TSV para Excel" disabled>Copiar TSV</button>
                 <a id="downloadPreviewBtn" class="btn-primary btn-sm hidden" download="" style="text-decoration:none;">Descargar</a>
@@ -327,18 +328,19 @@
               </div>
             </div>
 
-            <!-- Contenedor 1: Tabla de Datos CSV Parseada -->
+            <!-- Gráfica de series en el tiempo (caudal, volumen, etc) -->
+            <div class="preview-chart-wrap hidden" id="previewChartWrap">
+              <div class="chart-legend" id="previewChartLegend"></div>
+              <svg id="previewChart" class="preview-chart" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
+            </div>
+
+            <!-- Tabla de Datos CSV Parseada -->
             <div class="preview-table-wrap" id="previewTableWrap">
               <div class="empty-state" id="tableEmptyState">Selecciona un archivo del explorador a la izquierda o haz clic en &ldquo;Ver &iacute;ndice&rdquo; para inspeccionar sus filas.</div>
               <table class="data-table log-data-table hidden" id="logDataTable">
                 <thead id="logTableHead"></thead>
                 <tbody id="logTableBody"></tbody>
               </table>
-            </div>
-
-            <!-- Contenedor 2: Texto Plano CSV -->
-            <div class="preview-box-wrap hidden" id="previewRawWrap">
-              <pre id="preview" class="preview-box">Selecciona un archivo del explorador a la izquierda para inspeccionar sus filas.</pre>
             </div>
           </div>
         </div>
@@ -366,6 +368,8 @@
           <div class="telemetry-item"><span class="telemetry-label">I&sup2;C / BME280</span><strong class="telemetry-value" id="diagI2c">&mdash;</strong></div>
           <div class="telemetry-item"><span class="telemetry-label">SD / &iacute;ndice</span><strong class="telemetry-value" id="diagSd">&mdash;</strong></div>
           <div class="telemetry-item"><span class="telemetry-label">&Uacute;ltima petici&oacute;n HTTP</span><strong class="telemetry-value" id="diagHttp">&mdash;</strong></div>
+          <div class="telemetry-item"><span class="telemetry-label">RS485 AFM07</span><strong class="telemetry-value" id="diagRs485">&mdash;</strong></div>
+          <div class="telemetry-item"><span class="telemetry-label">Estado AFM07</span><strong class="telemetry-value" id="diagAfm">&mdash;</strong></div>
         </div>
       </div>
 

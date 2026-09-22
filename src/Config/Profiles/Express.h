@@ -59,6 +59,7 @@ constexpr FlowPidConfig makeFlowPidConfig()
     config.softMaxStep = 2;
     config.sensitivity = 1.0f;
     config.recenterDelayMs = 4000UL;
+    config.zeroFlowConfirmSamples = 5;
     return config;
 }
 

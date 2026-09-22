@@ -17,6 +17,40 @@ pio run -e eolo_standard -t config_info
 
 La tarea muestra el target y features activos. Los valores ajustables están explícitos en el header del perfil, para que no haya una segunda fuente de verdad en PlatformIO.
 
+## Cadencia AFM07 para calificación
+
+`EOLO_AFM07_POLL_GAP_MS` es un parámetro de compilación (50–10000 ms), con
+valor predeterminado de `250 ms` para dejar un margen adicional al bus. El
+planificador cuenta ese descanso desde el fin de cada transacción; no existe
+un setter en el portal. Los nombres históricos `EOLO_AFM07_POLL_INTERVAL_MS` y
+`EOLO_AFM_INTERVAL_MS` se aceptan como alias de entrada.
+
+Para construir un candidato de barrido sin editar el árbol:
+
+```bash
+EOLO_AFM07_POLL_GAP_MS=400 pio run -e eolo_dron_low_power
+```
+
+La lectura exclusiva del estado AFM07 se solicita por `POST
+/api/diagnostics/afm07` (o `rs485 diagnostic` por consola) y debe devolver
+`register0004=0`. Un valor `1–3` bloquea la calificación y mantiene el
+actuador apagado. Las lecturas inválidas y excepciones de transporte se
+reintentan; sólo tres fallos consecutivos activan el bloqueo, y una lectura
+válida posterior limpia ese bloqueo transitorio. Después de comprobarlo,
+`POST /api/diagnostics/reset` reinicia las estadísticas de la ventana.
+
+El barrido completo, con preflight físico confirmado, se automatiza con:
+
+```bash
+python3 scripts/afm07_rate_sweep.py --upload --preflight-ok \
+  --base-url http://192.168.4.1
+```
+
+El script solo hace HTTP a la URL indicada y no cambia la red del computador;
+guarda snapshots JSONL, una calificación por intervalo y `summary.csv`. Se
+detiene ante el primer fallo salvo `--continue-on-failure`, y nunca reinicia
+una captura automáticamente.
+
 La selección de ejecución sigue esta ruta:
 
 ```text

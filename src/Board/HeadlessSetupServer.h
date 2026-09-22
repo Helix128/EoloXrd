@@ -15,6 +15,7 @@
 #include "HeadlessSetupTypes.h"
 #include "HeadlessSetupWebPage.h"
 #include "SPIBus.h"
+#include "RS485Bus.h"
 #include "../Data/Context.h"
 #include "../Utility/SystemDiagnostics.h"
 
@@ -159,6 +160,9 @@ public:
     route("/", HTTP_GET, [this]() { handleRoot(); });
     route("/healthz", HTTP_GET, [this]() { handleHealthz(); });
     route("/api/diagnostics", HTTP_GET, [this]() { handleDiagnostics(); });
+    route("/api/diagnostics/reset", HTTP_POST, [this]() { handleDiagnosticsReset(); });
+    route("/api/diagnostics/afm07", HTTP_GET, [this]() { handleAfmDiagnostic(); });
+    route("/api/diagnostics/afm07", HTTP_POST, [this]() { handleAfmDiagnostic(); });
     route("/api/status", HTTP_GET, [this]() { handleStatus(); });
     route("/api/logs", HTTP_GET, [this]() { handleLogs(); });
     route("/api/logs/preview", HTTP_GET, [this]() { handlePreview(); });
@@ -511,8 +515,9 @@ private:
     I2CBus &bus = I2CBus::getInstance();
     I2CBus::Stats i2c = bus.getStats();
     LogIndexService::ReconcileSummary index = _ctx.logIndexSummary();
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(8192);
     doc["uptimeMs"] = snap.uptimeMs;
+    doc["pollGapMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
     doc["core"] = snap.core;
     doc["phase"] = snap.phase;
     JsonObject loop = doc.createNestedObject("loop");
@@ -568,16 +573,204 @@ private:
       item["result"] = I2CBus::resultName(stats.lastResult);
       item["failures"] = stats.consecutiveFailures;
     }
+
+    RS485Bus &rs485Bus = RS485Bus::getInstance();
+    const RS485Stats rs485Stats = RS485Monitor::getInstance().getStats();
+    JsonObject rs485 = doc.createNestedObject("rs485");
+    rs485["pollGapMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
+    // Alias de respuesta para clientes de diagnóstico anteriores.
+    rs485["afmIntervalMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
+    rs485["transactions"] = rs485Stats.totalRequests;
+    rs485["successes"] = rs485Stats.successfulReads;
+    rs485["failures"] = rs485Stats.failedReads;
+    rs485["timeouts"] = rs485Stats.timeoutErrors;
+    rs485["crc"] = rs485Stats.crcErrors;
+    rs485["malformed"] = rs485Stats.malformedErrors;
+    rs485["incomplete"] = rs485Stats.incompleteErrors;
+    rs485["busBusy"] = rs485Stats.busBusyErrors;
+    rs485["unexpected"] = rs485Stats.unexpectedFrameErrors;
+    rs485["lateBytes"] = rs485Bus.lateBytes();
+    rs485["protocolUnexpectedFrames"] = rs485Bus.unexpectedFrames();
+    rs485["busBusyDeferrals"] = rs485Bus.busBusyDeferrals();
+    rs485["recoveries"] = rs485Bus.transportRecoveries();
+    rs485["exceptions"] = rs485Stats.exceptionErrors;
+    rs485["lastExceptionCode"] = rs485Stats.lastExceptionCode;
+    rs485["minRestMs"] = rs485Stats.minRestMs == UINT32_MAX ? 0 : rs485Stats.minRestMs;
+    rs485["minActualRestMs"] = rs485Stats.minRestMs == UINT32_MAX ? 0 : rs485Stats.minRestMs;
+    rs485["lastRestMs"] = rs485Stats.lastRestMs;
+    rs485["afmSafetyBlocked"] = rs485Bus.isAfmSafetyBlocked();
+    const RS485SlaveStats afmStats = rs485Bus.getSlaveStats(EoloCore::ModbusRtuProtocol::Afm07SlaveId);
+    rs485["maxAttemptGapMs"] = afmStats.maxAttemptGapMs;
+    rs485["maxSuccessGapMs"] = afmStats.maxSuccessGapMs;
+    rs485["afmMinActualRestMs"] = afmStats.minRestMs == UINT32_MAX ? 0 : afmStats.minRestMs;
+    JsonObject contract = rs485.createNestedObject("afm07Contract");
+    contract["slaveId"] = EoloCore::ModbusRtuProtocol::Afm07SlaveId;
+    contract["baudRate"] = EoloCore::ModbusRtuProtocol::Afm07BaudRate;
+    contract["functionCode"] = EoloCore::ModbusRtuProtocol::ReadHoldingRegisters;
+    contract["flowRegister"] = EoloCore::ModbusRtuProtocol::Afm07FlowRegister;
+    contract["diagnosticRegister"] = EoloCore::ModbusRtuProtocol::Afm07DiagnosticRegister;
+    contract["count"] = EoloCore::ModbusRtuProtocol::Afm07FlowCount;
+    contract["diagnosticCount"] = EoloCore::ModbusRtuProtocol::Afm07FlowCount;
+    FlowData afmFlow;
+    const bool afmRead = _ctx.components.flowSensor.getData(afmFlow);
+    JsonObject afm = rs485.createNestedObject("afm07");
+    afm["valid"] = afmRead && afmFlow.valid;
+    afm["fresh"] = afmRead && afmFlow.fresh;
+    afm["stale"] = afmFlow.stale;
+    afm["ageMs"] = afmFlow.ageMs;
+    afm["sampleId"] = afmFlow.sampleId;
+    JsonObject exceptionTotals = rs485.createNestedObject("exceptionCodes");
+    for (uint8_t code = 1; code <= 11; ++code)
+    {
+      char key[8];
+      snprintf(key, sizeof(key), "0x%02X", code);
+      exceptionTotals[key] = rs485Stats.exceptionCodes[code];
+    }
+    exceptionTotals["other"] = rs485Stats.otherExceptionErrors;
+    JsonArray slaves = rs485.createNestedArray("slaves");
+    for (uint8_t id : {uint8_t(0x01), uint8_t(0x02)})
+    {
+      const RS485SlaveStats stats = rs485Bus.getSlaveStats(id);
+      JsonObject item = slaves.createNestedObject();
+      item["id"] = id;
+      item["state"] = stats.state == RS485EndpointState::Online ? "online" :
+                       (stats.state == RS485EndpointState::Degraded ? "degraded" : "offline");
+      item["successes"] = stats.successes;
+      item["failures"] = stats.failures;
+      item["lastError"] = stats.lastErrorCode;
+      item["lastExceptionCode"] = stats.lastExceptionCode;
+      item["lastLatencyMs"] = stats.lastLatencyMs;
+      item["maxLatencyMs"] = stats.maxLatencyMs;
+      item["maxAttemptGapMs"] = stats.maxAttemptGapMs;
+      item["maxSuccessGapMs"] = stats.maxSuccessGapMs;
+      item["lastRestMs"] = stats.lastRestMs;
+      item["minRestMs"] = stats.minRestMs == UINT32_MAX ? 0 : stats.minRestMs;
+      item["minActualRestMs"] = stats.minRestMs == UINT32_MAX ? 0 : stats.minRestMs;
+      item["lateBytes"] = stats.lateBytes;
+      item["protocolUnexpectedFrames"] = stats.unexpectedFrames;
+      item["deadlineMisses"] = stats.deadlineMisses;
+      item["consecutiveFailures"] = stats.consecutiveFailures;
+      item["timeouts"] = stats.timeoutErrors;
+      item["crc"] = stats.crcErrors;
+      item["incomplete"] = stats.incompleteFrames;
+      item["malformed"] = stats.malformedFrames;
+      item["busBusy"] = stats.busBusyErrors;
+      item["unexpected"] = stats.unexpectedFrameErrors;
+      JsonObject codes = item.createNestedObject("exceptionCodes");
+      for (uint8_t code = 1; code <= 11; ++code)
+      {
+        char key[8];
+        snprintf(key, sizeof(key), "0x%02X", code);
+        codes[key] = stats.modbusExceptions[code];
+      }
+      codes["other"] = stats.otherExceptionErrors;
+    }
+    const RS485DiagnosticStatus diagnostic = rs485Bus.getAfmDiagnosticStatus();
+    JsonObject afmDiagnostic = rs485.createNestedObject("afm07Diagnostic");
+    afmDiagnostic["state"] = diagnosticStateText(diagnostic.state);
+    afmDiagnostic["register0004"] = diagnostic.register0004;
+    afmDiagnostic["valueValid"] = diagnostic.valueValid;
+    afmDiagnostic["rateTuningBlocked"] = diagnostic.rateTuningBlocked || rs485Bus.isAfmSafetyBlocked();
+    afmDiagnostic["errorCode"] = diagnostic.errorCode;
+    afmDiagnostic["exceptionCode"] = diagnostic.exceptionCode;
+    afmDiagnostic["requestedMs"] = diagnostic.requestedMs;
+    afmDiagnostic["completedMs"] = diagnostic.completedMs;
+    afmDiagnostic["sequence"] = diagnostic.sequence;
+    BME280Data bmeData;
+    const bool bmeValid = _ctx.components.bme.getData(bmeData) &&
+                          bmeData.valid && isfinite(bmeData.temperature) &&
+                          isfinite(bmeData.humidity) && isfinite(bmeData.pressure);
+    DateTime rtcNow = _ctx.components.rtc.now();
+    JsonObject sensors = doc.createNestedObject("sensors");
+    sensors["sdValid"] = _ctx.isSdReady();
+    sensors["bmeValid"] = bmeValid;
+    sensors["ntcValid"] = _ctx.isMotorThermalSensorValid();
+    sensors["rtcValid"] = _ctx.components.rtc.isPresent() &&
+                           _ctx.components.rtc.isValid(rtcNow);
     JsonObject app = doc.createNestedObject("application");
     app["bootComplete"] = _ctx.bootInitComplete.load();
     app["capturing"] = _ctx.isCaptureActive();
     app["logActive"] = _ctx.isLogActive();
     app["uploadActive"] = _ctx.isUploadActive();
+    app["motorSafetyBlocked"] = _ctx.isMotorSafetyBlocked();
+    app["captureEndReason"] = captureEndReasonText(_ctx.captureEndReason());
+#if defined(FEATURE_FLOW_PID)
+    JsonObject pid = app.createNestedObject("pid");
+    pid["pollGapMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
+    pid["sensorFaultStopMs"] = _ctx.motorCapture.getPidConfig().sensorFaultStopMs;
+    pid["zeroFlowConfirmSamples"] = _ctx.motorCapture.getPidConfig().zeroFlowConfirmSamples;
+#endif
     String response;
     response.reserve(measureJson(doc) + 1);
     serializeJson(doc, response);
     _server.sendHeader("Cache-Control", "no-store");
     _server.send(200, "application/json", response);
+  }
+
+  static const char *diagnosticStateText(RS485DiagnosticState state)
+  {
+    switch (state)
+    {
+    case RS485DiagnosticState::Idle: return "idle";
+    case RS485DiagnosticState::Pending: return "pending";
+    case RS485DiagnosticState::Running: return "running";
+    case RS485DiagnosticState::Complete: return "complete";
+    case RS485DiagnosticState::Failed: return "failed";
+    default: return "unknown";
+    }
+  }
+
+  void handleAfmDiagnostic()
+  {
+    RS485Bus &bus = RS485Bus::getInstance();
+    if (_server.method() == HTTP_POST)
+    {
+      if (_ctx.isCaptureActive())
+      {
+        _server.send(409, "application/json", "{\"ok\":false,\"error\":\"capture_active\"}");
+        return;
+      }
+      if (!bus.startAfmDiagnostic())
+      {
+        _server.send(409, "application/json", "{\"ok\":false,\"error\":\"diagnostic_busy\"}");
+        return;
+      }
+      RS485DiagnosticStatus status = bus.getAfmDiagnosticStatus();
+      char response[160];
+      snprintf(response, sizeof(response),
+               "{\"ok\":true,\"state\":\"pending\",\"sequence\":%lu,\"requestedMs\":%lu}",
+               (unsigned long)status.sequence, (unsigned long)status.requestedMs);
+      _server.send(202, "application/json", response);
+      return;
+    }
+
+    RS485DiagnosticStatus status = bus.getAfmDiagnosticStatus();
+    DynamicJsonDocument doc(768);
+    doc["state"] = diagnosticStateText(status.state);
+    doc["register0004"] = status.register0004;
+    doc["valueValid"] = status.valueValid;
+    doc["rateTuningBlocked"] = status.rateTuningBlocked || bus.isAfmSafetyBlocked();
+    doc["errorCode"] = status.errorCode;
+    doc["exceptionCode"] = status.exceptionCode;
+    doc["requestedMs"] = status.requestedMs;
+    doc["completedMs"] = status.completedMs;
+    doc["sequence"] = status.sequence;
+    String response;
+    response.reserve(measureJson(doc) + 1);
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+  }
+
+  void handleDiagnosticsReset()
+  {
+    if (_ctx.isCaptureActive())
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"capture_active\"}");
+      return;
+    }
+    RS485Monitor::getInstance().reset();
+    RS485Bus::getInstance().resetSlaveStats();
+    _server.send(200, "application/json", "{\"ok\":true}");
   }
 
   void handleDebugEnter()
@@ -592,6 +785,12 @@ private:
     if (!_debugMode)
     {
       _server.send(403, "application/json", "{\"ok\":false,\"error\":\"not_in_debug\"}");
+      return;
+    }
+
+    if (!_ctx.actuationSensorsReady())
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"sensors_not_ready\"}");
       return;
     }
 
@@ -636,12 +835,15 @@ private:
     bool flowValid = _ctx.components.flowSensor.getData(flowData) && flowData.valid;
     JsonObject flow = doc.createNestedObject("flow");
     flow["valid"] = flowValid;
+    flow["fresh"] = flowData.fresh;
+    flow["stale"] = flowData.stale;
     flow["lpm"] = flowValid ? flowData.flow : 0.0f;
     flow["ageMs"] = flowData.ageMs;
 #endif
 
     doc["motorTempValid"] = _ctx.isMotorThermalSensorValid();
     doc["motorTemp"] = _ctx.motorThermalTemperatureC();
+    doc["motorSafetyBlocked"] = _ctx.isMotorSafetyBlocked();
     doc["overheat"] = _ctx.isMotorOverheatActive();
 
     size_t needed = measureJson(doc) + 1;
@@ -660,6 +862,12 @@ private:
     if (!_debugMode)
     {
       _server.send(403, "application/json", "{\"ok\":false,\"error\":\"not_in_debug\"}");
+      return;
+    }
+
+    if (!_ctx.actuationSensorsReady())
+    {
+      _server.send(409, "application/json", "{\"ok\":false,\"error\":\"sensors_not_ready\"}");
       return;
     }
 
@@ -695,6 +903,10 @@ private:
     StaticJsonDocument<2048> doc;
     doc["sdReady"] = _ctx.isSdReady();
     doc["sdStatus"] = sdStatusText(_ctx.sdStatus());
+    doc["motorSafetyBlocked"] = _ctx.isMotorSafetyBlocked();
+    doc["pollGapMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
+    doc["afmIntervalMs"] = EoloCore::RS485TimingModel::kAfmPollGapMs;
+    doc["afmSafetyBlocked"] = RS485Bus::getInstance().isAfmSafetyBlocked();
     doc["rtc"] = _ctx.components.rtc.now().timestamp();
     doc["staConnected"] = (_staState == StaConnectionState::Connected);
     if (_staState == StaConnectionState::Connected)
@@ -728,6 +940,10 @@ private:
     motor["kickActive"] = pidSt.kickActive;
     motor["kickCount"] = pidSt.kickCount;
     motor["stallDetected"] = pidSt.stallDetected;
+    motor["stoppedForSensorFault"] = pidSt.stoppedForSensorFault;
+    motor["zeroFlowFailureLatched"] = pidSt.zeroFlowFailureLatched;
+    motor["zeroFlowCount"] = pidSt.zeroFlowCount;
+    motor["zeroFlowFailurePwm"] = pidSt.zeroFlowFailurePwm;
     motor["pwm"] = pidSt.pwm;
 #endif
 

@@ -2,8 +2,10 @@
 #include <math.h>
 #include <string.h>
 #include <Eolo/Core/Capture/CaptureControllerModel.h>
+#include <Eolo/Core/Capture/CaptureSafetyModel.h>
 #include <Eolo/Core/Calibration/MotorCalibrationModel.h>
 #include <Eolo/Core/Flow/FlowSchedule.h>
+#include <Eolo/Core/Flow/FlowVolumeIntegrator.h>
 #include <Eolo/Core/Flow/DualMotorFlowController.h>
 #include <Eolo/Core/Input/CaptureSwitchLogic.h>
 #include <Eolo/Core/Sensors/AFM07Model.h>
@@ -19,6 +21,7 @@
 #include <Eolo/Core/Communication/RS485Protocol.h>
 #include <Eolo/Types/ModemHttpContract.h>
 #include "Board/I2CRetryPolicy.h"
+#include "Config/Profiles/Dron.h"
 
 static void test_rtc_parser_is_calendar_aware()
 {
@@ -153,9 +156,54 @@ static void test_afm07_fresh_stale_contract()
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 12.34f, data.flow);
     TEST_ASSERT_TRUE(AFM07Model::refreshAge(data, lastSuccess, 2100, 1200, 15000));
     TEST_ASSERT_TRUE(data.fresh);
+    AFM07Model::applyReadFailure(data, lastSuccess, 2150, 1200, 15000);
+    TEST_ASSERT_TRUE(data.fresh);
+    TEST_ASSERT_FALSE(data.stale);
+    AFM07Model::applyReadFailure(data, lastSuccess, 2300, 1200, 15000);
+    TEST_ASSERT_FALSE(data.fresh);
+    TEST_ASSERT_TRUE(data.stale);
     TEST_ASSERT_TRUE(AFM07Model::refreshAge(data, lastSuccess, 2300, 1200, 15000));
     TEST_ASSERT_TRUE(data.stale);
     TEST_ASSERT_FALSE(AFM07Model::refreshAge(data, lastSuccess, 17001, 1200, 15000));
+}
+
+static void test_afm07_sample_at_millis_zero_and_wraparound()
+{
+    FlowData atBoot;
+    uint32_t lastSuccess = 99;
+    AFM07Model::applyReadSuccess(atBoot, lastSuccess, 500, 0, 100.0f);
+    TEST_ASSERT_EQUAL_UINT32(1, atBoot.sampleId);
+    TEST_ASSERT_EQUAL_UINT32(0, lastSuccess);
+    TEST_ASSERT_TRUE(AFM07Model::refreshAge(atBoot, lastSuccess, 1000, 1200, 15000));
+    TEST_ASSERT_TRUE(atBoot.fresh);
+
+    FlowData wrapped;
+    lastSuccess = 0;
+    AFM07Model::applyReadSuccess(wrapped, lastSuccess, 500, 0xFFFFFFF0U, 100.0f);
+    TEST_ASSERT_TRUE(AFM07Model::refreshAge(wrapped, lastSuccess, 0x00000020U, 1200, 15000));
+    TEST_ASSERT_EQUAL_UINT32(0x30U, wrapped.ageMs);
+    TEST_ASSERT_TRUE(wrapped.fresh);
+}
+
+static void test_flow_volume_integrates_each_physical_sample()
+{
+    FlowVolumeIntegrator integrator;
+    integrator.reset(0);
+    float volume = 0.0f;
+    for (uint32_t second = 1; second <= 900; ++second)
+        volume += integrator.update(second * 1000UL, second, true, 5.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 75.0f, volume);
+    TEST_ASSERT_FLOAT_WITHIN(0.000001f, 0.0f,
+                             integrator.update(900000UL, 900, true, 5.0f));
+
+    integrator.reset(0xFFFFFF00U);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 5.0f * (512.0f / 60000.0f),
+                             integrator.update(0x00000100U, 1, true, 5.0f));
+}
+
+static void test_dron_pid_does_not_use_calibration_seed()
+{
+    TEST_ASSERT_FALSE(EoloConfig::Profile::kUseCalibrationSeed);
 }
 
 static void test_anemometer_conversion_and_expiry()
@@ -208,12 +256,30 @@ static void test_rs485_requests_and_response_validation()
     TEST_ASSERT_EQUAL_INT(static_cast<int>(EoloCore::ModbusReadStatus::Exception),
                           static_cast<int>(parsed.status));
     TEST_ASSERT_EQUAL_UINT8(0x02, parsed.exceptionCode);
+
+    // El código 0x04 se conserva byte a byte: el scheduler lo usa para
+    // enclavar el sensor y no debe degradarlo a un timeout genérico.
+    exception[2] = 0x04;
+    crc = EoloCore::ModbusRtuProtocol::crc16(exception, 3);
+    exception[3] = static_cast<uint8_t>(crc);
+    exception[4] = static_cast<uint8_t>(crc >> 8);
+    parsed = EoloCore::ModbusRtuProtocol::parseReadResponse(exception, sizeof(exception), 0x02, 1, nullptr);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(EoloCore::ModbusReadStatus::Exception),
+                          static_cast<int>(parsed.status));
+    TEST_ASSERT_EQUAL_UINT8(0x04, parsed.exceptionCode);
 }
 
 static void test_rs485_schedule_reserves_afm07()
 {
     using Timing = EoloCore::RS485TimingModel;
+    TEST_ASSERT_EQUAL_UINT8(0x02, EoloCore::ModbusRtuProtocol::Afm07SlaveId);
+    TEST_ASSERT_EQUAL_UINT32(4800UL, EoloCore::ModbusRtuProtocol::Afm07BaudRate);
+    TEST_ASSERT_EQUAL_UINT8(0x03, EoloCore::ModbusRtuProtocol::ReadHoldingRegisters);
+    TEST_ASSERT_EQUAL_UINT16(0x0000, EoloCore::ModbusRtuProtocol::Afm07FlowRegister);
+    TEST_ASSERT_EQUAL_UINT16(0x0004, EoloCore::ModbusRtuProtocol::Afm07DiagnosticRegister);
+    TEST_ASSERT_EQUAL_UINT8(1, EoloCore::ModbusRtuProtocol::Afm07FlowCount);
     TEST_ASSERT_TRUE(Timing::kAnemometerSlotBudgetMs < Timing::kAfmIntervalMs);
+    TEST_ASSERT_EQUAL_UINT32(250, Timing::kAfmPollGapMs);
     TEST_ASSERT_EQUAL_UINT32(120, Timing::kAnemometerSlotBudgetMs);
     TEST_ASSERT_EQUAL_UINT32(100, Timing::kMinGapAfterFailureMs);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(1199, Timing::kAfmIntervalMs);
@@ -223,9 +289,69 @@ static void test_rs485_schedule_reserves_afm07()
     TEST_ASSERT_EQUAL_UINT32(1300, Timing::nextPeriodicDue(1000, 1150, 300));
     TEST_ASSERT_EQUAL_UINT32(0x2CU, Timing::nextPeriodicDue(0xFFFFFF00U, 0xFFFFFFF0U, 100));
 
-    // Si la transacción tomó 275ms (timeout), la próxima periódica salta al siguiente múltiplo futuro
-    // y no genera un plazo en el pasado
-    TEST_ASSERT_EQUAL_UINT32(1400, Timing::nextPeriodicDue(1000, 1275, 200));
+    // La siguiente operación nace al terminar la actual; nunca se recuperan
+    // vencimientos periódicos acumulados en una ráfaga.
+    TEST_ASSERT_EQUAL_UINT32(1475, Timing::nextDueAfterCompletion(1275, 200));
+    TEST_ASSERT_EQUAL_UINT32(1475, Timing::nextFailureDue(1000, 1275, 200, false));
+    // 0x06 (device busy) añade exactamente una cadencia completa adicional.
+    TEST_ASSERT_EQUAL_UINT32(1675, Timing::nextFailureDue(1000, 1275, 200, true));
+    // El cálculo sigue siendo modular al cruzar millis() por cero.
+    TEST_ASSERT_EQUAL_UINT32(0x00000084U,
+                             Timing::nextFailureDue(0xFFFFFF00U, 0x00000020U, 100, false));
+    TEST_ASSERT_EQUAL_UINT32(0x000000B8U,
+                             Timing::nextDueAfterCompletion(0xFFFFFFF0U, 200));
+}
+
+static void test_afm_safety_retries_before_blocking()
+{
+    using Timing = EoloCore::RS485TimingModel;
+    TEST_ASSERT_FALSE(Timing::afmSafetyBlockReached(1));
+    TEST_ASSERT_FALSE(Timing::afmSafetyBlockReached(2));
+    TEST_ASSERT_TRUE(Timing::afmSafetyBlockReached(Timing::kAfmSafetyFailureAttempts));
+    TEST_ASSERT_TRUE(Timing::afmSafetyBlockReached(Timing::kAfmSafetyFailureAttempts + 1));
+}
+
+static void test_capture_safety_blocks_missing_prerequisites()
+{
+    CaptureSafetyInput input;
+    input.sdReady = false;
+    input.afmValid = true;
+    input.afmFresh = true;
+    input.ntcValid = true;
+    CaptureSafetyOutput start = CaptureSafetyModel::evaluateStart(input);
+    TEST_ASSERT_FALSE(start.startAllowed);
+    TEST_ASSERT_FALSE(start.motorAllowed);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CaptureSafetyFault::SdUnavailable),
+                          static_cast<int>(start.fault));
+
+    input.sdReady = true;
+    input.afmValid = false;
+    start = CaptureSafetyModel::evaluateStart(input);
+    TEST_ASSERT_FALSE(start.startAllowed);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CaptureSafetyFault::AfmInvalid),
+                          static_cast<int>(start.fault));
+
+    input.afmValid = true;
+    input.afmFresh = false;
+    CaptureSafetyOutput run = CaptureSafetyModel::evaluateRun(input);
+    TEST_ASSERT_TRUE(run.abortCapture);
+    TEST_ASSERT_FALSE(run.motorAllowed);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CaptureSafetyFault::AfmStale),
+                          static_cast<int>(run.fault));
+
+    input.afmFresh = true;
+    input.afmSafetyBlocked = true;
+    run = CaptureSafetyModel::evaluateRun(input);
+    TEST_ASSERT_TRUE(run.abortCapture);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CaptureSafetyFault::AfmDiagnostic),
+                          static_cast<int>(run.fault));
+
+    input.afmSafetyBlocked = false;
+    input.ntcValid = false;
+    run = CaptureSafetyModel::evaluateRun(input);
+    TEST_ASSERT_TRUE(run.abortCapture);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CaptureSafetyFault::NtcInvalid),
+                          static_cast<int>(run.fault));
 }
 
 static void test_plantower_frame_and_checksum()
@@ -317,6 +443,10 @@ static void test_thermal_protection_dto()
     TEST_ASSERT_FALSE(output.latched);
     TEST_ASSERT_TRUE(output.changed);
     TEST_ASSERT_TRUE(output.motorAllowed);
+
+    input.sensorValid = false;
+    output = ThermalProtectionModel::update(input);
+    TEST_ASSERT_FALSE(output.motorAllowed);
 }
 
 static void make_battery_frame(uint8_t active, float dc, float batt0,
@@ -391,6 +521,146 @@ static FlowPidConfig dual_flow_config()
     return c;
 }
 
+static FlowPidConfig zero_flow_config()
+{
+    FlowPidConfig c = dual_flow_config();
+    c.intervalMs = 100;
+    c.kickPwm = 700;
+    c.kickMs = 100;
+    c.zeroFlowConfirmSamples = 2;
+    c.sensorFaultStopMs = 1500;
+    return c;
+}
+
+static DualMotorFlowInput zero_flow_input(uint32_t nowMs, uint32_t sampleId,
+                                          float measuredFlow)
+{
+    DualMotorFlowInput input;
+    input.nowMs = nowMs;
+    input.targetFlow = 4.0f;
+    input.measuredFlow = measuredFlow;
+    input.flowValid = true;
+    input.flowFresh = true;
+    input.flowStale = false;
+    input.flowAgeMs = 0;
+    input.sampleId = sampleId;
+    input.maxPwm = 1000;
+    return input;
+}
+
+static void test_zero_flow_requires_two_fresh_run_samples_after_kick()
+{
+    DualMotorFlowController controller;
+    const FlowPidConfig config = zero_flow_config();
+
+    DualMotorFlowInput input = zero_flow_input(0, 1, 0.0f);
+    DualMotorFlowOutput output = controller.update(input, config);
+    TEST_ASSERT_TRUE(output.kickActive);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+
+    // El cero durante el kick no cuenta.
+    input = zero_flow_input(100, 2, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_FALSE(output.kickActive);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+
+    // Primera muestra cero en Run: sólo deja una confirmación pendiente.
+    input = zero_flow_input(200, 3, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(1, output.zeroFlowCount);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+    TEST_ASSERT_TRUE(output.virtualPwm > 0);
+
+    // Segunda muestra física consecutiva: enclava y apaga ambas bombas.
+    input = zero_flow_input(300, 4, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_ZERO_FLOW, output.fault);
+    TEST_ASSERT_TRUE(output.zeroFlowFailureLatched);
+    TEST_ASSERT_EQUAL_INT(0, output.virtualPwm);
+    TEST_ASSERT_EQUAL_INT(0, output.motor0Pwm);
+    TEST_ASSERT_EQUAL_INT(0, output.motor1Pwm);
+    TEST_ASSERT_TRUE(output.zeroFlowFailurePwm > 0);
+}
+
+static void test_zero_flow_confirmation_resets_and_latches_until_reset()
+{
+    DualMotorFlowController controller;
+    const FlowPidConfig config = zero_flow_config();
+
+    DualMotorFlowInput input = zero_flow_input(0, 1, 1.0f);
+    controller.update(input, config);
+    input = zero_flow_input(100, 2, 1.0f);
+    controller.update(input, config); // kick -> Run
+
+    input = zero_flow_input(200, 3, 0.0f);
+    DualMotorFlowOutput output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(1, output.zeroFlowCount);
+
+    // Flujo positivo rompe la consecutividad.
+    input = zero_flow_input(300, 4, 1.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+
+    // Un cero durante kick y una muestra inválida no cuentan.
+    input = zero_flow_input(400, 5, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(1, output.zeroFlowCount);
+    input = zero_flow_input(500, 6, 0.0f);
+    input.flowValid = false;
+    input.flowFresh = false;
+    input.flowStale = true;
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_SENSOR_INVALID, output.fault);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+
+    // Dos ceros frescos posteriores vuelven a confirmar.
+    input = zero_flow_input(600, 7, 0.0f);
+    controller.update(input, config);
+    input = zero_flow_input(700, 8, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_ZERO_FLOW, output.fault);
+
+    // Una muestra positiva posterior no puede reactivar hasta reset().
+    input = zero_flow_input(800, 9, 2.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_ZERO_FLOW, output.fault);
+    TEST_ASSERT_EQUAL_INT(0, output.virtualPwm);
+
+    controller.reset();
+    input = zero_flow_input(900, 10, 2.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+    TEST_ASSERT_TRUE(output.kickActive);
+}
+
+static void test_zero_flow_ignores_disabled_pwm_and_inactive_target()
+{
+    DualMotorFlowController controller;
+    FlowPidConfig config = zero_flow_config();
+    config.kickPwm = 0;
+
+    DualMotorFlowInput input = zero_flow_input(0, 1, 0.0f);
+    DualMotorFlowOutput output = controller.update(input, config);
+    TEST_ASSERT_TRUE(output.kickActive);
+    input = zero_flow_input(100, 2, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+    input = zero_flow_input(200, 3, 0.0f);
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+    TEST_ASSERT_EQUAL_INT(FLOW_PID_FAULT_NONE, output.fault);
+
+    // Un objetivo inactivo reinicia cualquier confirmación pendiente.
+    config.kickPwm = 700;
+    input = zero_flow_input(300, 4, 0.0f);
+    input.targetFlow = 0.0f;
+    output = controller.update(input, config);
+    TEST_ASSERT_EQUAL_UINT8(0, output.zeroFlowCount);
+    TEST_ASSERT_EQUAL_INT(0, output.virtualPwm);
+}
+
 static void test_dual_flow_virtual_mapping_and_sensor_grace()
 {
     int primary = 0, secondary = 0;
@@ -407,11 +677,13 @@ static void test_dual_flow_virtual_mapping_and_sensor_grace()
     DualMotorFlowOutput output = controller.update(input, dual_flow_config());
     TEST_ASSERT_EQUAL_INT(250, output.motor0Pwm);
     TEST_ASSERT_EQUAL_INT(1000, output.motor1Pwm);
-    input.nowMs = 5999;
-    output = controller.update(input, dual_flow_config());
+    FlowPidConfig safetyConfig = dual_flow_config();
+    safetyConfig.sensorFaultStopMs = 1500;
+    input.nowMs = 1499;
+    output = controller.update(input, safetyConfig);
     TEST_ASSERT_TRUE(output.sensorGraceActive);
-    input.nowMs = 6001;
-    output = controller.update(input, dual_flow_config());
+    input.nowMs = 1500;
+    output = controller.update(input, safetyConfig);
     TEST_ASSERT_TRUE(output.stoppedForSensorFault);
     TEST_ASSERT_EQUAL_INT(0, output.motor0Pwm);
     TEST_ASSERT_EQUAL_INT(0, output.motor1Pwm);
@@ -830,9 +1102,14 @@ int main(int, char **)
     RUN_TEST(test_i2c_retry_policy_matches_historical_backoff);
     RUN_TEST(test_fs3000_conversion_boundaries);
     RUN_TEST(test_afm07_fresh_stale_contract);
+    RUN_TEST(test_afm07_sample_at_millis_zero_and_wraparound);
+    RUN_TEST(test_flow_volume_integrates_each_physical_sample);
+    RUN_TEST(test_dron_pid_does_not_use_calibration_seed);
     RUN_TEST(test_anemometer_conversion_and_expiry);
     RUN_TEST(test_rs485_requests_and_response_validation);
     RUN_TEST(test_rs485_schedule_reserves_afm07);
+    RUN_TEST(test_afm_safety_retries_before_blocking);
+    RUN_TEST(test_capture_safety_blocks_missing_prerequisites);
     RUN_TEST(test_plantower_frame_and_checksum);
     RUN_TEST(test_capture_state_machine_actions);
     RUN_TEST(test_motor_calibration_model);
@@ -840,6 +1117,9 @@ int main(int, char **)
     RUN_TEST(test_battery_protocol_real_frame);
     RUN_TEST(test_battery_protocol_rejects_corruption);
     RUN_TEST(test_dual_flow_virtual_mapping_and_sensor_grace);
+    RUN_TEST(test_zero_flow_requires_two_fresh_run_samples_after_kick);
+    RUN_TEST(test_zero_flow_confirmation_resets_and_latches_until_reset);
+    RUN_TEST(test_zero_flow_ignores_disabled_pwm_and_inactive_target);
     RUN_TEST(test_smart_flow_seeks_and_locks_center_on_crossing);
     RUN_TEST(test_smart_flow_rejects_startup_spike_and_locks_only_at_target);
     RUN_TEST(test_smart_flow_deadband_holds_exact_center_pwm);

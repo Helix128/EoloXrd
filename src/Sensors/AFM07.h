@@ -6,16 +6,18 @@
 #include <Eolo/Core/Sensors/AFM07Model.h>
 #include <Eolo/Types/FlowData.h>
 
-#define AFM_ID 2
+#define AFM_ID EoloCore::ModbusRtuProtocol::Afm07SlaveId
 
 class AFM07 {
 private:
     portMUX_TYPE _dataMux = portMUX_INITIALIZER_UNLOCKED;
     FlowData _data;
     uint32_t _lastSuccessMs = 0;
-    static constexpr uint16_t REG_INSTANT_FLOW = 0x0000;
+    static constexpr uint16_t REG_INSTANT_FLOW = EoloCore::ModbusRtuProtocol::Afm07FlowRegister;
     static constexpr float FLOW_DIVISOR = AFM07_FLOW_DIVISOR;
-    static constexpr uint32_t FRESH_DATA_MS = 1200;
+    // El contrato Dron considera válida una muestra durante la ventana de
+    // 1,5 s usada por la calificación de cadencia RS485.
+    static constexpr uint32_t FRESH_DATA_MS = 1500;
     static constexpr uint32_t STALE_DATA_MS = 15000;
 
     static void onRead(void* context, bool success, const uint16_t* registers, uint8_t count, uint8_t) {

@@ -15,10 +15,21 @@ struct RS485Stats {
     uint32_t timeoutErrors = 0;
     uint32_t crcErrors = 0;
     uint32_t malformedErrors = 0;
+    uint32_t incompleteErrors = 0;
     uint32_t exceptionErrors = 0;
     uint32_t busBusyErrors = 0;
     uint32_t unexpectedFrameErrors = 0;
     uint32_t slaveTimeouts[256] = {0};
+    // Índice igual al código Modbus (1..11). El índice 0 queda reservado.
+    uint32_t exceptionCodes[12] = {0};
+    uint32_t otherExceptionErrors = 0;
+    uint8_t lastExceptionCode = 0;
+
+    // Descanso observado entre el término de una transacción y el inicio de
+    // la siguiente en el bus completo. UINT32_MAX significa "sin muestra".
+    uint32_t lastRestMs = 0;
+    uint32_t minRestMs = UINT32_MAX;
+    uint32_t lastCompletedMs = 0;
 
     uint32_t lastTransactionMs = 0;
     uint32_t maxTransactionMs = 0;
@@ -61,13 +72,30 @@ public:
     }
 
     // Registrar una solicitud completada
-    void recordRequestCompleted(bool success, uint8_t errorCode, uint8_t slaveId, uint32_t transactionMs) {
+    void recordRequestCompleted(bool success, uint8_t errorCode, uint8_t slaveId,
+                                uint32_t transactionMs, uint8_t exceptionCode = 0,
+                                uint32_t completedMs = UINT32_MAX,
+                                uint32_t startedMs = UINT32_MAX) {
         // El task RS485 no puede quedar bloqueado por la consola o por una
         // copia de estadísticas; perder una métrica es preferible a perder
         // una ventana de sondeo del AFM07.
         if (xSemaphoreTake(_statsMutex, 0) == pdTRUE) {
             _stats.totalRequests++;
             _stats.lastTransactionMs = transactionMs;
+            const uint32_t completion = completedMs != UINT32_MAX ? completedMs : millis();
+            if (_stats.totalRequests > 1) {
+                // El descanso es inicio_actual - término_anterior, no el
+                // intervalo entre términos (que también contiene la trama
+                // actual). Si el llamador legado no entrega inicio, se
+                // reconstruye con la duración observada.
+                const uint32_t start = startedMs != UINT32_MAX
+                    ? startedMs
+                    : completion - transactionMs;
+                _stats.lastRestMs = start - _stats.lastCompletedMs;
+                if (_stats.lastRestMs < _stats.minRestMs)
+                    _stats.minRestMs = _stats.lastRestMs;
+            }
+            _stats.lastCompletedMs = completion;
             PROFILE_MARK("rs485.tx", transactionMs * 1000UL);
             if (transactionMs > _stats.maxTransactionMs) {
                 _stats.maxTransactionMs = transactionMs;
@@ -76,17 +104,24 @@ public:
                 _stats.successfulReads++;
             } else {
                 _stats.failedReads++;
-                if (errorCode == 0xE2) { // ku8MBResponseTimedOut
+                if (errorCode == 0xE2) { // RS485_TIMEOUT
                     _stats.timeoutErrors++;
                     _stats.slaveTimeouts[slaveId]++;
                 } else if (errorCode == 0xE3) { // ku8MBInvalidCRC
                     _stats.crcErrors++;
                 } else if (errorCode == 0xE4) {
                     _stats.malformedErrors++;
+                } else if (errorCode == 0xE8) {
+                    _stats.incompleteErrors++;
                 } else if (errorCode == 0xE5) {
                     _stats.busBusyErrors++;
                 } else if (errorCode == 0xE6) {
                     _stats.exceptionErrors++;
+                    _stats.lastExceptionCode = exceptionCode;
+                    if (exceptionCode >= 1 && exceptionCode <= 11)
+                        _stats.exceptionCodes[exceptionCode]++;
+                    else
+                        _stats.otherExceptionErrors++;
                 } else if (errorCode == 0xE0 || errorCode == 0xE1 || errorCode == 0xE7) {
                     _stats.unexpectedFrameErrors++;
                 }

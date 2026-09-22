@@ -83,7 +83,7 @@ void test_closed_loop_pwm_clamps_integral_and_pwm()
 
 void test_flow_pid_responsive_preset_limits_pwm_growth()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {};
     config.intervalMs = 800;
     config.sensorStaleMs = 2800;
     config.maxDtMs = 2800;
@@ -95,6 +95,12 @@ void test_flow_pid_responsive_preset_limits_pwm_growth()
     config.filterAlpha = 0.35f;
     config.deadband = 0.15f;
     config.minActive = 0.30f;
+    config.kickPwm = 0;
+    config.kickMs = 50;
+    config.stallFlowLpm = 0.0f;
+    config.restallCooldownMs = 10000;
+    config.stallConfirmMs = 2000;
+    config.sensorFaultStopMs = 2800;
 
     FlowMotorController controller;
     FlowMotorInput input;
@@ -120,7 +126,7 @@ void test_flow_pid_responsive_preset_limits_pwm_growth()
 
 void test_flow_pid_accepts_delayed_sample_under_stale_limit()
 {
-    FlowPidConfig config;
+    FlowPidConfig config = {};
     config.intervalMs = 800;
     config.sensorStaleMs = 2800;
     config.maxDtMs = 2800;
@@ -132,6 +138,12 @@ void test_flow_pid_accepts_delayed_sample_under_stale_limit()
     config.filterAlpha = 0.35f;
     config.deadband = 0.15f;
     config.minActive = 0.30f;
+    config.kickPwm = 1000;
+    config.kickMs = 300;
+    config.stallFlowLpm = 0.0f;
+    config.restallCooldownMs = 10000;
+    config.stallConfirmMs = 2000;
+    config.sensorFaultStopMs = 2800;
 
     FlowMotorController controller;
     FlowMotorInput input;

@@ -4,6 +4,33 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// La cadencia del AFM07 se fija en compilación para que el barrido de
+// diagnóstico no pueda cambiarla desde el portal. El nombre expresa que es
+// un descanso mínimo contado desde el término de la transacción. Se aceptan
+// los nombres históricos como entrada, y se publican como alias para que
+// sketches externos no se rompan.
+#if !defined(EOLO_AFM07_POLL_GAP_MS)
+#if defined(EOLO_AFM07_POLL_INTERVAL_MS)
+#define EOLO_AFM07_POLL_GAP_MS EOLO_AFM07_POLL_INTERVAL_MS
+#elif defined(EOLO_AFM_INTERVAL_MS)
+#define EOLO_AFM07_POLL_GAP_MS EOLO_AFM_INTERVAL_MS
+#elif defined(EOLO_AFM_POLL_INTERVAL_MS)
+#define EOLO_AFM07_POLL_GAP_MS EOLO_AFM_POLL_INTERVAL_MS
+#else
+#define EOLO_AFM07_POLL_GAP_MS 250UL
+#endif
+#endif
+#ifndef EOLO_AFM07_POLL_INTERVAL_MS
+#define EOLO_AFM07_POLL_INTERVAL_MS EOLO_AFM07_POLL_GAP_MS
+#endif
+#ifndef EOLO_AFM_INTERVAL_MS
+#define EOLO_AFM_INTERVAL_MS EOLO_AFM07_POLL_GAP_MS
+#endif
+
+#if EOLO_AFM07_POLL_GAP_MS < 50 || EOLO_AFM07_POLL_GAP_MS > 10000
+#error "EOLO_AFM07_POLL_GAP_MS debe estar entre 50 y 10000 ms"
+#endif
+
 namespace EoloCore
 {
 
@@ -29,6 +56,12 @@ class ModbusRtuProtocol
 public:
     static constexpr uint8_t ReadHoldingRegisters = 0x03;
     static constexpr uint8_t MaxReadRegisters = 64;
+    // Contrato AFM07 usado por el scheduler y la calificación de producción.
+    static constexpr uint8_t Afm07SlaveId = 0x02;
+    static constexpr uint16_t Afm07FlowRegister = 0x0000;
+    static constexpr uint16_t Afm07DiagnosticRegister = 0x0004;
+    static constexpr uint8_t Afm07FlowCount = 1;
+    static constexpr uint32_t Afm07BaudRate = 4800UL;
 
     static uint16_t crc16(const uint8_t *data, size_t length)
     {
@@ -123,13 +156,18 @@ public:
 class RS485TimingModel
 {
 public:
-    static constexpr uint32_t kAfmIntervalMs = 200;
+    static constexpr uint32_t kAfmPollGapMs = EOLO_AFM07_POLL_GAP_MS;
+    // Alias de lectura para consumidores que todavía imprimen interval.
+    static constexpr uint32_t kAfmIntervalMs = kAfmPollGapMs;
     static constexpr uint32_t kAnemometerIntervalMs = 1100;
     static constexpr uint32_t kAnemometerOfflineIntervalMs = 5000;
     static constexpr uint32_t kMinGapAfterFailureMs = 100;
     static constexpr uint32_t kResponseStartTimeoutMs = 250;
     static constexpr uint32_t kFrameCompletionTimeoutMs = 35;
     static constexpr uint32_t kBusQuietUs = 8000;
+    // Los fallos de transporte aislados del AFM07 no deben abortar una
+    // captura; el bloqueo se activa tras esta cantidad consecutiva.
+    static constexpr uint8_t kAfmSafetyFailureAttempts = 3;
     // Incluye la espera máxima para despejar un bus ocupado, la respuesta
     // Modbus y la ventana de cierre de trama.
     static constexpr uint32_t kBusQuietTimeoutMs = 100;
@@ -162,6 +200,30 @@ public:
         while (due(nowMs, next))
             next += intervalMs;
         return next;
+    }
+
+    // Programa una nueva consulta a partir del fin de la transacción. Esto
+    // evita que un timeout/excepción deje vencimientos acumulados y produzca
+    // una ráfaga al recuperar el bus. La suma uint32_t es intencional: las
+    // comparaciones con due() siguen siendo correctas al cruzar millis().
+    static uint32_t nextDueAfterCompletion(uint32_t completedMs, uint32_t pollGapMs,
+                                           uint8_t extraGapIntervals = 0)
+    {
+        return completedMs + pollGapMs * static_cast<uint32_t>(extraGapIntervals + 1U);
+    }
+
+    // Compatibilidad con el helper anterior. previousDueMs ya no participa
+    // en el cálculo: el contrato nuevo se ancla exclusivamente en completedMs.
+    static uint32_t nextFailureDue(uint32_t previousDueMs, uint32_t completedMs,
+                                   uint32_t intervalMs, bool deviceBusy)
+    {
+        (void)previousDueMs;
+        return nextDueAfterCompletion(completedMs, intervalMs, deviceBusy ? 1U : 0U);
+    }
+
+    static bool afmSafetyBlockReached(uint32_t consecutiveFailures)
+    {
+        return consecutiveFailures >= kAfmSafetyFailureAttempts;
     }
 };
 

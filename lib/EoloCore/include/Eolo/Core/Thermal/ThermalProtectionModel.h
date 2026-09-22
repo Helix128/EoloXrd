@@ -36,7 +36,9 @@ public:
             input.highThreshold,
             input.lowThreshold);
         output.changed = output.latched != input.latched;
-        output.motorAllowed = !output.latched;
+        // Un sensor térmico inválido es una condición de bloqueo, no una
+        // temperatura intermedia que permita seguir accionando el motor.
+        output.motorAllowed = input.sensorValid && !output.latched;
         return output;
     }
 };

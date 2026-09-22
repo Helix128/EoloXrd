@@ -36,6 +36,9 @@ struct DualMotorFlowOutput
     bool kickActive = false;
     uint16_t kickCount = 0;
     bool stallDetected = false;
+    bool zeroFlowFailureLatched = false;
+    uint8_t zeroFlowCount = 0;
+    int zeroFlowFailurePwm = 0;
 };
 
 // Adapta FlowMotorController a dos bombas en serie. El PWM virtual va de
@@ -53,6 +56,7 @@ public:
         _graceStartMs = 0;
         _graceActive = false;
         _faultStopped = false;
+        _faultStoppedReason = FLOW_PID_FAULT_SENSOR_INVALID;
     }
 
     static int virtualFromMotors(int primary, int secondary, int maxPwm)
@@ -87,8 +91,14 @@ public:
             _virtualPwm = 0;
             _graceStartMs = 0;
             _graceActive = false;
-            _faultStopped = false;
+            if (!(_faultStopped && _faultStoppedReason == FLOW_PID_FAULT_ZERO_FLOW))
+            {
+                _faultStopped = false;
+                _faultStoppedReason = FLOW_PID_FAULT_SENSOR_INVALID;
+            }
             out.updated = true;
+            out.fault = _faultStopped ? _faultStoppedReason : FLOW_PID_FAULT_NONE;
+            out.zeroFlowFailureLatched = _faultStopped && _faultStoppedReason == FLOW_PID_FAULT_ZERO_FLOW;
             return mapOutput(out, in.primaryMotor, in.maxPwm);
         }
 
@@ -96,13 +106,32 @@ public:
         {
             _graceStartMs = 0;
             _graceActive = false;
-            _faultStopped = false;
+            if (!(_faultStopped && _faultStoppedReason == FLOW_PID_FAULT_ZERO_FLOW))
+            {
+                _faultStopped = false;
+                _faultStoppedReason = FLOW_PID_FAULT_SENSOR_INVALID;
+            }
             if (_virtualPwm == 0 && in.hasFeedForward)
             {
                 _virtualPwm = virtualFromMotors(in.feedForwardPrimary, in.feedForwardSecondary, in.maxPwm);
                 _controller.reset();
                 _controller.seedRunning(_virtualPwm);
             }
+        }
+
+        // Después de una pérdida de AFM que ya llevó el PWM a cero, una
+        // muestra tardía no puede reactivar las bombas sin un reset explícito
+        // del controlador (el adaptador Dron aborta además la captura).
+        if (_faultStopped)
+        {
+            _virtualPwm = 0;
+            out.fault = _faultStoppedReason;
+            out.updated = true;
+            out.stoppedForSensorFault = _faultStoppedReason != FLOW_PID_FAULT_ZERO_FLOW;
+            out.zeroFlowFailureLatched = _faultStoppedReason == FLOW_PID_FAULT_ZERO_FLOW;
+            out.zeroFlowCount = _controller.zeroFlowCount();
+            out.zeroFlowFailurePwm = _controller.zeroFlowFailurePwm();
+            return mapOutput(out, in.primaryMotor, in.maxPwm);
         }
 
         const bool newSample = in.flowValid && in.flowFresh && in.sampleId != 0 && in.sampleId != _lastSampleId;
@@ -112,6 +141,7 @@ public:
             _graceStartMs = 0;
             _graceActive = false;
             _faultStopped = false;
+            _faultStoppedReason = FLOW_PID_FAULT_SENSOR_INVALID;
             FlowMotorInput pidIn;
             pidIn.nowMs = in.nowMs;
             pidIn.currentPwm = _virtualPwm;
@@ -128,11 +158,27 @@ public:
             out.kickActive = out.controller.kickActive;
             out.kickCount = out.controller.kickCount;
             out.stallDetected = out.controller.stallDetected;
+            out.zeroFlowCount = out.controller.zeroFlowCount;
+            out.zeroFlowFailureLatched = out.controller.zeroFlowFailureLatched;
+            out.zeroFlowFailurePwm = out.controller.zeroFlowFailurePwm;
             if (out.controller.updated) _virtualPwm = out.controller.pwm;
             out.updated = out.controller.updated;
+            if (out.controller.fault == FLOW_PID_FAULT_ZERO_FLOW ||
+                out.controller.zeroFlowFailureLatched)
+            {
+                _virtualPwm = 0;
+                _faultStopped = true;
+                _faultStoppedReason = FLOW_PID_FAULT_ZERO_FLOW;
+                out.fault = _faultStoppedReason;
+                out.updated = true;
+                out.zeroFlowFailureLatched = true;
+                out.zeroFlowFailurePwm = out.controller.zeroFlowFailurePwm;
+            }
         }
         else
         {
+            if (!in.flowValid || !in.flowFresh || in.flowStale)
+                _controller.resetZeroFlowConfirmation();
             if (!_graceActive) { _graceStartMs = in.nowMs; _graceActive = true; }
             out.sensorGraceActive = true;
             out.smartStatus = _controller.smartStatus();
@@ -148,13 +194,16 @@ public:
                 out.fault = FLOW_PID_FAULT_NONE;
             }
 
-            if ((uint32_t)(in.nowMs - _graceStartMs) > 6000UL)
+            if ((uint32_t)(in.nowMs - _graceStartMs) >= config.sensorFaultStopMs)
             {
                 _virtualPwm = 0;
                 _faultStopped = true;
+                _faultStoppedReason = in.flowValid ? FLOW_PID_FAULT_SENSOR_STALE
+                                                     : FLOW_PID_FAULT_SENSOR_INVALID;
+                _controller.reset();
                 out.updated = true;
                 out.stoppedForSensorFault = true;
-                out.fault = in.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
+                out.fault = _faultStoppedReason;
             }
         }
         out.virtualPwm = _virtualPwm;
@@ -165,6 +214,12 @@ public:
     {
         FlowPidStatus result = _controller.status(enabled, running, target);
         result.pwm = _virtualPwm;
+        if (_faultStopped)
+            result.fault = _faultStoppedReason;
+        result.stoppedForSensorFault = _faultStopped && _faultStoppedReason != FLOW_PID_FAULT_ZERO_FLOW;
+        result.zeroFlowCount = _controller.zeroFlowCount();
+        result.zeroFlowFailureLatched = _faultStoppedReason == FLOW_PID_FAULT_ZERO_FLOW;
+        result.zeroFlowFailurePwm = _controller.zeroFlowFailurePwm();
         return result;
     }
 
@@ -188,6 +243,7 @@ private:
     float _lastTarget = -1.0f;
     int _virtualPwm = 0;
     bool _faultStopped = false;
+    FlowPidFault _faultStoppedReason = FLOW_PID_FAULT_SENSOR_INVALID;
 };
 
 #endif
