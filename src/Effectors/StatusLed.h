@@ -2,6 +2,7 @@
 #define STATUS_LED_H
 
 #include <Arduino.h>
+#include <math.h>
 #include "../Config/Legacy.h"
 
 #ifdef FEATURE_NEOPIXEL
@@ -37,7 +38,35 @@ public:
     _pixel.setBrightness(NEOPIXEL_BRIGHTNESS);
     _pixel.clear();
     _pixel.show();
+#ifdef EOLO_TARGET_DRON
+    _cycleStartedAtMs = millis();
+#endif
+    _hasLastShownColor = false;
     _ready = true;
+#ifdef NEOPIXEL_STRENGTH_PERCENT
+    setStrengthPercent(NEOPIXEL_STRENGTH_PERCENT);
+#endif
+#endif
+  }
+
+  // Scales the existing NeoPixel brightness without changing the color profiles.
+  // 100 preserves the configured brightness; 0 turns off its light output.
+  void setStrengthPercent(unsigned int strengthPercent)
+  {
+#ifdef FEATURE_NEOPIXEL
+    _strengthPercent = static_cast<uint8_t>(strengthPercent > 100U ? 100U : strengthPercent);
+    poll(true);
+#else
+    (void)strengthPercent;
+#endif
+  }
+
+  uint8_t strengthPercent() const
+  {
+#ifdef FEATURE_NEOPIXEL
+    return _strengthPercent;
+#else
+    return 100;
 #endif
   }
 
@@ -55,6 +84,20 @@ public:
 #endif
   }
 
+#if defined(FEATURE_NEOPIXEL) && defined(EOLO_TARGET_DRON)
+  void setDronePresentation(StatusLedPattern pattern, bool temperatureValid, float temperatureC)
+  {
+    if (_pattern != pattern)
+    {
+      _pattern = pattern;
+      resetSequence();
+    }
+    _motorTemperatureValid = temperatureValid && isfinite(temperatureC);
+    _motorTemperatureC = _motorTemperatureValid ? temperatureC : 0.0f;
+    poll(true);
+  }
+#endif
+
   StatusLedPattern pattern() const
   {
 #ifdef FEATURE_NEOPIXEL
@@ -70,6 +113,10 @@ public:
     if (!_ready)
       return;
 
+#ifdef EOLO_TARGET_DRON
+    (void)force;
+    pollDroneCycle(millis());
+#else
     PatternProfile profile = profileFor(_pattern);
     uint32_t now = millis();
 
@@ -111,6 +158,7 @@ public:
 
     _lit = true;
     show(profile.primary);
+#endif
 #else
     (void)force;
 #endif
@@ -140,7 +188,15 @@ private:
   bool _ready = false;
   bool _lit = false;
   uint8_t _flashIndex = 0;
+  uint8_t _strengthPercent = 100;
   uint32_t _lastStepMs = 0;
+  bool _hasLastShownColor = false;
+  Color _lastShownColor{0, 0, 0};
+#ifdef EOLO_TARGET_DRON
+  uint32_t _cycleStartedAtMs = 0;
+  bool _motorTemperatureValid = false;
+  float _motorTemperatureC = 0.0f;
+#endif
 
   void resetSequence()
   {
@@ -156,9 +212,108 @@ private:
 
   void show(Color color)
   {
+    color.r = scaleStrength(color.r);
+    color.g = scaleStrength(color.g);
+    color.b = scaleStrength(color.b);
+    if (_hasLastShownColor && color.r == _lastShownColor.r &&
+        color.g == _lastShownColor.g && color.b == _lastShownColor.b)
+      return;
+
     _pixel.setPixelColor(0, _pixel.Color(color.r, color.g, color.b));
     _pixel.show();
+    _lastShownColor = color;
+    _hasLastShownColor = true;
   }
+
+  uint8_t scaleStrength(uint8_t value) const
+  {
+    return static_cast<uint8_t>((static_cast<uint16_t>(value) * _strengthPercent + 50U) / 100U);
+  }
+
+#ifdef EOLO_TARGET_DRON
+  void pollDroneCycle(uint32_t now)
+  {
+    static constexpr uint32_t kCycleMs = 4000UL;
+    const uint32_t phase = (now - _cycleStartedAtMs) % kCycleMs;
+    if (phase < 2000UL)
+    {
+      show(Color{0, 0, 0});
+      return;
+    }
+
+    const PatternProfile profile = profileFor(_pattern);
+    if (phase < 3000UL)
+    {
+      show(profile.primary);
+      return;
+    }
+
+    if (!_motorTemperatureValid)
+    {
+      show(profileFor(StatusLedPattern::Setup).primary);
+      return;
+    }
+
+    if (_motorTemperatureC > 65.0f)
+    {
+      const uint32_t thermalPhase = phase - 3000UL;
+      const bool blinkOn = ((thermalPhase / 100UL) % 2UL) == 0UL;
+      show(blinkOn ? temperatureRed() : Color{0, 0, 0});
+      return;
+    }
+
+    show(temperatureColor(_motorTemperatureC));
+  }
+
+  static uint8_t temperaturePeak()
+  {
+#ifdef STATUS_LED_LOW_POWER
+    return 45;
+#else
+    return 55;
+#endif
+  }
+
+  static Color temperatureGreen()
+  {
+    return Color{0, temperaturePeak(), 0};
+  }
+
+  static Color temperatureYellow()
+  {
+    const uint8_t peak = temperaturePeak();
+    return Color{peak, peak, 0};
+  }
+
+  static Color temperatureRed()
+  {
+    return Color{temperaturePeak(), 0, 0};
+  }
+
+  static Color interpolate(Color from, Color to, float amount)
+  {
+    return Color{
+        static_cast<uint8_t>(from.r + (to.r - from.r) * amount + 0.5f),
+        static_cast<uint8_t>(from.g + (to.g - from.g) * amount + 0.5f),
+        static_cast<uint8_t>(from.b + (to.b - from.b) * amount + 0.5f)};
+  }
+
+  static Color temperatureColor(float temperatureC)
+  {
+    static constexpr float kGreenThroughC = 30.0f;
+    static constexpr float kYellowAtC = 47.5f;
+    static constexpr float kRedAtC = 65.0f;
+    if (temperatureC <= kGreenThroughC)
+      return temperatureGreen();
+    if (temperatureC < kYellowAtC)
+      return interpolate(temperatureGreen(), temperatureYellow(),
+                         (temperatureC - kGreenThroughC) / (kYellowAtC - kGreenThroughC));
+    if (temperatureC < kRedAtC)
+      return interpolate(temperatureYellow(), temperatureRed(),
+                         (temperatureC - kYellowAtC) / (kRedAtC - kYellowAtC));
+    return temperatureRed();
+  }
+#endif
 
   static PatternProfile profileFor(StatusLedPattern pattern)
   {

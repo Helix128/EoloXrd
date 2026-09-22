@@ -6,13 +6,15 @@
 
 static FlowPidConfig validPidConfig()
 {
-    return {
+    FlowPidConfig config = {
         FLOW_PID_INTERVAL_MS, FLOW_PID_DEADBAND, FLOW_PID_KP, FLOW_PID_KI,
         FLOW_PID_INTEGRAL_LIMIT, FLOW_PID_MAX_STEP, FLOW_PID_FILTER_ALPHA,
         FLOW_PID_MIN_ACTIVE, FLOW_PID_KD, FLOW_PID_MAX_DT_MS,
         FLOW_PID_SENSOR_STALE_MS, FLOW_PID_KICK_PWM, FLOW_PID_KICK_MS,
         FLOW_PID_STALL_FLOW_LPM, FLOW_PID_RESTALL_COOLDOWN_MS,
         FLOW_PID_STALL_CONFIRM_MS};
+    config.sensorFaultStopMs = FLOW_PID_SENSOR_FAULT_STOP_MS;
+    return config;
 }
 
 void test_default_pid_config_is_valid()
@@ -29,7 +31,7 @@ void test_flow_pid_base_pwm_matches_active_profile()
 void test_rejects_invalid_pid_timing()
 {
     FlowPidConfig config = validPidConfig();
-    config.intervalMs = 50;
+    config.intervalMs = FlowPidLimits::INTERVAL_MIN_MS - 1;
     TEST_ASSERT_FALSE(MotorCaptureControl::validatePidConfig(config));
 }
 
@@ -193,7 +195,7 @@ void test_flow_motor_controller_caps_dt_after_invalid_sensor()
 }
 
 #if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
-void test_drone_capture_keeps_base_pwm_until_pid_has_fresh_flow()
+void test_drone_actuation_requires_sd_and_fresh_sensors()
 {
     Context ctx;
     ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
@@ -201,7 +203,7 @@ void test_drone_capture_keeps_base_pwm_until_pid_has_fresh_flow()
 
     ctx.updateMotors();
 
-    TEST_ASSERT_EQUAL_INT(FLOW_PID_BASE_PWM, ctx.components.motor.getMotorPwm(0));
+    TEST_ASSERT_EQUAL_INT(0, ctx.components.motor.getMotorPwm(0));
 }
 #endif
 
@@ -226,7 +228,7 @@ void setup()
     RUN_TEST(test_flow_motor_controller_rejects_stale_sensor_without_pwm_update);
     RUN_TEST(test_flow_motor_controller_caps_dt_after_invalid_sensor);
 #if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
-    RUN_TEST(test_drone_capture_keeps_base_pwm_until_pid_has_fresh_flow);
+    RUN_TEST(test_drone_actuation_requires_sd_and_fresh_sensors);
 #endif
     RUN_TEST(test_smart_flow_controller_uses_bounded_static_memory);
     UNITY_END();

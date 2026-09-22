@@ -14,6 +14,7 @@
 #include "../Config/Legacy.h"
 #include "../Board/I2CBus.h"
 #include "../Board/SPIBus.h"
+#include "../Board/RS485Bus.h"
 #ifndef FEATURE_HEADLESS
 #include "../Drawing/SceneManager.h"
 #endif
@@ -27,6 +28,7 @@
 #include "freertos/task.h"
 #include "Profiler.h"
 #include <atomic>
+#include <Eolo/Core/Capture/CaptureSafetyModel.h>
 
 typedef struct Context
 {
@@ -48,6 +50,7 @@ typedef struct Context
     CaptureController capture;
     MotorCaptureControl motorCapture;
     UploadService uploader;
+    CaptureSafetyFault captureStartFault = CaptureSafetyFault::None;
 
     static constexpr int CAPTURE_INTERVAL = CaptureController::CAPTURE_INTERVAL;
     bool uiDirty = true;
@@ -95,6 +98,16 @@ public:
     bool isMotorOverheatActive() const { return motorCapture.motorOverheatActive; }
     bool isMotorThermalSensorValid() const { return motorCapture.motorThermalSensorValid; }
     float motorThermalTemperatureC() const { return motorCapture.motorThermalTemperature; }
+    bool isMotorSafetyBlocked() const { return motorCapture.motorSafetyBlocked(); }
+    bool hasMotorCaptureFailure() const { return motorCapture.hasPumpFailureZeroFlow(); }
+    int motorCaptureFailurePwm() const { return motorCapture.pumpFailureZeroFlowPwm; }
+    uint8_t motorCaptureFailureConfirmations() const { return motorCapture.pumpFailureZeroFlowConfirmations; }
+    CaptureEndReason captureEndReason() const { return capture.endReason; }
+    bool captureFailed() const
+    {
+        return capture.endReason != CaptureEndReason::None &&
+               capture.endReason != CaptureEndReason::Completed;
+    }
 
     SDStatus sdStatus() const { return logging.sdStatus; }
     bool isSdReady() const { return logging.isSdReady; }
@@ -711,6 +724,17 @@ public:
 #endif
 
         updateMotorThermalProtection();
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        if (isCaptureActive() && !enforceCaptureSafety())
+        {
+            // La rutina de seguridad ya apagó el motor y marcó la captura como
+            // terminada; no se permite que el ciclo vuelva a llamar al PID.
+            bool statusChanged = updateUiSnapshot();
+            bool changed = inputChanged || statusChanged || uiDirty;
+            uiDirty = false;
+            return changed;
+        }
+#endif
 #if defined(FEATURE_FLOW_PID)
         if (motorCapture.isPidTestRunning())
             updateMotors();
@@ -730,7 +754,37 @@ public:
 
     bool isHeadlessCalibrationRunning() const { return false; }
 
-    void beginCapture() { capture.begin(*this); }
+    bool beginCapture()
+    {
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        if (!prepareCaptureStart())
+        {
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+            return false;
+        }
+#endif
+        capture.begin(*this);
+        if (capture.isCapturing)
+        {
+            const String csvHeader = LogSchema::header(*this);
+            LOG_F("CSV a escribir: %s\n", csvHeader.c_str());
+        }
+        return capture.isCapturing;
+    }
+    CaptureSafetyFault lastCaptureStartFault() const { return captureStartFault; }
+
+    bool hasFreshAfmSampleForCapture()
+    {
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        FlowData flowData;
+        const bool afmRead = components.flowSensor.getData(flowData);
+        return afmRead && flowData.valid && flowData.fresh && !flowData.stale;
+#else
+        return true;
+#endif
+    }
+
     void pauseCapture() { capture.pause(*this); }
     void resumeCapture() { capture.resume(*this); }
     void endCapture() { capture.end(*this); }
@@ -740,6 +794,7 @@ public:
 #ifdef FEATURE_NTC
         const bool previousActive = motorCapture.motorOverheatActive;
         const bool previousValid = motorCapture.motorThermalSensorValid;
+        const bool previousBlocked = motorCapture.motorSafetyBlocked();
         const float previousTemperature = motorCapture.motorThermalTemperature;
         NTCData ntcData;
         const bool ntcValid = components.ntc.getData(ntcData);
@@ -747,6 +802,7 @@ public:
                                                                      components.motor);
         if (previousActive != motorCapture.motorOverheatActive ||
             previousValid != motorCapture.motorThermalSensorValid ||
+            previousBlocked != motorCapture.motorSafetyBlocked() ||
             fabsf(previousTemperature - motorCapture.motorThermalTemperature) > 0.1f)
         {
             markUiDirty();
@@ -757,7 +813,94 @@ public:
         return motorCapture.updateThermalProtection(ignoredNtc, false, components.motor);
 #endif
     }
+    bool prepareCaptureStart()
+    {
+        captureStartFault = CaptureSafetyFault::None;
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        FlowData flowData;
+        const bool afmRead = components.flowSensor.getData(flowData);
+        NTCData ntcData;
+        const bool ntcRead = components.ntc.getData(ntcData);
+        (void)motorCapture.updateThermalProtection(ntcData, ntcRead, components.motor);
+        CaptureSafetyInput input;
+        input.sdReady = isSdReady();
+        input.afmValid = afmRead && flowData.valid;
+        input.afmFresh = input.afmValid && flowData.fresh && !flowData.stale;
+        input.afmSafetyBlocked = RS485Bus::getInstance().isAfmSafetyBlocked();
+        input.ntcValid = ntcRead && ntcData.valid && isfinite(ntcData.temperature);
+        CaptureSafetyOutput decision = CaptureSafetyModel::evaluateStart(input);
+        captureStartFault = decision.fault;
+        if (!decision.startAllowed)
+        {
+            LOG_OUT("Captura bloqueada: ");
+            LOG_LN(CaptureSafetyModel::faultName(decision.fault));
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+            return false;
+        }
+        // El desbloqueo es deliberadamente posible solo aquí: una nueva
+        // captura arranca con un NTC comprobado, nunca por una muestra tardía.
+        motorCapture.clearNtcFaultForNewStart(true);
+        return !motorCapture.motorSafetyBlocked();
+#else
+        return true;
+#endif
+    }
+    bool actuationSensorsReady()
+    {
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        NTCData ntcData;
+        const bool ntcRead = components.ntc.getData(ntcData);
+        const bool afmReady = hasFreshAfmSampleForCapture();
+        const bool ntcReady = ntcRead && ntcData.valid && isfinite(ntcData.temperature) &&
+                              !motorCapture.motorNtcFaultLatched;
+        return isSdReady() && afmReady && ntcReady && !motorCapture.motorOverheatActive &&
+               !RS485Bus::getInstance().isAfmSafetyBlocked();
+#else
+        return true;
+#endif
+    }
+    bool enforceCaptureSafety()
+    {
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        FlowData flowData;
+        const bool afmRead = components.flowSensor.getData(flowData);
+        NTCData ntcData;
+        const bool ntcRead = components.ntc.getData(ntcData);
+        CaptureSafetyInput input;
+        input.sdReady = isSdReady();
+        input.afmValid = afmRead && flowData.valid;
+        input.afmFresh = input.afmValid && flowData.fresh && !flowData.stale;
+        input.afmSafetyBlocked = RS485Bus::getInstance().isAfmSafetyBlocked();
+        input.ntcValid = ntcRead && ntcData.valid && isfinite(ntcData.temperature);
+        CaptureSafetyOutput decision = CaptureSafetyModel::evaluateRun(input);
+        if (!decision.motorAllowed || motorCapture.motorSafetyBlocked())
+        {
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+            CaptureSafetyFault fault = decision.fault == CaptureSafetyFault::None
+                                           ? CaptureSafetyFault::NtcInvalid
+                                           : decision.fault;
+            CaptureEndReason reason = CaptureEndReason::Safety;
+            switch (fault)
+            {
+            case CaptureSafetyFault::SdUnavailable: reason = CaptureEndReason::SdUnavailable; break;
+            case CaptureSafetyFault::AfmInvalid: reason = CaptureEndReason::AfmInvalid; break;
+            case CaptureSafetyFault::AfmStale: reason = CaptureEndReason::AfmStale; break;
+            case CaptureSafetyFault::AfmDiagnostic: reason = CaptureEndReason::AfmDiagnostic; break;
+            case CaptureSafetyFault::NtcInvalid: reason = CaptureEndReason::NtcInvalid; break;
+            case CaptureSafetyFault::None: break;
+            }
+            capture.abort(*this, reason);
+            return false;
+        }
+        return true;
+#else
+        return true;
+#endif
+    }
     void resetMotorFlowController() { motorCapture.resetFlowController(); }
+    void resetMotorFlowControllerForCaptureStart() { motorCapture.resetForCaptureStart(); }
     void stopPidTest()
     {
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
@@ -766,6 +909,14 @@ public:
     }
     void updateMotors()
     {
+#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+        if (!actuationSensorsReady())
+        {
+            components.motor.setPwmImmediate(0);
+            resetMotorFlowController();
+            return;
+        }
+#endif
         FlowData flowData;
         const bool flowReadValid = components.flowSensor.getData(flowData);
         motorCapture.updateMotors(components.motor, flowData, flowReadValid,

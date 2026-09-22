@@ -30,7 +30,9 @@ public:
 
             // Center align title
             ctx.u8g2.setFont(FONT_BOLD_S);
-            const char* title = "Fin de captura";
+            const char* title = ctx.captureEndReason() == CaptureEndReason::PumpFailureZeroFlow
+                                    ? "Falla bomba"
+                                    : "Fin de captura";
             int titleWidth = ctx.u8g2.getStrWidth(title);
             int titleX = (screenWidth - titleWidth) / 2;
             ctx.u8g2.drawStr(titleX, 24, title);

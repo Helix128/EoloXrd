@@ -303,6 +303,43 @@ body {
   align-items: center;
 }
 
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 180px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  border-radius: var(--radius-xs, 4px);
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-surface-alt);
+}
+
 /* ===== PANEL DE MÉTRICAS EN TIEMPO REAL ===== */
 .metrics-grid {
   display: grid;
@@ -987,42 +1024,6 @@ body {
   flex-wrap: wrap;
 }
 
-/* Selector de modo de vista (Tabla / CSV Plano) */
-.view-mode-toggle {
-  display: inline-flex;
-  background-color: var(--bg-surface-alt);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  gap: 2px;
-}
-
-.btn-view-mode {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-view-mode:hover {
-  color: var(--text-main);
-}
-
-.btn-view-mode.active {
-  background-color: var(--primary);
-  color: var(--primary-text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
 .preview-toolbar {
   display: flex;
   justify-content: space-between;
@@ -1056,6 +1057,43 @@ body {
   flex: 1;
   max-width: 220px;
   min-width: 140px;
+}
+
+/* Gráfica de series en el tiempo */
+.preview-chart-wrap {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.preview-chart {
+  width: 100%;
+  height: 140px;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.chart-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
 }
 
 /* Contenedor de Tabla de Datos Parseada */
@@ -1254,48 +1292,20 @@ body {
   font-size: var(--text-sm);
 }
 
-.preview-box-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.preview-box {
-  flex: 1;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 14px;
-  min-height: 480px;
-  max-height: 540px;
-  overflow: auto;
-  white-space: pre;
-  word-break: normal;
-  tab-size: 4;
-}
-
 .files-table-wrap::-webkit-scrollbar,
-.preview-table-wrap::-webkit-scrollbar,
-.preview-box::-webkit-scrollbar {
+.preview-table-wrap::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
 .files-table-wrap::-webkit-scrollbar-thumb,
-.preview-table-wrap::-webkit-scrollbar-thumb,
-.preview-box::-webkit-scrollbar-thumb {
+.preview-table-wrap::-webkit-scrollbar-thumb {
   background-color: var(--border-strong);
   border-radius: 4px;
 }
 
 .files-table-wrap::-webkit-scrollbar-track,
-.preview-table-wrap::-webkit-scrollbar-track,
-.preview-box::-webkit-scrollbar-track {
+.preview-table-wrap::-webkit-scrollbar-track {
   background-color: transparent;
 }
 
@@ -1320,6 +1330,18 @@ body {
   padding: 14px;
   display: flex;
   flex-direction: column;
+}
+
+.telemetry-item.status-bad {
+  border-color: var(--danger);
+}
+
+.telemetry-item.status-bad .telemetry-value {
+  color: var(--danger);
+}
+
+.telemetry-item.status-ok {
+  border-color: var(--success);
 }
 
 .telemetry-label {
@@ -1435,10 +1457,6 @@ body {
   }
   .files-table-wrap {
     max-height: 380px;
-  }
-  .preview-box {
-    min-height: 320px;
-    max-height: 420px;
   }
   .form-row-grid {
     grid-template-columns: 1fr;
@@ -1636,14 +1654,6 @@ body {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 4px;
-  }
-  .preview-box {
-    min-height: 260px;
-    max-height: 360px;
-    padding: 10px;
-    font-size: 12px;
-    width: 100%;
-    max-width: 100%;
   }
   .toast-container {
     left: 10px;

@@ -14,6 +14,11 @@
 namespace LogSchema
 {
     static constexpr float LogMissingValue = -1.0f;
+#if defined(EOLO_TARGET_DRON)
+    static constexpr bool BatteryColumnEnabled = false;
+#else
+    static constexpr bool BatteryColumnEnabled = true;
+#endif
 
     inline String header(bool includeState, bool includePlantower,
                          bool includeAnemometer, bool includeNtc);
@@ -96,7 +101,8 @@ namespace LogSchema
             out += ",wind_speed,wind_direction";
         if (includeNtc)
             out += ",ntc_temperature";
-        out += ",battery_pct";
+        if (BatteryColumnEnabled)
+            out += ",battery_pct";
         return out;
     }
 
@@ -179,8 +185,11 @@ namespace LogSchema
             printValue(file, missingIfInvalid(record.ntc.valid, record.ntc.temperature));
         }
 
-        printComma(file);
-        printValue(file, record.batteryPercent);
+        if (BatteryColumnEnabled)
+        {
+            printComma(file);
+            printValue(file, record.batteryPercent);
+        }
         file.println();
     }
 
@@ -247,8 +256,11 @@ namespace LogSchema
         }
 #endif
 
-        printComma(file);
-        printValue(file, ctx.components.battery.getPct());
+        if (BatteryColumnEnabled)
+        {
+            printComma(file);
+            printValue(file, ctx.components.battery.getPct());
+        }
         file.println();
     }
 }

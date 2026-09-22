@@ -18,7 +18,11 @@
 // reproducen las capacidades actuales sin convertir una demo en otra variante
 // productiva. El backend por librerías preserva el fallback histórico de demos.
 #if defined(EOLO_TARGET_DRON)
-  #define EOLO_I2C_DIRECT_DRIVERS 0
+  // Las demos históricas conservan los drivers por librería. Una demo que
+  // compone producción puede seleccionar los drivers directos antes de incluir.
+  #ifndef EOLO_I2C_DIRECT_DRIVERS
+    #define EOLO_I2C_DIRECT_DRIVERS 0
+  #endif
   #define FEATURE_HEADLESS
   #define FEATURE_MOTOR_PWM
   #define FEATURE_FLOW_AFM07
@@ -27,7 +31,9 @@
   #define FEATURE_NTC
   #define DRONE_SWITCHES_HAVE_EXTERNAL_PULLS
 #elif defined(EOLO_TARGET_STANDARD)
-  #define EOLO_I2C_DIRECT_DRIVERS 0
+  #ifndef EOLO_I2C_DIRECT_DRIVERS
+    #define EOLO_I2C_DIRECT_DRIVERS 0
+  #endif
   #define FEATURE_MOTOR_PWM
   #define FEATURE_FLOW_AFM07
   #define FEATURE_FLOW_CALIBRATION
@@ -36,13 +42,17 @@
   #define FEATURE_DUAL_BATTERY
   #define FEATURE_PLANTOWER
 #elif defined(EOLO_TARGET_EXPRESS_LEGACY)
-  #define EOLO_I2C_DIRECT_DRIVERS 0
+  #ifndef EOLO_I2C_DIRECT_DRIVERS
+    #define EOLO_I2C_DIRECT_DRIVERS 0
+  #endif
   #define FEATURE_MOTOR_PWM
   #define FEATURE_FLOW_FS3000
   #define FEATURE_FLOW_CALIBRATION
   #define FEATURE_PLANTOWER
 #else
-  #define EOLO_I2C_DIRECT_DRIVERS 0
+  #ifndef EOLO_I2C_DIRECT_DRIVERS
+    #define EOLO_I2C_DIRECT_DRIVERS 0
+  #endif
   #define FEATURE_MOTOR_PWM
   #define FEATURE_FLOW_AFM07
   #define FEATURE_FLOW_CALIBRATION

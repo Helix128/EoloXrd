@@ -12,7 +12,10 @@ enum FlowPidFault : uint8_t
     FLOW_PID_FAULT_NONE = 0,
     FLOW_PID_FAULT_SENSOR_INVALID = 1,
     FLOW_PID_FAULT_SENSOR_STALE = 2,
-    FLOW_PID_FAULT_TIMING = 3
+    FLOW_PID_FAULT_TIMING = 3,
+    // AFM07 válido sin caudal mientras la bomba está energizada.
+    FLOW_PID_FAULT_ZERO_FLOW = 4,
+    FLOW_PID_FAULT_PUMP_ZERO_FLOW = FLOW_PID_FAULT_ZERO_FLOW
 };
 
 struct FlowPidConfig
@@ -40,6 +43,12 @@ struct FlowPidConfig
     int softMaxStep;
     float sensitivity;
     uint32_t recenterDelayMs;
+    // Tiempo máximo que se conserva el último PWM tras perder el sensor.  El
+    // perfil Dron lo fija en 1,5 s; los perfiles históricos conservan 6 s.
+    uint32_t sensorFaultStopMs = 6000UL;
+    // Cero desactiva la protección; los perfiles AFM07 de captura usan 5
+    // muestras (~1,25 s con la cadencia nominal de 250 ms).
+    uint8_t zeroFlowConfirmSamples = 0;
 };
 
 struct FlowPidStatus
@@ -73,6 +82,11 @@ struct FlowPidStatus
     uint16_t kickCount = 0;
     uint32_t lastKickMs = 0;
     bool stallDetected = false;
+    bool stoppedForSensorFault = false;
+    uint8_t zeroFlowCount = 0;
+    uint8_t zeroFlowConfirmSamples = 0;
+    bool zeroFlowFailureLatched = false;
+    int zeroFlowFailurePwm = 0;
 };
 
 struct FlowMotorInput
@@ -100,6 +114,10 @@ struct FlowMotorOutput
     bool kickActive = false;
     uint16_t kickCount = 0;
     bool stallDetected = false;
+    bool stoppedForSensorFault = false;
+    uint8_t zeroFlowCount = 0;
+    bool zeroFlowFailureLatched = false;
+    int zeroFlowFailurePwm = 0;
 };
 
 // Cotas de validación de FlowPidConfig.
@@ -191,6 +209,8 @@ public:
             return false;
         if (config.recenterDelayMs > 0 && (config.recenterDelayMs < FlowPidLimits::RECENTER_DELAY_MIN_MS || config.recenterDelayMs > FlowPidLimits::RECENTER_DELAY_MAX_MS))
             return false;
+        if (config.sensorFaultStopMs < config.intervalMs || config.sensorFaultStopMs > FlowPidLimits::SENSOR_STALE_MAX_MS)
+            return false;
         return true;
     }
 
@@ -247,6 +267,13 @@ public:
         _stallStartMs = 0;
         _stallDetected = false;
         _forceKick = false;
+        _sensorFaultActive = false;
+        _sensorFaultStopped = false;
+        _sensorFaultStartMs = 0;
+        _zeroFlowCount = 0;
+        _zeroFlowConfirmSamples = 0;
+        _zeroFlowFailureLatched = false;
+        _zeroFlowFailurePwm = 0;
     }
 
     bool isInitialized() const { return _initialized; }
@@ -268,10 +295,14 @@ public:
         _lastUpdateMs = 0;
         _fault = FLOW_PID_FAULT_NONE;
         _smart.resetController(false);
+        _sensorFaultActive = false;
+        _sensorFaultStopped = false;
+        _zeroFlowCount = 0;
     }
 
     FlowMotorOutput update(const FlowMotorInput &input, const FlowPidConfig &config)
     {
+        _zeroFlowConfirmSamples = config.zeroFlowConfirmSamples;
         FlowMotorOutput output;
         output.pwm = _currentPwm;
         output.initialized = _initialized;
@@ -281,6 +312,10 @@ public:
         output.kickActive = (_ignPhase == IgnitionPhase::Kick);
         output.kickCount = _kickCount;
         output.stallDetected = _stallDetected;
+        output.stoppedForSensorFault = _sensorFaultStopped;
+        output.zeroFlowCount = _zeroFlowCount;
+        output.zeroFlowFailureLatched = _zeroFlowFailureLatched;
+        output.zeroFlowFailurePwm = _zeroFlowFailurePwm;
 
         // Procesar solicitud de kick forzado externo
         if (_forceKick && _initialized)
@@ -292,6 +327,7 @@ public:
             _stallStartMs = 0;
             _stallDetected = false;
             _smart.resetController(true);
+            _zeroFlowCount = 0;
         }
         _forceKick = false;
 
@@ -315,6 +351,10 @@ public:
             else if (!wasRun && _ignPhase == IgnitionPhase::Off)
                 _smart.resetController(false);
             _targetFlow = input.targetFlow;
+            _sensorFaultActive = false;
+            _sensorFaultStopped = false;
+            _sensorFaultStartMs = 0;
+            _zeroFlowCount = 0;
         }
 
         // --- OFF: target inactivo ---
@@ -326,6 +366,9 @@ public:
             _stallDetected = false;
             _currentPwm = 0;
             _fault = FLOW_PID_FAULT_NONE;
+            _sensorFaultActive = false;
+            _sensorFaultStopped = false;
+            _zeroFlowCount = 0;
             _lastUpdateMs = input.nowMs;
             output.updated = true;
             output.initialized = true;
@@ -334,6 +377,44 @@ public:
             output.kickActive = false;
             output.kickCount = _kickCount;
             output.stallDetected = false;
+            output.stoppedForSensorFault = false;
+            output.zeroFlowCount = 0;
+            output.zeroFlowFailureLatched = _zeroFlowFailureLatched;
+            output.zeroFlowFailurePwm = _zeroFlowFailurePwm;
+            return output;
+        }
+
+        // Un fallo de sensor que ya apagó el motor no puede reanudarlo por la
+        // llegada de una muestra tardía. Solo reset() o un cambio de objetivo
+        // autoriza un nuevo arranque.
+        if (_sensorFaultStopped)
+        {
+            _currentPwm = 0;
+            output.updated = true;
+            output.pwm = 0;
+            output.fault = _fault;
+            output.ignitionPhase = IgnitionPhase::Off;
+            output.kickActive = false;
+            output.stoppedForSensorFault = true;
+            return output;
+        }
+
+        // Un fallo de flujo cero es un enclavamiento del controlador. Sólo
+        // reset() (o el inicio de una nueva captura en la capa superior) lo
+        // libera; una muestra posterior no puede reactivar el PWM.
+        if (_zeroFlowFailureLatched)
+        {
+            _currentPwm = 0;
+            _ignPhase = IgnitionPhase::Off;
+            _fault = FLOW_PID_FAULT_ZERO_FLOW;
+            output.updated = true;
+            output.pwm = 0;
+            output.fault = _fault;
+            output.ignitionPhase = IgnitionPhase::Off;
+            output.kickActive = false;
+            output.zeroFlowCount = _zeroFlowCount;
+            output.zeroFlowFailureLatched = true;
+            output.zeroFlowFailurePwm = _zeroFlowFailurePwm;
             return output;
         }
 
@@ -352,6 +433,7 @@ public:
         // --- KICK: pulso alto para vencer el capacitor ---
         if (_ignPhase == IgnitionPhase::Kick)
         {
+            _zeroFlowCount = 0;
             const int kp = (config.kickPwm < input.maxPwm) ? config.kickPwm : input.maxPwm;
             _currentPwm = kp;
             _lastUpdateMs = input.nowMs;
@@ -370,6 +452,7 @@ public:
             output.kickActive = (_ignPhase == IgnitionPhase::Kick);
             output.kickCount = _kickCount;
             output.stallDetected = _stallDetected;
+            output.zeroFlowCount = 0;
             return output;
         }
 
@@ -379,16 +462,36 @@ public:
         {
             _measuredFlow = -1.0f;
             _fault = input.flowValid ? FLOW_PID_FAULT_SENSOR_STALE : FLOW_PID_FAULT_SENSOR_INVALID;
+            _zeroFlowCount = 0;
             _lastUpdateMs = input.nowMs;
             _smart.resetController(true);
-            // Preservar fase de ignición; motor se queda en último PWM (output.updated=false)
+            if (!_sensorFaultActive)
+            {
+                _sensorFaultActive = true;
+                _sensorFaultStartMs = input.nowMs;
+            }
+            if (static_cast<uint32_t>(input.nowMs - _sensorFaultStartMs) >= config.sensorFaultStopMs)
+            {
+                _currentPwm = 0;
+                _ignPhase = IgnitionPhase::Off;
+                _sensorFaultStopped = true;
+                output.updated = true;
+                output.stoppedForSensorFault = true;
+                output.pwm = 0;
+            }
+            // Antes del límite se conserva el último PWM para tolerar una
+            // lectura perdida; el adaptador Dron aborta la captura al detectar
+            // el estado inválido y por eso nunca se rearranca automáticamente.
             output.fault = _fault;
             output.ignitionPhase = _ignPhase;
             output.kickActive = false;
             output.kickCount = _kickCount;
             output.stallDetected = _stallDetected;
+            output.zeroFlowCount = 0;
             return output;
         }
+
+        _sensorFaultActive = false;
 
         // Timing
         const uint32_t dtMs = input.nowMs - _lastUpdateMs;
@@ -399,17 +502,59 @@ public:
         if (!_timingOk)
         {
             _fault = FLOW_PID_FAULT_TIMING;
+            _zeroFlowCount = 0;
             _smart.resetController(true);
             output.fault = _fault;
             output.ignitionPhase = _ignPhase;
             output.kickCount = _kickCount;
             output.stallDetected = _stallDetected;
+            output.zeroFlowCount = 0;
             return output;
         }
 
         _fault = FLOW_PID_FAULT_NONE;
         _measuredFlow = input.measuredFlow;
         _smart.setTune(tuneFromConfig(config));
+
+        // Sólo una muestra física válida/fresca en Run y con PWM efectivo
+        // activo puede confirmar la protección. El adaptador dual descarta
+        // sampleId repetidos antes de llegar aquí.
+        if (config.zeroFlowConfirmSamples == 0 || _currentPwm <= 0)
+        {
+            _zeroFlowCount = 0;
+        }
+        else if (input.measuredFlow == 0.0f)
+        {
+            if (_zeroFlowCount < UINT8_MAX)
+                ++_zeroFlowCount;
+            if (_zeroFlowCount >= config.zeroFlowConfirmSamples)
+            {
+                _zeroFlowFailureLatched = true;
+                _zeroFlowFailurePwm = _currentPwm;
+                _currentPwm = 0;
+                _ignPhase = IgnitionPhase::Off;
+                _fault = FLOW_PID_FAULT_ZERO_FLOW;
+                _smart.resetController(true);
+                output.updated = true;
+                output.initialized = true;
+                output.pwm = 0;
+                output.fault = _fault;
+                output.ignitionPhase = IgnitionPhase::Off;
+                output.kickActive = false;
+                output.kickCount = _kickCount;
+                output.stallDetected = _stallDetected;
+                output.zeroFlowCount = _zeroFlowCount;
+                output.zeroFlowFailureLatched = true;
+                output.zeroFlowFailurePwm = _zeroFlowFailurePwm;
+                return output;
+            }
+        }
+        else
+        {
+            // Flujo positivo (o cualquier lectura distinta de cero) rompe la
+            // consecutividad requerida por la protección.
+            _zeroFlowCount = 0;
+        }
 
         // --- Detección de stall durante Run ---
         if (config.stallFlowLpm > 0.0f && input.measuredFlow < config.stallFlowLpm)
@@ -430,6 +575,7 @@ public:
                 _kickCount++;
                 _stallStartMs = 0;
                 _smart.resetController(true);
+                _zeroFlowCount = 0;
                 const int kp = (config.kickPwm < input.maxPwm) ? config.kickPwm : input.maxPwm;
                 _currentPwm = kp;
                 output.updated = true;
@@ -464,6 +610,10 @@ public:
         output.kickActive = false;
         output.kickCount = _kickCount;
         output.stallDetected = _stallDetected;
+        output.stoppedForSensorFault = false;
+        output.zeroFlowCount = _zeroFlowCount;
+        output.zeroFlowFailureLatched = _zeroFlowFailureLatched;
+        output.zeroFlowFailurePwm = _zeroFlowFailurePwm;
         return output;
     }
 
@@ -499,6 +649,11 @@ public:
         s.kickCount = _kickCount;
         s.lastKickMs = _lastKickMs;
         s.stallDetected = _stallDetected;
+        s.stoppedForSensorFault = _sensorFaultStopped;
+        s.zeroFlowCount = _zeroFlowCount;
+        s.zeroFlowConfirmSamples = _zeroFlowConfirmSamples;
+        s.zeroFlowFailureLatched = _zeroFlowFailureLatched;
+        s.zeroFlowFailurePwm = _zeroFlowFailurePwm;
         return s;
     }
 
@@ -506,6 +661,18 @@ public:
     bool isKickActive() const { return _ignPhase == IgnitionPhase::Kick; }
     uint16_t kickCount() const { return _kickCount; }
     bool stallDetected() const { return _stallDetected; }
+    uint8_t zeroFlowCount() const { return _zeroFlowCount; }
+    bool zeroFlowFailureLatched() const { return _zeroFlowFailureLatched; }
+    int zeroFlowFailurePwm() const { return _zeroFlowFailurePwm; }
+
+    // Permite al adaptador dual descartar una confirmación incompleta cuando
+    // una lectura física llega inválida u obsoleta sin liberar un fallo ya
+    // enclavado.
+    void resetZeroFlowConfirmation()
+    {
+        if (!_zeroFlowFailureLatched)
+            _zeroFlowCount = 0;
+    }
 
 private:
     bool _initialized = false;
@@ -526,6 +693,13 @@ private:
     uint32_t _stallStartMs = 0;
     bool _stallDetected = false;
     bool _forceKick = false;
+    bool _sensorFaultActive = false;
+    bool _sensorFaultStopped = false;
+    uint32_t _sensorFaultStartMs = 0;
+    uint8_t _zeroFlowCount = 0;
+    uint8_t _zeroFlowConfirmSamples = 0;
+    bool _zeroFlowFailureLatched = false;
+    int _zeroFlowFailurePwm = 0;
 };
 
 #endif

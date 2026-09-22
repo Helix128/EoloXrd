@@ -30,20 +30,23 @@ void test_afm07_reading() {
     TEST_ASSERT_TRUE_MESSAGE(found, "No se recibió ninguna trama válida del AFM07. Revisa conexión RS485 e ID (debe ser 2).");
 }
 
-void test_afm07_with_motor() {
-    TEST_MESSAGE("Encendiendo motores al 100%...");
-    motors.setPowerPct(100);
-    
-    TEST_MESSAGE("Esperando 5 segundos a que el flujo sea máximo...");
-    delay(5000); 
+void test_afm07_with_motor_safe_power() {
+    // Esta prueba de integración no debe forzar el conjunto neumático al
+    // 100 %. Un límite conservador permite verificar la ruta de lectura y
+    // deja el motor apagado antes de cualquier aserción.
+    TEST_MESSAGE("Encendiendo motores al 20% para validar lectura...");
+    motors.setPowerPct(20);
+
+    TEST_MESSAGE("Esperando 2 segundos a que se estabilice el flujo...");
+    delay(2000);
 
     FlowData data;
     bool validRead = false;
     float currentFlow = 0.0;
 
-    // Intentamos captar el flujo durante 5 segundos
+    // Intentamos captar el flujo durante 3 segundos
     unsigned long start = millis();
-    while (millis() - start < 5000) {
+    while (millis() - start < 3000) {
         if (sensor.getData(data)) {
             validRead = true;
             currentFlow = data.flow;
@@ -55,10 +58,12 @@ void test_afm07_with_motor() {
         delay(200);
     }
 
-    motors.setPowerPct(0);
+    // Apagado explícito antes de evaluar resultados: una aserción fallida no
+    // puede dejar el actuador energizado.
+    motors.setPwmImmediate(0);
     
     TEST_ASSERT_TRUE_MESSAGE(validRead, "El sensor no devolvió datos válidos durante la prueba de motor");
-    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(0.5, currentFlow, "FLUJO INSUFICIENTE: Motores al 100% pero el sensor marca casi 0. ¿Están las mangueras conectadas?");
+    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(0.5, currentFlow, "FLUJO INSUFICIENTE: motores al 20% pero el sensor marca casi 0. ¿Están las mangueras conectadas?");
 }
 
 void setup() {
@@ -78,7 +83,7 @@ void setup() {
 
     UNITY_BEGIN();
     RUN_TEST(test_afm07_reading);
-    RUN_TEST(test_afm07_with_motor);
+    RUN_TEST(test_afm07_with_motor_safe_power);
     UNITY_END();
 }
 

@@ -16,6 +16,9 @@ if not source.exists():
 env.Append(CPPPATH=[
     str(source.parent),
     str(source.parent.parent),
+    # Las demos que componen servicios productivos necesitan resolver los
+    # includes internos que parten desde la raíz src/.
+    str(project_dir / "src"),
 ])
 
 if source.suffix.lower() == ".ino":

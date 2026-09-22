@@ -78,6 +78,16 @@ Desde la pagina puede configurar:
   borrar desde el portal tambien se actualizan los indices; un archivo borrado
   directamente desde un PC no se retira de ellos automaticamente.
 
+La cadencia AFM07 no se modifica desde el portal: es un valor de compilacion
+(`EOLO_AFM07_POLL_GAP_MS`, predeterminado `250 ms`) y el firmware lo muestra
+en `/api/diagnostics`.
+Antes de una calificacion, solicite `POST /api/diagnostics/afm07` y confirme
+`register0004=0`; los valores 1, 2 o 3 indican una falla del sensor/EEPROM y
+bloquean el arranque. Los fallos aislados de comunicación se reintentan y una
+lectura AFM válida limpia el bloqueo transitorio; tres fallos consecutivos sí
+bloquean la captura. `POST /api/diagnostics/reset` reinicia las estadisticas
+de la ventana, pero no elimina un bloqueo confirmado por `register0004`.
+
 Al confirmar, el Wi-Fi se apaga, se guardan esos valores como defaults del formulario para la proxima vez y comienza la sesion configurada. La configuracion web no auto-inicia una captura futura: cada arranque con espera en `Off` requiere confirmar desde la pagina.
 
 ## Calibracion automatica de motor
@@ -96,18 +106,15 @@ El EOLO Dron usa un NeoPixel de estado en GPIO 27. El codigo de color sigue esta
 - Rojo: error.
 - Blanco/gris: finalizacion.
 
-| Estado | Modo normal / pruebas | Modo ahorro / produccion | Detalle |
-| --- | --- | --- | --- |
-| Apagado | LED apagado | LED apagado | Sin indicacion activa. |
-| Inicio / idle | Azul pulsante | Pulso azul breve cada ~3 s | Equipo iniciando o sin captura activa. |
-| Setup Wi-Fi | Violeta pulsante | Pulso violeta breve cada ~2.2 s | Punto de acceso y pagina web activos. |
-| Esperando captura | Ambar parpadeante lento | Pulso ambar breve cada ~5 s | Hay una espera configurada antes de iniciar. |
-| Captura activa | Verde pulsante | Pulso verde breve cada ~4 s | Bombas y registro de muestras activos. |
-| Ocupado durante captura | Cian parpadeante rapido | Doble pulso cian breve cada ~2.5 s | Escritura de log o tarea interna en curso. |
-| Error durante captura | Rojo parpadeante rapido | Triple pulso rojo frecuente | SD ausente o error de SD. Tiene prioridad sobre ocupado. |
-| Captura finalizada | Blanco/gris fijo | Pulso blanco/gris breve y apagado antes de dormir | Sesion terminada; el equipo entra luego en deep sleep. |
+La indicacion repite un ciclo de 4 segundos:
 
-El modo ahorro se habilita compilando con `STATUS_LED_LOW_POWER`, por ejemplo usando el entorno `eolo_dron_low_power`.
+| Intervalo | Indicacion |
+| --- | --- |
+| 0–2 s | Idle, LED apagado. |
+| 2–3 s | Estado actual, usando el color de arriba. |
+| 3–4 s | Temperatura del motor: verde hasta 30 °C, transición a amarillo a 47.5 °C y a rojo a 65 °C. Sobre 65 °C titila rojo rapido durante este segundo. |
+
+Si la lectura NTC no es valida, el intervalo de temperatura muestra morado, igual que setup; el intervalo de estado conserva la indicacion de error existente. El brillo se ajusta en `src/Board/Pinouts/Dron.h` con `NEOPIXEL_STRENGTH_PERCENT`, de 0 a 100. Este porcentaje escala el brillo base `NEOPIXEL_BRIGHTNESS` (60); 100 conserva el brillo actual y 0 apaga la emision de luz, aunque el NeoPixel mantiene un pequeño consumo en reposo. `STATUS_LED_LOW_POWER` conserva perfiles de color de menor intensidad y usa el mismo ciclo.
 
 ## Flujo de uso
 
@@ -116,7 +123,7 @@ El modo ahorro se habilita compilando con `STATUS_LED_LOW_POWER`, por ejemplo us
 3. El equipo lee los switches. Si la espera esta en `Off`, abre el setup Wi-Fi headless; si no, prepara una sesion con flujo de 5.0 L/min.
 4. En setup Wi-Fi headless, conectese a `eolo-dron`, configure la sesion y confirme.
 5. Si hay espera configurada, el equipo queda esperando hasta la hora de inicio. Si es instantanea, la captura comienza de inmediato.
-6. Durante la captura, las bombas regulan el flujo y se registran muestras cada 10 segundos. El NeoPixel indica el estado segun la tabla de patrones LED.
+6. Durante la captura, las bombas regulan el flujo y se registran muestras cada 10 segundos. El NeoPixel indica el estado y la temperatura con el ciclo LED de 4 segundos.
 7. Al cumplir la duracion configurada, las bombas se apagan.
 8. El equipo entra en deep sleep hasta reset o power-cycle.
 
@@ -165,6 +172,8 @@ En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de
 | No hay archivo CSV | Revise que la microSD este insertada y en buen estado. |
 | `ntc_temperature` aparece como `-1` | Revise conexion del NTC o use firmware con `FEATURE_NTC`. |
 | El flujo no alcanza el objetivo | Revise obstrucciones, mangueras, filtros, bombas, calibracion y conexion del AFM07. |
+| La captura queda bloqueada o se aborta | Consulte `/api/diagnostics`: debe haber SD lista, AFM07 fresco, `register0004=0` y NTC valido. Los fallos RS485 aislados se reintentan; tras tres consecutivos revise el cableado y repita el diagnostico AFM07. |
+| Aparece una excepcion Modbus `0x04` | Mantenga el motor apagado; revise alimentacion 9–24 V, masa comun, polaridad A/B, terminacion, ID `0x02`, 4800 baud y el registro de estado `0x0004`. |
 | La captura no termina | Puede estar configurada como duracion infinita. Reinicie o corte alimentacion para detener. |
 | Termino y no responde | Es normal: entra en deep sleep. Reinicie o corte y vuelva a alimentar. |
 

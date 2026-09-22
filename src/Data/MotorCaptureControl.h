@@ -36,7 +36,9 @@ class MotorCaptureControl
         FLOW_PID_SOFT_TRIM_MAX,
         FLOW_PID_SOFT_MAX_STEP,
         FLOW_PID_SENSITIVITY,
-        FLOW_PID_RECENTER_DELAY_MS
+        FLOW_PID_RECENTER_DELAY_MS,
+        FLOW_PID_SENSOR_FAULT_STOP_MS,
+        FLOW_PID_ZERO_FLOW_CONFIRM_SAMPLES
     };
     bool pidTestRunning = false;
     float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
@@ -55,6 +57,15 @@ public:
     bool motorOverheatActive = false;
     bool motorThermalSensorValid = false;
     float motorThermalTemperature = -99.0f;
+    // Se mantiene hasta un nuevo inicio de captura con NTC válido. Evita que
+    // una lectura posterior aislada vuelva a energizar una bomba después de
+    // una desconexión durante Run.
+    bool motorNtcFaultLatched = false;
+    // Enclavamiento de la captura actual. No se limpia al reiniciar el PID:
+    // sólo un nuevo inicio de captura puede rearmar las bombas.
+    bool pumpFailureZeroFlowLatched = false;
+    int pumpFailureZeroFlowPwm = 0;
+    uint8_t pumpFailureZeroFlowConfirmations = 0;
 
     static bool validatePidConfig(const FlowPidConfig &config)
     {
@@ -62,6 +73,25 @@ public:
     };
     bool updateThermalProtection(const NTCData &ntcData, bool ntcValid,
                                  MotorManager &motor);
+    bool clearNtcFaultForNewStart(bool ntcValid)
+    {
+#ifdef FEATURE_NTC
+        if (ntcValid && motorThermalSensorValid && isfinite(motorThermalTemperature))
+            motorNtcFaultLatched = false;
+#else
+        (void)ntcValid;
+#endif
+        return !motorNtcFaultLatched;
+    }
+    bool motorSafetyBlocked() const { return motorOverheatActive || motorNtcFaultLatched; }
+    bool hasPumpFailureZeroFlow() const { return pumpFailureZeroFlowLatched; }
+    void resetForCaptureStart()
+    {
+        resetFlowController();
+        pumpFailureZeroFlowLatched = false;
+        pumpFailureZeroFlowPwm = 0;
+        pumpFailureZeroFlowConfirmations = 0;
+    }
     void resetFlowController();
     void updateMotors(MotorManager &motor, const FlowData &flowData,
                       bool flowReadValid, float targetFlow,
@@ -87,8 +117,21 @@ inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
     bool previousValid = motorThermalSensorValid;
     float previousTemperature = motorThermalTemperature;
 
-    motorThermalSensorValid = ntcValid;
+    motorThermalSensorValid = ntcValid && ntcData.valid && isfinite(ntcData.temperature);
     motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
+    if (!motorThermalSensorValid)
+    {
+        motorNtcFaultLatched = true;
+        motor.setPwmImmediate(0);
+        resetFlowController();
+        const uint32_t nowMs = millis();
+        if (previousValid || nowMs - lastMotorOverheatLogMs >= NTC_MOTOR_OVERHEAT_LOG_INTERVAL_MS)
+        {
+            LOG_LN("ERROR NTC invalido: motor OFF; requiere nuevo arranque con sensor valido");
+            lastMotorOverheatLogMs = nowMs;
+        }
+        return true;
+    }
     ThermalProtectionInput thermalInput;
     thermalInput.latched = motorOverheatActive;
     thermalInput.sensorValid = motorThermalSensorValid;
@@ -99,7 +142,7 @@ inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
     motorOverheatActive = thermalOutput.latched;
 
     uint32_t nowMs = millis();
-    if (motorOverheatActive)
+    if (motorOverheatActive || motorNtcFaultLatched)
     {
         motor.setPwmImmediate(0);
         resetFlowController();
@@ -117,7 +160,7 @@ inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
         LOG_OUT_LN(" C; motor OFF");
         lastMotorOverheatLogMs = nowMs;
     }
-    else if (previousActive && !motorOverheatActive)
+    else if (previousActive && !motorOverheatActive && !motorNtcFaultLatched)
     {
         resetFlowController();
         LOG_OUT("Motor thermal cooldown OK: NTC ");
@@ -147,11 +190,12 @@ inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
     (void)previousActive;
     (void)previousValid;
     (void)previousTemperature;
-    return motorOverheatActive;
+    return motorSafetyBlocked();
 #else
     motorOverheatActive = false;
     motorThermalSensorValid = false;
     motorThermalTemperature = -1.0f;
+    motorNtcFaultLatched = false;
     return false;
 #endif
 }
@@ -173,7 +217,18 @@ inline void MotorCaptureControl::stopPidTest(MotorManager &motor)
 
 inline FlowPidStatus MotorCaptureControl::getPidStatus() const
 {
-    return pid.status(true, pidTestRunning, pidTestTargetFlow);
+    FlowPidStatus status = pid.status(true, pidTestRunning, pidTestTargetFlow);
+    if (pumpFailureZeroFlowLatched)
+    {
+        status.fault = FLOW_PID_FAULT_ZERO_FLOW;
+        status.pwm = 0;
+        status.ignitionPhase = IgnitionPhase::Off;
+        status.kickActive = false;
+        status.zeroFlowFailureLatched = true;
+        status.zeroFlowCount = pumpFailureZeroFlowConfirmations;
+        status.zeroFlowFailurePwm = pumpFailureZeroFlowPwm;
+    }
+    return status;
 }
 
 inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
@@ -248,6 +303,24 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
                                      : 0;
 
     DualMotorFlowOutput output = pid.update(input, pidCfg);
+
+    if (output.fault == FLOW_PID_FAULT_ZERO_FLOW || output.zeroFlowFailureLatched)
+    {
+        if (!pumpFailureZeroFlowLatched)
+        {
+            pumpFailureZeroFlowLatched = true;
+            pumpFailureZeroFlowPwm = output.zeroFlowFailurePwm;
+            pumpFailureZeroFlowConfirmations = output.zeroFlowCount;
+            LOG_OUT("pump_failure_zero_flow: pwm=");
+            LOG_OUT(pumpFailureZeroFlowPwm);
+            LOG_OUT(" confirm=");
+            LOG_OUT(pumpFailureZeroFlowConfirmations);
+            LOG_OUT("/");
+            LOG_OUT_LN(pidCfg.zeroFlowConfirmSamples);
+        }
+        motor.setPwmImmediate(0);
+        return;
+    }
 
     // Log arranque/re-kick (una vez por evento)
     if (output.kickActive && output.kickCount > _lastLoggedKickCount)
@@ -363,7 +436,7 @@ inline void MotorCaptureControl::updateMotors(MotorManager &motor,
                                               float targetFlow,
                                               const CalibrationManager &calibration)
 {
-    if (motorOverheatActive)
+    if (motorOverheatActive || motorNtcFaultLatched || pumpFailureZeroFlowLatched)
     {
         motor.setPwmImmediate(0);
         resetFlowController();

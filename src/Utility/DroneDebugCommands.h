@@ -215,6 +215,8 @@ private:
     if (readIntArg(args, "softStep", intValue)) config.softMaxStep = intValue;
     if (readFloatArg(args, "sens", floatValue)) config.sensitivity = floatValue;
     if (readIntArg(args, "recenter", intValue)) config.recenterDelayMs = (uint32_t)intValue;
+    if (readIntArg(args, "faultStop", intValue)) config.sensorFaultStopMs = (uint32_t)intValue;
+    if (readIntArg(args, "zeroConfirm", intValue)) config.zeroFlowConfirmSamples = (uint8_t)intValue;
     return config;
   }
 
@@ -236,6 +238,7 @@ private:
     case FLOW_PID_FAULT_SENSOR_INVALID: return "SENSOR_INVALID";
     case FLOW_PID_FAULT_SENSOR_STALE: return "SENSOR_STALE";
     case FLOW_PID_FAULT_TIMING: return "TIMING";
+    case FLOW_PID_FAULT_ZERO_FLOW: return "ZERO_FLOW";
     case FLOW_PID_FAULT_NONE:
     default: return "NONE";
     }
@@ -244,27 +247,32 @@ private:
   void printPidStatus(Print &out) const
   {
     FlowPidStatus s = _ctx->motorCapture.getPidStatus();
-    out.printf("PID ignicion: fase=%s kick=%s kicks=%u lastKick=%lums stall=%s\n",
+    out.printf("PID ignicion: fase=%s kick=%s kicks=%u lastKick=%lums stall=%s sensorStop=%s\n",
                FlowMotorController::ignitionPhaseText(s.ignitionPhase),
                s.kickActive ? "si" : "no",
                (unsigned)s.kickCount,
                (unsigned long)s.lastKickMs,
-               s.stallDetected ? "si" : "no");
-    out.printf("PID flujo: running=%s test=%s fault=%s mode=%s locked=%s target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d centro=%d trim=%d P/I/D=%.1f/%.1f/%.1f integral=%.3f\n",
+               s.stallDetected ? "si" : "no",
+               s.stoppedForSensorFault ? "si" : "no");
+    out.printf("PID flujo: running=%s test=%s fault=%s mode=%s locked=%s target=%.2f medido=%.2f filtrado=%.2f error=%.2f pwm=%d centro=%d trim=%d P/I/D=%.1f/%.1f/%.1f integral=%.3f zero=%u/%u zeroPwm=%d\n",
                s.running ? "si" : "no", _ctx->motorCapture.isPidTestRunning() ? "si" : "no",
                pidFaultText(s.fault),
                pidModeText(s.mode), s.centerFound ? "si" : "no",
                s.targetFlow, s.measuredFlow, s.filteredFlow, s.error, s.pwm, s.centerPwm, s.trimPwm,
-               s.pTerm, s.iTerm, s.dTerm, s.integral);
+               s.pTerm, s.iTerm, s.dTerm, s.integral,
+               (unsigned)s.zeroFlowCount, (unsigned)s.zeroFlowConfirmSamples,
+               s.zeroFlowFailurePwm);
   }
 
   void printPidConfig(Print &out) const
   {
     const FlowPidConfig &c = _ctx->motorCapture.getPidConfig();
-    out.printf("PID config: interval=%lu deadband=%.2f kp=%.2f ki=%.2f kd=%.2f ilim=%.2f maxStep=%d alpha=%.2f minActive=%.2f trimMax=%d softStep=%d sens=%.2f recenter=%lu maxDt=%lu stale=%lu\n",
+    out.printf("PID config: interval=%lu deadband=%.2f kp=%.2f ki=%.2f kd=%.2f ilim=%.2f maxStep=%d alpha=%.2f minActive=%.2f trimMax=%d softStep=%d sens=%.2f recenter=%lu maxDt=%lu stale=%lu faultStop=%lu zeroConfirm=%u\n",
                (unsigned long)c.intervalMs, c.deadband, c.kp, c.ki, c.kd, c.integralLimit,
                c.maxStep, c.filterAlpha, c.minActive, c.softTrimMax, c.softMaxStep, c.sensitivity,
-               (unsigned long)c.recenterDelayMs, (unsigned long)c.maxDtMs, (unsigned long)c.sensorStaleMs);
+               (unsigned long)c.recenterDelayMs, (unsigned long)c.maxDtMs, (unsigned long)c.sensorStaleMs,
+               (unsigned long)c.sensorFaultStopMs,
+               (unsigned)c.zeroFlowConfirmSamples);
   }
 
   bool handlePidCommand(const String &args, Print &out)
@@ -317,6 +325,11 @@ private:
     }
     if (sub == "ignite")
     {
+      if (!_ctx->actuationSensorsReady())
+      {
+        out.println("Kick bloqueado: AFM07 debe estar fresco y NTC valido.");
+        return true;
+      }
       _ctx->motorCapture.forceIgnition();
       out.println("Kick de arranque enviado al motor.");
       printPidStatus(out);
@@ -334,7 +347,7 @@ private:
     out.println("  drone status       estado compacto");
     out.println("  drone status -v    estado con detalles raw");
     out.println("  drone pid status|config");
-    out.println("  drone pid set [interval=800 deadband=0.15 kp=14 ki=0.3 kd=0 ilim=8 maxStep=16 trimMax=64 softStep=2 sens=0.8 recenter=5000 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
+    out.println("  drone pid set [interval=800 deadband=0.15 kp=14 ki=0.3 kd=0 ilim=8 maxStep=16 trimMax=64 softStep=2 sens=0.8 recenter=5000 alpha=0.35 minActive=0.30 maxDt=2800 stale=2800 faultStop=1500 kick=1950 kickMs=500 stallFlow=0.15 cooldown=10000 stallConfirm=2000]");
     out.println("  drone pid test [target=5.0]|stop");
     out.println("  drone pid ignite         kick manual de arranque");
     out.println("  logs index status        resumen del indice maestro");

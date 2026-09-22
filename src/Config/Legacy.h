@@ -60,6 +60,8 @@
 #define FLOW_PID_SOFT_MAX_STEP (EoloConfig::flowPid.softMaxStep)
 #define FLOW_PID_SENSITIVITY (EoloConfig::flowPid.sensitivity)
 #define FLOW_PID_RECENTER_DELAY_MS (EoloConfig::flowPid.recenterDelayMs)
+#define FLOW_PID_SENSOR_FAULT_STOP_MS (EoloConfig::flowPid.sensorFaultStopMs)
+#define FLOW_PID_ZERO_FLOW_CONFIRM_SAMPLES (EoloConfig::flowPid.zeroFlowConfirmSamples)
 
 #define DRONE_DURATION_INFINITE UINT32_MAX
 

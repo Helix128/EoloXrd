@@ -155,3 +155,23 @@ La unidad no es apta para terreno hasta resolver y volver a certificar:
 No se borraron registros históricos ni se modificó el remoto. La última
 observación válida dejó el motor apagado y la red del host restaurada; el
 estado posterior al intento de lectura post-flash quedó **NO DISPONIBLE**.
+
+## Addendum del candidato con fixes AFM07
+
+El firmware corregido se compiló y cargó en la unidad ESP32-D0WDQ6
+(`08:3a:f2:b6:f1:e0`) desde `eolo_dron_low_power`; esptool terminó con
+`Hash of data verified`. La API se probó directamente por la LAN existente,
+sin cambiar la red del computador: `GET http://10.183.252.122/api/status` y
+`GET http://10.183.252.122/api/diagnostics` devolvieron HTTP 200 y JSON válido.
+El diagnóstico confirmó `afmIntervalMs=200`, SD lista, NTC/BME280/I²C válidos,
+AFM online y motor en PWM 0.
+
+Se reiniciaron las estadísticas y se midieron tres minutos con el motor
+apagado. Resultado final: `949` transacciones, `846` éxitos, `103` fallos,
+`17` timeouts, `0` CRC, `0` tramas incompletas/malformadas y `66`
+excepciones Modbus `0x04`; AFM permaneció online y `maxSuccessGap=1437 ms`.
+La puerta de cero fallos queda **FALLIDA**, por lo que no se creó ni arrancó la
+sesión real de 5 minutos: hacerlo contradiría la regla de aprobar primero el
+AFM durante 15 minutos continuos. El código `0x04` obliga a detener el ajuste
+de cadencia y revisar registro `0x0000`, cantidad `1`, ID `0x02`, alimentación
+y cableado físico antes de repetir.

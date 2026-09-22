@@ -32,26 +32,31 @@ public:
         data.fresh = true;
         data.stale = false;
         data.ageMs = 0;
-        ++data.sampleId;
+        // sampleId, no lastSuccessMs, es el sentinel durable de "hubo muestra".
+        // millis() puede valer cero legítimamente al arrancar y tras el wraparound.
+        if (++data.sampleId == 0)
+            ++data.sampleId;
         lastSuccessMs = nowMs;
     }
 
     static void applyReadFailure(FlowData &data, uint32_t lastSuccessMs, uint32_t nowMs, uint32_t freshDataMs, uint32_t staleDataMs)
     {
-        uint32_t ageMs = lastSuccessMs > 0 ? nowMs - lastSuccessMs : staleDataMs + 1;
+        const bool hasSample = data.sampleId != 0;
+        uint32_t ageMs = hasSample ? nowMs - lastSuccessMs : staleDataMs + 1;
         data.ageMs = ageMs;
-        data.fresh = false;
-        data.stale = ageMs > freshDataMs;
-        data.valid = lastSuccessMs > 0 && ageMs <= staleDataMs;
+        data.fresh = hasSample && ageMs <= freshDataMs;
+        data.stale = hasSample && ageMs > freshDataMs;
+        data.valid = hasSample && ageMs <= staleDataMs;
     }
 
     static bool refreshAge(FlowData &data, uint32_t lastSuccessMs, uint32_t nowMs, uint32_t freshDataMs, uint32_t staleDataMs)
     {
-        uint32_t ageMs = lastSuccessMs > 0 ? nowMs - lastSuccessMs : staleDataMs + 1;
+        const bool hasSample = data.sampleId != 0;
+        uint32_t ageMs = hasSample ? nowMs - lastSuccessMs : staleDataMs + 1;
         data.ageMs = ageMs;
-        data.fresh = lastSuccessMs > 0 && ageMs <= freshDataMs;
-        data.stale = lastSuccessMs > 0 && ageMs > freshDataMs;
-        if (lastSuccessMs == 0 || ageMs > staleDataMs)
+        data.fresh = hasSample && ageMs <= freshDataMs;
+        data.stale = hasSample && ageMs > freshDataMs;
+        if (!hasSample || ageMs > staleDataMs)
         {
             data.valid = false;
             data.fresh = false;

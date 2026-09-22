@@ -44,6 +44,17 @@ DEMO_CONFIG = {
             "adafruit/RTClib@^2.1.4",
         ],
     },
+    "DronProdTest": {
+        "models": ["dron"],
+        "lib_deps": [
+            "adafruit/Adafruit NeoPixel@^1.12.5",
+            "adafruit/Adafruit Unified Sensor@^1.1.15",
+            "adafruit/Adafruit BME280 Library@^2.3.0",
+            "adafruit/RTClib@^2.1.4",
+            "plerup/EspSoftwareSerial@^8.2.0",
+            "bblanchon/ArduinoJson@^6.20.0",
+        ],
+    },
     "DynamicMotorCalibration": {
         "models": ["dron"],
         "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],

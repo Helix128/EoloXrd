@@ -21,6 +21,7 @@ private:
         out.println("  p/profile         resumen del profiler");
         out.println("  r/reset           reiniciar el profiler y las estadísticas de RS485");
         out.println("  rs485 status      diagnóstico por esclavo RS485 (IDs 0x01 y 0x02)");
+        out.println("  rs485 diagnostic  leer AFM07 0x0004 con pausa exclusiva");
         out.println("  v/verbose [on|off|status|toggle]  alternar logs verbosos y alertas");
         out.println("  time              mostrar hora RTC");
         out.println("  time set YYYY-MM-DD HH:MM:SS");
@@ -188,8 +189,15 @@ public:
             return true;
         }
 
+        if (line == "rs485 diagnostic" || line == "rs485 diag") {
+            const bool accepted = RS485Bus::getInstance().startAfmDiagnostic();
+            out.println(accepted ? "Diagnóstico AFM07 0x0004 encolado" :
+                                   "Diagnóstico AFM07 ocupado; revisa rs485 status");
+            return true;
+        }
+
         if (line == "rs485" || line.startsWith("rs485 ")) {
-            out.println("Uso: rs485 status");
+            out.println("Uso: rs485 status|diagnostic");
             return true;
         }
 

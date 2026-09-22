@@ -11,7 +11,9 @@
 namespace EoloConfig::Profile
 {
 inline constexpr const char kModelName[] = "EOLO Dron";
-inline constexpr bool kUseCalibrationSeed = true;
+// Producción y calificación Dron siempre parten del PID vivo. Las curvas de
+// calibración históricas permanecen guardadas, pero no inicializan los motores.
+inline constexpr bool kUseCalibrationSeed = false;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;
 inline constexpr uint32_t kDisplaySpiClockHz = 8000000UL;
@@ -59,6 +61,10 @@ constexpr FlowPidConfig makeFlowPidConfig()
     config.softMaxStep = 3;
     config.sensitivity = 0.8f;
     config.recenterDelayMs = 1500UL;
+    // Un AFM inválido/obsoleto no puede mantener una bomba activa más de la
+    // ventana de seguridad del perfil Dron.
+    config.sensorFaultStopMs = 1500UL;
+    config.zeroFlowConfirmSamples = 5;
     return config;
 }
 

@@ -896,7 +896,6 @@ $('savePreset').addEventListener('click', savePreset);
 let currentPreviewFile = null;
 let currentPreviewText = '';
 let currentParsedData = null;
-let previewViewMode = 'table';
 let logSearchFilter = '';
 let previewSearchFilter = '';
 
@@ -1109,17 +1108,68 @@ function updatePreviewSummaryMetrics(columns, rows) {
   }
 }
 
-function setPreviewViewMode(mode) {
-  previewViewMode = mode;
-  const isTable = mode === 'table';
-  $('btnViewTable').classList.toggle('active', isTable);
-  $('btnViewRaw').classList.toggle('active', !isTable);
-  $('previewTableWrap').classList.toggle('hidden', !isTable);
-  $('previewRawWrap').classList.toggle('hidden', isTable);
-}
+const CHART_SERIES = [
+  { key: 'flow', label: 'Caudal (L/min)', color: '#3b82f6' },
+  { key: 'flow_target', label: 'Objetivo (L/min)', color: '#94a3b8', dashed: true },
+  { key: 'ntc_temperature', label: 'Temp. motor (°C)', color: '#ef4444' }
+];
 
-$('btnViewTable').addEventListener('click', () => setPreviewViewMode('table'));
-$('btnViewRaw').addEventListener('click', () => setPreviewViewMode('raw'));
+function renderPreviewChart(columns, rows) {
+  const wrap = $('previewChartWrap');
+  const svg = $('previewChart');
+  const legend = $('previewChartLegend');
+  if (!wrap || !svg || !legend) return;
+
+  const series = CHART_SERIES
+    .map(s => ({ ...s, idx: columns.indexOf(s.key) }))
+    .filter(s => s.idx !== -1);
+
+  if (series.length === 0 || rows.length < 2) {
+    wrap.classList.add('hidden');
+    svg.innerHTML = '';
+    legend.innerHTML = '';
+    return;
+  }
+
+  const W = 600, H = 160, PAD = 6;
+  const seriesData = series.map(s => {
+    const values = rows.map(r => parseFloat(r[s.idx]));
+    return { ...s, values };
+  }).filter(s => s.values.some(v => !isNaN(v)));
+
+  if (seriesData.length === 0) {
+    wrap.classList.add('hidden');
+    return;
+  }
+
+  let min = Infinity, max = -Infinity;
+  seriesData.forEach(s => s.values.forEach(v => {
+    if (!isNaN(v)) { if (v < min) min = v; if (v > max) max = v; }
+  }));
+  if (min === max) { min -= 1; max += 1; }
+
+  const n = rows.length;
+  const xAt = i => PAD + (i / (n - 1)) * (W - 2 * PAD);
+  const yAt = v => H - PAD - ((v - min) / (max - min)) * (H - 2 * PAD);
+
+  let svgHtml = '';
+  seriesData.forEach(s => {
+    let d = '';
+    s.values.forEach((v, i) => {
+      if (isNaN(v)) return;
+      d += (d === '' ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1) + ' ';
+    });
+    const dashAttr = s.dashed ? ' stroke-dasharray="4,3"' : '';
+    svgHtml += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.6"${dashAttr}/>`;
+  });
+  svg.innerHTML = svgHtml;
+
+  legend.innerHTML = seriesData.map(s =>
+    `<span class="chart-legend-item"><span class="chart-legend-swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}</span>`
+  ).join('');
+
+  wrap.classList.remove('hidden');
+}
 
 function renderLogsTable() {
   const tbody = $('logsBody');
@@ -1234,7 +1284,7 @@ async function previewLog(filename) {
   $('tableEmptyState').textContent = 'Cargando vista previa del archivo...';
   $('tableEmptyState').classList.remove('hidden');
   $('logDataTable').classList.add('hidden');
-  $('preview').textContent = 'Cargando datos crudos...';
+  $('previewChartWrap').classList.add('hidden');
   $('copyPreviewBtn').disabled = true;
   $('copyTsvBtn').disabled = true;
   $('downloadPreviewBtn').classList.add('hidden');
@@ -1248,7 +1298,6 @@ async function previewLog(filename) {
     const res = await fetch('/api/logs/preview?file=' + encodeURIComponent(filename));
     if (!res.ok) {
       $('tableEmptyState').textContent = 'No se pudo leer la vista previa del archivo.';
-      $('preview').textContent = 'No se pudo leer la vista previa.';
       $('previewRowsCount').textContent = '0 filas';
       return;
     }
@@ -1257,7 +1306,6 @@ async function previewLog(filename) {
     const rawRows = data.rows || [];
     const lines = [headerStr].concat(rawRows).filter(Boolean);
     currentPreviewText = lines.join('\n');
-    $('preview').textContent = currentPreviewText;
 
     // Parsear datos CSV
     const columns = parseCsvLine(headerStr);
@@ -1271,6 +1319,7 @@ async function previewLog(filename) {
 
     updatePreviewSummaryMetrics(columns, parsedRows);
     renderParsedDataTable();
+    renderPreviewChart(columns, parsedRows);
 
     $('copyPreviewBtn').disabled = false;
     $('copyTsvBtn').disabled = false;
@@ -1283,7 +1332,6 @@ async function previewLog(filename) {
     dlBtn.classList.remove('hidden');
   } catch (err) {
     $('tableEmptyState').textContent = 'Error al obtener la vista previa del registro.';
-    $('preview').textContent = 'Error al obtener la vista previa del registro.';
     $('previewRowsCount').textContent = 'Error';
     $('copyPreviewBtn').disabled = true;
     $('copyTsvBtn').disabled = true;
@@ -1304,7 +1352,7 @@ function resetPreview() {
   $('tableEmptyState').textContent = 'Selecciona un archivo del explorador a la izquierda o haz clic en "Ver índice" para inspeccionar sus filas.';
   $('tableEmptyState').classList.remove('hidden');
   $('logDataTable').classList.add('hidden');
-  $('preview').textContent = 'Selecciona un archivo del explorador a la izquierda para inspeccionar sus filas.';
+  $('previewChartWrap').classList.add('hidden');
   $('copyPreviewBtn').disabled = true;
   $('copyTsvBtn').disabled = true;
   if ($('previewSearchInput')) {
@@ -1414,7 +1462,17 @@ if ($('previewIndexBtn')) {
 }
 
 $('refreshLogs').addEventListener('click', loadLogs);
+
+// Menú desplegable de descargas
+const downloadMenu = $('downloadMenu');
+$('downloadMenuBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  downloadMenu.classList.toggle('hidden');
+});
+document.addEventListener('click', () => downloadMenu.classList.add('hidden'));
+
 $('downloadAll').addEventListener('click', () => {
+  downloadMenu.classList.add('hidden');
   if (!logFiles.length) {
     notify('No hay archivos para descargar', 'info');
     return;
@@ -1432,6 +1490,15 @@ $('downloadAll').addEventListener('click', () => {
 });
 
 // ===== DIAGNÓSTICO & CONTROL DIRECTO DE MOTOR (DEBUG PWM) =====
+function setTelemetryStatus(id, ok) {
+  const el = $(id);
+  if (!el) return;
+  const item = el.closest('.telemetry-item');
+  if (!item) return;
+  item.classList.toggle('status-bad', ok === false);
+  item.classList.toggle('status-ok', ok === true);
+}
+
 async function loadSystemDiagnostics() {
   try {
     const res = await fetch('/api/diagnostics', { cache: 'no-store' });
@@ -1440,10 +1507,28 @@ async function loadSystemDiagnostics() {
     $('diagLoop').textContent = `#${d.loop.heartbeat} · ${d.loop.lastDurationMs} ms · pausa máx ${d.loop.maxPauseMs} ms`;
     $('diagHeap').textContent = `${fmtBytes(d.heap.free)} / ${fmtBytes(d.heap.minimum)}`;
     $('diagWifi').textContent = `AP ${d.wifi.apActive ? 'OK' : 'OFF'} (${d.wifi.apClients}) · LAN ${d.wifi.staConnected ? d.wifi.staIp : 'sin conexión'}`;
+    setTelemetryStatus('diagWifi', !!d.wifi.apActive);
     $('diagI2c').textContent = `${d.i2c.lastResult} · BME ${d.i2c.bmeFailure}`;
+    setTelemetryStatus('diagI2c', !d.i2c.bmeFailure);
     const ix = d.sd.reconciliation;
     $('diagSd').textContent = `${d.sd.status} · ${ix.current} actuales, ${ix.recovered} recuperados, ${ix.errors} errores`;
+    setTelemetryStatus('diagSd', ix.errors === 0);
     $('diagHttp').textContent = `${d.http.lastRequest || '—'} · ${d.http.lastDurationMs} ms · ${d.http.failed} fallidas`;
+    const rs = d.rs485 || {};
+    const contract = rs.afm07Contract || {};
+    const pollGap = rs.pollGapMs !== undefined ? rs.pollGapMs : '—';
+    const minRest = rs.afmMinActualRestMs !== undefined ? rs.afmMinActualRestMs : (rs.minActualRestMs !== undefined ? rs.minActualRestMs : '—');
+    const rsFailures = rs.failures !== undefined ? rs.failures : '—';
+    const maxSuccessGap = rs.maxSuccessGapMs !== undefined ? rs.maxSuccessGapMs : '—';
+    $('diagRs485').textContent = `${pollGap} ms · mín descanso ${minRest} ms · fallos ${rsFailures} · max OK ${maxSuccessGap} ms`;
+    setTelemetryStatus('diagRs485', rsFailures === 0 || rsFailures === '—');
+    const afmDiag = rs.afm07Diagnostic || {};
+    const blocked = rs.afmSafetyBlocked || afmDiag.rateTuningBlocked;
+    const slaveId = contract.slaveId !== undefined ? contract.slaveId : 2;
+    const diagnosticValue = afmDiag.register0004 !== undefined ? afmDiag.register0004 : 0;
+    const valueText = afmDiag.valueValid ? `0x${Number(diagnosticValue).toString(16).padStart(4, '0').toUpperCase()}` : 'N/D';
+    $('diagAfm').textContent = `ID 0x${Number(slaveId).toString(16).padStart(2, '0').toUpperCase()} · 0x0004 ${valueText} · ${blocked ? 'BLOQUEADO' : (afmDiag.state || 'sin diagnóstico')}`;
+    setTelemetryStatus('diagAfm', !blocked);
     $('diagUpdated').textContent = `Actualizado · uptime ${formatDuration(Math.floor(d.uptimeMs / 1000))}`;
   } catch (_) {
     $('diagUpdated').textContent = 'Diagnóstico no disponible';

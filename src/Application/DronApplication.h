@@ -121,6 +121,7 @@ private:
     };
 
     static constexpr unsigned long kTargetMs = 8UL;
+    static constexpr uint32_t kCaptureStartRetryIntervalMs = 1000UL;
 
     // Preserve main.cpp's original construction order: Context, switches,
     // server, then console.
@@ -133,6 +134,9 @@ private:
     unsigned long _lastFrameMs = 0;
     unsigned long _frameStartMs = 0;
     unsigned long _lastHealthLogMs = 0;
+    uint32_t _lastCaptureStartAttemptMs = 0;
+    bool _captureStartRetryArmed = false;
+    bool _captureAfmWaitReported = false;
     uint8_t _reportedDroneState = 0xFF;
 
     static const char *droneStateName(DroneBootState state)
@@ -152,7 +156,10 @@ private:
     void setDroneLed(StatusLedPattern pattern)
     {
 #ifdef FEATURE_NEOPIXEL
-        _context.components.statusLed.setPattern(pattern);
+        _context.components.statusLed.setDronePresentation(
+            pattern,
+            _context.isMotorThermalSensorValid(),
+            _context.motorThermalTemperatureC());
 #else
         (void)pattern;
 #endif
@@ -160,6 +167,14 @@ private:
 
     void updateDroneStatusLed()
     {
+        // Una captura abortada conserva la indicación roja hasta el cierre
+        // profundo; nunca se presenta como una finalización normal.
+        if (_context.captureFailed())
+        {
+            setDroneLed(StatusLedPattern::Error);
+            return;
+        }
+
         if (_droneState == DroneBootState::Capturing &&
             (_context.sdStatus() == SD_ERROR || _context.sdStatus() == SD_MISSING))
         {
@@ -170,6 +185,12 @@ private:
         if (_droneState == DroneBootState::Capturing && _context.isMotorOverheatActive())
         {
             setDroneLed(StatusLedPattern::MotorOverheat);
+            return;
+        }
+
+        if (_droneState == DroneBootState::Capturing && _context.isMotorSafetyBlocked())
+        {
+            setDroneLed(StatusLedPattern::Error);
             return;
         }
 
@@ -204,6 +225,55 @@ private:
         }
     }
 
+    void queueDroneCaptureStart()
+    {
+        _droneState = DroneBootState::Waiting;
+        _captureStartRetryArmed = false;
+        _captureAfmWaitReported = false;
+    }
+
+    bool tryBeginDroneCapture()
+    {
+        const uint32_t scheduledStart = _context.session.startUnix;
+        if (!_context.beginCapture())
+        {
+            const CaptureSafetyFault fault = _context.lastCaptureStartFault();
+            if (fault == CaptureSafetyFault::AfmInvalid ||
+                fault == CaptureSafetyFault::AfmStale)
+            {
+                _droneState = DroneBootState::Waiting;
+                _captureStartRetryArmed = true;
+                _lastCaptureStartAttemptMs = millis();
+                if (!_captureAfmWaitReported)
+                {
+                    LOG_LN("Drone: AFM07 aun no disponible; inicio de captura pendiente.");
+                    _captureAfmWaitReported = true;
+                }
+            }
+            else
+            {
+                _droneState = DroneBootState::Idle;
+                _captureStartRetryArmed = false;
+            }
+            return false;
+        }
+
+        // Si la espera real superó el horario configurado, contar la duración
+        // desde el arranque efectivo de la captura y conservar ese inicio.
+        const uint32_t actualStart = _context.getUnixTime();
+        if (actualStart > scheduledStart)
+        {
+            _context.session.startUnix = actualStart;
+            _context.session.elapsedTime = 0;
+            _context.saveSession();
+        }
+
+        _droneState = DroneBootState::Capturing;
+        _captureStartRetryArmed = false;
+        _captureAfmWaitReported = false;
+        return true;
+    }
+
     void startDroneConfiguredCapture(const HeadlessSetupConfig &config)
     {
         const uint32_t nowUnix = _context.getUnixTime();
@@ -214,15 +284,15 @@ private:
         if (config.waitSeconds == 0)
         {
             LOG_LN("Drone: captura instantanea desde setup web.");
-            _context.beginCapture();
-            _droneState = DroneBootState::Capturing;
+            queueDroneCaptureStart();
+            tryBeginDroneCapture();
         }
         else
         {
             LOG_OUT("Drone: setup web confirmado; esperando ");
             LOG_OUT(config.waitSeconds);
             LOG_OUT_LN(" segundos antes de capturar.");
-            _droneState = DroneBootState::Waiting;
+            queueDroneCaptureStart();
         }
         updateDroneStatusLed();
     }
@@ -269,15 +339,15 @@ private:
         if (selection.instantStart)
         {
             LOG_LN("Drone: captura instantanea.");
-            _context.beginCapture();
-            _droneState = DroneBootState::Capturing;
+            queueDroneCaptureStart();
+            tryBeginDroneCapture();
         }
         else
         {
             LOG_OUT("Drone: esperando ");
             LOG_OUT(selection.waitSeconds);
             LOG_OUT_LN(" segundos antes de capturar.");
-            _droneState = DroneBootState::Waiting;
+            queueDroneCaptureStart();
         }
         updateDroneStatusLed();
     }
@@ -335,9 +405,29 @@ private:
             const uint32_t now = _context.getUnixTime();
             if (now >= _context.session.startUnix)
             {
-                LOG_LN("Drone: espera cumplida, iniciando captura.");
-                _context.beginCapture();
-                _droneState = DroneBootState::Capturing;
+                const uint32_t nowMs = millis();
+                const bool retryDue = !_captureStartRetryArmed ||
+                    static_cast<uint32_t>(nowMs - _lastCaptureStartAttemptMs) >=
+                        kCaptureStartRetryIntervalMs;
+                if (retryDue)
+                {
+                    _captureStartRetryArmed = true;
+                    _lastCaptureStartAttemptMs = nowMs;
+                    if (!_context.hasFreshAfmSampleForCapture())
+                    {
+                        if (!_captureAfmWaitReported)
+                        {
+                            LOG_LN("Drone: AFM07 aun no disponible; inicio de captura pendiente.");
+                            _captureAfmWaitReported = true;
+                        }
+                    }
+                    else
+                    {
+                        if (!_captureAfmWaitReported)
+                            LOG_LN("Drone: espera cumplida, iniciando captura.");
+                        tryBeginDroneCapture();
+                    }
+                }
             }
             updateDroneStatusLed();
             return;
@@ -370,14 +460,17 @@ private:
             _droneFinishHandled = true;
             _context.clearSession();
             _context.components.motor.setPwmImmediate(0);
-            setDroneLed(StatusLedPattern::Finished);
+            const bool failed = _context.captureFailed();
+            setDroneLed(failed ? StatusLedPattern::Error : StatusLedPattern::Finished);
             _context.components.statusLed.poll(true);
 #ifdef STATUS_LED_LOW_POWER
             delay(140);
             setDroneLed(StatusLedPattern::Off);
             _context.components.statusLed.poll(true);
 #endif
-            LOG_LN("Drone: captura finalizada; entrando en deep sleep hasta reset/power-cycle.");
+            LOG_F("Drone: captura %s (%s); entrando en deep sleep hasta reset/power-cycle.\n",
+                  failed ? "abortada por fallo" : "finalizada",
+                  captureEndReasonText(_context.captureEndReason()));
             Serial.flush();
             esp_deep_sleep_start();
         }

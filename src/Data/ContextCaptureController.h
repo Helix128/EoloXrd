@@ -1,9 +1,9 @@
 #ifndef EOLO_DATA_CONTEXT_CAPTURE_CONTROLLER_H
 #define EOLO_DATA_CONTEXT_CAPTURE_CONTROLLER_H
 
-// This binding is included only after Context is fully declared.  Keeping the
-// Context-aware transition code here makes CaptureController's public header
-// independent of Context and removes the former reinclusion/macro cycle.
+// Este enlace se incluye sólo después de declarar Context por completo. Las
+// transiciones que conocen Context quedan aquí para mantener independiente la
+// cabecera pública de CaptureController y evitar el ciclo de reinclusión.
 #include "CaptureController.h"
 #include "Session.h"
 #include "../Config/Legacy.h"
@@ -24,8 +24,12 @@ inline void CaptureController::begin(Context &ctx)
     isCapturing = true;
     isPaused = false;
     isEnd = false;
+    endReason = CaptureEndReason::None;
+    failurePwm = 0;
+    failureConfirmations = 0;
     ctx.session.capturedVolume = 0.0;
-    ctx.resetMotorFlowController();
+    volumeIntegrator.reset(millis());
+    ctx.resetMotorFlowControllerForCaptureStart();
     bool motorOverheat = ctx.updateMotorThermalProtection();
 #if defined(FEATURE_FLOW_PID) && defined(EOLO_TARGET_DRON)
     if (!motorOverheat)
@@ -59,23 +63,61 @@ inline void CaptureController::resume(Context &ctx)
     const unsigned long now = ctx.getUnixTime();
     const unsigned long pauseDelta = now - pauseTime;
     ctx.session.duration += pauseDelta;
+    volumeIntegrator.reset(millis());
 }
 
-inline void CaptureController::end(Context &ctx)
+inline void CaptureController::end(Context &ctx, CaptureEndReason reason)
 {
     if (isEnd)
         return;
 
-    // Both manual and timed closes use a fresh RTC snapshot.  The final job
-    // remains in the SD queue until its capture row and master-index entry are
-    // safely written by the same worker.
+    // Los cierres manual y temporizado usan una lectura RTC nueva. El trabajo
+    // final permanece en la cola SD hasta que el mismo worker escribe de forma
+    // segura la fila de captura y la entrada del índice maestro.
     ctx.enqueueFinalLogData();
     isCapturing = false;
     isEnd = true;
+    endReason = reason;
+    failurePwm = 0;
+    failureConfirmations = 0;
 
-    LOG_LN("Captura finalizada.");
+    LOG_OUT("Captura finalizada: ");
+    LOG_LN(captureEndReasonText(reason));
     ctx.resetMotorFlowController();
     ctx.components.motor.setPowerPct(0);
+#ifdef FEATURE_MODEM
+    ctx.components.modemService.shutdownWhenIdle();
+#endif
+#ifndef FEATURE_HEADLESS
+    SceneManager::setScene("end", ctx);
+    ctx.enableDisplay();
+#endif
+}
+
+inline void CaptureController::abort(Context &ctx, CaptureEndReason reason,
+                                     int abortedPwm, uint8_t confirmations)
+{
+    if (isEnd && !isCapturing)
+        return;
+
+    isCapturing = false;
+    isPaused = false;
+    isEnd = true;
+    endReason = reason;
+    failurePwm = abortedPwm;
+    failureConfirmations = confirmations;
+    ctx.components.motor.setPwmImmediate(0);
+    ctx.resetMotorFlowController();
+    LOG_OUT("Captura abortada: ");
+    LOG_LN(captureEndReasonText(reason));
+    if (reason == CaptureEndReason::PumpFailureZeroFlow)
+    {
+        LOG_OUT("pump_failure_zero_flow pwm=");
+        LOG_OUT(abortedPwm);
+        LOG_OUT(" confirm=");
+        LOG_LN(confirmations);
+    }
+
 #ifdef FEATURE_MODEM
     ctx.components.modemService.shutdownWhenIdle();
 #endif
@@ -89,6 +131,9 @@ inline void CaptureController::reset(Context &ctx)
 {
     isCapturing = false;
     isPaused = false;
+    endReason = CaptureEndReason::None;
+    failurePwm = 0;
+    failureConfirmations = 0;
     ctx.session = Session();
     ctx.resetMotorFlowController();
     ctx.components.motor.setPowerPct(0);
@@ -144,7 +189,7 @@ inline void CaptureController::update(Context &ctx)
             LOG_OUT("Duración establecida: ");
             LOG_OUT_LN(ctx.session.duration);
 
-            end(ctx);
+            end(ctx, CaptureEndReason::Completed);
             return;
         }
     }
@@ -157,6 +202,23 @@ inline void CaptureController::update(Context &ctx)
 
 #if !BAREBONES
     ctx.updateMotors();
+    if (ctx.hasMotorCaptureFailure())
+    {
+        abort(ctx, CaptureEndReason::PumpFailureZeroFlow,
+              ctx.motorCaptureFailurePwm(),
+              ctx.motorCaptureFailureConfirmations());
+        return;
+    }
+    // El volumen sigue cada muestra física nueva del caudalímetro. La escritura
+    // CSV conserva su cadencia de 10 s y sólo publica el acumulado actual.
+    FlowData volumeFlow;
+    if (ctx.components.flowSensor.getData(volumeFlow))
+    {
+        ctx.session.capturedVolume += volumeIntegrator.update(
+            millis(), volumeFlow.sampleId,
+            volumeFlow.valid && volumeFlow.fresh && !volumeFlow.stale,
+            volumeFlow.flow);
+    }
 #else
     ctx.components.flowSensor.flow = ctx.session.targetFlow + millis() % 2;
 #endif
@@ -177,15 +239,6 @@ inline void CaptureController::update(Context &ctx)
         // snapshot para no bloquear el ciclo de captura/UI.
         BME280Data bmeData;
         (void)ctx.components.bme.getData(bmeData);
-        FlowData flowData;
-        if (ctx.components.flowSensor.getData(flowData))
-        {
-            ctx.session.capturedVolume += (flowData.flow / 60.0f) * CAPTURE_INTERVAL;
-        }
-        else
-        {
-            LOG_LN("Error al leer sensor de flujo para volumen capturado");
-        }
 #endif
         if (EoloDebug::verboseLogsEnabled())
         {
