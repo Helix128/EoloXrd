@@ -6,15 +6,7 @@
 
 static FlowPidConfig validPidConfig()
 {
-    FlowPidConfig config = {
-        FLOW_PID_INTERVAL_MS, FLOW_PID_DEADBAND, FLOW_PID_KP, FLOW_PID_KI,
-        FLOW_PID_INTEGRAL_LIMIT, FLOW_PID_MAX_STEP, FLOW_PID_FILTER_ALPHA,
-        FLOW_PID_MIN_ACTIVE, FLOW_PID_KD, FLOW_PID_MAX_DT_MS,
-        FLOW_PID_SENSOR_STALE_MS, FLOW_PID_KICK_PWM, FLOW_PID_KICK_MS,
-        FLOW_PID_STALL_FLOW_LPM, FLOW_PID_RESTALL_COOLDOWN_MS,
-        FLOW_PID_STALL_CONFIRM_MS};
-    config.sensorFaultStopMs = FLOW_PID_SENSOR_FAULT_STOP_MS;
-    return config;
+    return EoloConfig::flowPid;
 }
 
 void test_default_pid_config_is_valid()
@@ -23,9 +15,14 @@ void test_default_pid_config_is_valid()
     TEST_ASSERT_TRUE(MotorCaptureControl::validatePidConfig(config));
 }
 
-void test_flow_pid_base_pwm_matches_active_profile()
+void test_motor_control_uses_active_pid_profile()
 {
-    TEST_ASSERT_EQUAL_INT(EoloConfig::flowPidInitialPwm, FLOW_PID_BASE_PWM);
+    MotorCaptureControl control;
+    const FlowPidConfig &actual = control.getPidConfig();
+    TEST_ASSERT_EQUAL_UINT32(EoloConfig::flowPid.intervalMs, actual.intervalMs);
+    TEST_ASSERT_EQUAL_INT(EoloConfig::flowPid.kickPwm, actual.kickPwm);
+    TEST_ASSERT_EQUAL_UINT32(EoloConfig::flowPid.sensorFaultStopMs,
+                             actual.sensorFaultStopMs);
 }
 
 void test_rejects_invalid_pid_timing()
@@ -199,7 +196,7 @@ void test_drone_actuation_requires_sd_and_fresh_sensors()
 {
     Context ctx;
     ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
-    ctx.components.motor.setPwmImmediate(FLOW_PID_BASE_PWM);
+    ctx.components.motor.setPwmImmediate(EoloConfig::flowPidInitialPwm);
 
     ctx.updateMotors();
 
@@ -217,7 +214,7 @@ void setup()
     delay(1000);
     UNITY_BEGIN();
     RUN_TEST(test_default_pid_config_is_valid);
-    RUN_TEST(test_flow_pid_base_pwm_matches_active_profile);
+    RUN_TEST(test_motor_control_uses_active_pid_profile);
     RUN_TEST(test_rejects_invalid_pid_timing);
     RUN_TEST(test_rejects_invalid_pid_gains);
     RUN_TEST(test_rejects_invalid_pid_filter);

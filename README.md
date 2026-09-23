@@ -50,7 +50,7 @@ python3 -m pip install platformio
 | `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
 | `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
 
-La configuración de compilación y perfiles de hardware está documentada en [Configuración de compilación](docs/configuracion-compilacion.md).
+La configuración de compilación y perfiles de hardware está documentada en [Configuración de compilación](docs/configuracion-compilacion.md). Para continuar el desarrollo, ver [Guía para continuar](docs/guia-para-continuar.md).
 
 Comandos básicos:
 

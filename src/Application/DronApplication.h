@@ -86,7 +86,10 @@ public:
         _lastFrameMs += kTargetMs;
 
         diagnostics.setPhase("context.update");
-        _context.update();
+        const bool contextThermalCheck =
+            _droneState != DroneBootState::Setup &&
+            _droneState != DroneBootState::Debug;
+        _context.update(contextThermalCheck);
         diagnostics.setPhase("drone.controller");
         updateDroneController();
 
@@ -158,7 +161,8 @@ private:
 #ifdef FEATURE_NEOPIXEL
         _context.components.statusLed.setDronePresentation(
             pattern,
-            _context.isMotorThermalSensorValid(),
+            _droneState != DroneBootState::Setup &&
+                _context.isMotorThermalSensorValid(),
             _context.motorThermalTemperatureC());
 #else
         (void)pattern;
@@ -171,7 +175,7 @@ private:
         // profundo; nunca se presenta como una finalización normal.
         if (_context.captureFailed())
         {
-            setDroneLed(StatusLedPattern::Error);
+            _context.components.statusLed.setDroneTerminalError();
             return;
         }
 
@@ -461,12 +465,18 @@ private:
             _context.clearSession();
             _context.components.motor.setPwmImmediate(0);
             const bool failed = _context.captureFailed();
-            setDroneLed(failed ? StatusLedPattern::Error : StatusLedPattern::Finished);
+            if (failed)
+                _context.components.statusLed.setDroneTerminalError();
+            else
+                setDroneLed(StatusLedPattern::Finished);
             _context.components.statusLed.poll(true);
 #ifdef STATUS_LED_LOW_POWER
-            delay(140);
-            setDroneLed(StatusLedPattern::Off);
-            _context.components.statusLed.poll(true);
+            if (!failed)
+            {
+                delay(140);
+                setDroneLed(StatusLedPattern::Off);
+                _context.components.statusLed.poll(true);
+            }
 #endif
             LOG_F("Drone: captura %s (%s); entrando en deep sleep hasta reset/power-cycle.\n",
                   failed ? "abortada por fallo" : "finalizada",

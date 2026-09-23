@@ -31,7 +31,32 @@ public:
       return;
     }
 
-    _data.raw = analogRead(_pin);
+    // El PWM del motor puede acoplar pulsos breves al cable del NTC. La
+    // mediana rechaza una conversión ADC aislada fuera de rango sin ocultar
+    // una desconexión persistente (la mayoría de muestras seguiría inválida).
+    static constexpr uint8_t SampleCount = 5;
+    static constexpr uint16_t SampleSpacingUs = 175;
+    int samples[SampleCount];
+    for (uint8_t i = 0; i < SampleCount; ++i)
+    {
+      samples[i] = analogRead(_pin);
+      if (i + 1 < SampleCount)
+        delayMicroseconds(SampleSpacingUs);
+    }
+
+    for (uint8_t i = 1; i < SampleCount; ++i)
+    {
+      const int sample = samples[i];
+      int j = i;
+      while (j > 0 && samples[j - 1] > sample)
+      {
+        samples[j] = samples[j - 1];
+        --j;
+      }
+      samples[j] = sample;
+    }
+
+    _data.raw = samples[SampleCount / 2];
     _data.voltage = rawToVoltage(_data.raw);
     _data.valid = computeTemperature(_data.raw, _data.temperature, _data.resistance);
     if (!_data.valid)
