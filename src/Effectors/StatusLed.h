@@ -96,6 +96,17 @@ public:
     _motorTemperatureC = _motorTemperatureValid ? temperatureC : 0.0f;
     poll(true);
   }
+
+  void setDroneTerminalError()
+  {
+    if (!_terminalErrorLatched)
+    {
+      _pattern = StatusLedPattern::Error;
+      _terminalErrorLatched = true;
+      resetSequence();
+    }
+    poll(true);
+  }
 #endif
 
   StatusLedPattern pattern() const
@@ -194,6 +205,7 @@ private:
   Color _lastShownColor{0, 0, 0};
 #ifdef EOLO_TARGET_DRON
   uint32_t _cycleStartedAtMs = 0;
+  bool _terminalErrorLatched = false;
   bool _motorTemperatureValid = false;
   float _motorTemperatureC = 0.0f;
 #endif
@@ -233,6 +245,12 @@ private:
 #ifdef EOLO_TARGET_DRON
   void pollDroneCycle(uint32_t now)
   {
+    if (_terminalErrorLatched)
+    {
+      show(profileFor(StatusLedPattern::Error).primary);
+      return;
+    }
+
     static constexpr uint32_t kCycleMs = 4000UL;
     const uint32_t phase = (now - _cycleStartedAtMs) % kCycleMs;
     if (phase < 2000UL)
@@ -290,27 +308,17 @@ private:
     return Color{temperaturePeak(), 0, 0};
   }
 
-  static Color interpolate(Color from, Color to, float amount)
-  {
-    return Color{
-        static_cast<uint8_t>(from.r + (to.r - from.r) * amount + 0.5f),
-        static_cast<uint8_t>(from.g + (to.g - from.g) * amount + 0.5f),
-        static_cast<uint8_t>(from.b + (to.b - from.b) * amount + 0.5f)};
-  }
-
   static Color temperatureColor(float temperatureC)
   {
-    static constexpr float kGreenThroughC = 30.0f;
-    static constexpr float kYellowAtC = 47.5f;
-    static constexpr float kRedAtC = 65.0f;
-    if (temperatureC <= kGreenThroughC)
+    const uint8_t peak = temperaturePeak();
+    if (temperatureC <= 30.0f)
       return temperatureGreen();
-    if (temperatureC < kYellowAtC)
-      return interpolate(temperatureGreen(), temperatureYellow(),
-                         (temperatureC - kGreenThroughC) / (kYellowAtC - kGreenThroughC));
-    if (temperatureC < kRedAtC)
-      return interpolate(temperatureYellow(), temperatureRed(),
-                         (temperatureC - kYellowAtC) / (kRedAtC - kYellowAtC));
+    if (temperatureC < 40.0f)
+      return Color{static_cast<uint8_t>(peak / 4U), peak, 0};
+    if (temperatureC < 50.0f)
+      return temperatureYellow();
+    if (temperatureC < 60.0f)
+      return Color{peak, static_cast<uint8_t>(peak / 2U), 0};
     return temperatureRed();
   }
 #endif

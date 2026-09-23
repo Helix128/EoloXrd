@@ -112,9 +112,11 @@ La indicacion repite un ciclo de 4 segundos:
 | --- | --- |
 | 0–2 s | Idle, LED apagado. |
 | 2–3 s | Estado actual, usando el color de arriba. |
-| 3–4 s | Temperatura del motor: verde hasta 30 °C, transición a amarillo a 47.5 °C y a rojo a 65 °C. Sobre 65 °C titila rojo rapido durante este segundo. |
+| 3–4 s | Temperatura del motor en pasos de 10 °C: verde hasta 30 °C, verde amarillento entre 30–40 °C, amarillo entre 40–50 °C, naranja entre 50–60 °C y rojo desde 60 °C. Sobre 65 °C titila rojo rapido durante este segundo. |
 
-Si la lectura NTC no es valida, el intervalo de temperatura muestra morado, igual que setup; el intervalo de estado conserva la indicacion de error existente. El brillo se ajusta en `src/Board/Pinouts/Dron.h` con `NEOPIXEL_STRENGTH_PERCENT`, de 0 a 100. Este porcentaje escala el brillo base `NEOPIXEL_BRIGHTNESS` (60); 100 conserva el brillo actual y 0 apaga la emision de luz, aunque el NeoPixel mantiene un pequeño consumo en reposo. `STATUS_LED_LOW_POWER` conserva perfiles de color de menor intensidad y usa el mismo ciclo.
+Si la lectura NTC no es valida, el intervalo de temperatura muestra morado. Durante setup Wi-Fi se pausa el sondeo NTC con el motor apagado y ese intervalo también muestra morado mientras no hay una lectura actualizada. El intervalo de estado conserva la indicacion de error existente. El brillo se ajusta en `src/Board/Pinouts/Dron.h` con `NEOPIXEL_STRENGTH_PERCENT`, de 0 a 100. Este porcentaje escala el brillo base `NEOPIXEL_BRIGHTNESS` (60); 100 conserva el brillo actual y 0 apaga la emision de luz, aunque el NeoPixel mantiene un pequeño consumo en reposo. `STATUS_LED_LOW_POWER` conserva perfiles de color de menor intensidad y usa el mismo ciclo.
+
+Si una captura termina con un error, el LED deja el ciclo y queda fijo en rojo hasta que el dispositivo entre en deep sleep.
 
 ## Flujo de uso
 
@@ -172,7 +174,7 @@ En EOLO Dron no hay Plantower ni anemometro. Por eso no se registran columnas de
 | No hay archivo CSV | Revise que la microSD este insertada y en buen estado. |
 | `ntc_temperature` aparece como `-1` | Revise conexion del NTC o use firmware con `FEATURE_NTC`. |
 | El flujo no alcanza el objetivo | Revise obstrucciones, mangueras, filtros, bombas, calibracion y conexion del AFM07. |
-| La captura queda bloqueada o se aborta | Consulte `/api/diagnostics`: debe haber SD lista, AFM07 fresco, `register0004=0` y NTC valido. Los fallos RS485 aislados se reintentan; tras tres consecutivos revise el cableado y repita el diagnostico AFM07. |
+| La captura queda bloqueada o se aborta | Consulte `/api/diagnostics`: debe haber SD lista, AFM07 fresco, `register0004=0` y NTC valido. Una lectura NTC invalida se confirma durante 100 ms para filtrar transitorios; durante ese lapso se conserva el PWM actual sin nuevos ajustes del PID. Si persiste, el motor se apaga y la captura se aborta. Revise el NTC y su cableado. Los fallos RS485 aislados se reintentan; tras tres consecutivos revise el cableado y repita el diagnostico AFM07. |
 | Aparece una excepcion Modbus `0x04` | Mantenga el motor apagado; revise alimentacion 9–24 V, masa comun, polaridad A/B, terminacion, ID `0x02`, 4800 baud y el registro de estado `0x0004`. |
 | La captura no termina | Puede estar configurada como duracion infinita. Reinicie o corte alimentacion para detener. |
 | Termino y no responde | Es normal: entra en deep sleep. Reinicie o corte y vuelva a alimentar. |

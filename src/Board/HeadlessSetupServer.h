@@ -146,6 +146,7 @@ public:
       strlcpy(_staPass, staPass, sizeof(_staPass));
       LOG_OUT("Intentando conexion a Wi-Fi local: ");
       LOG_OUT_LN(staSsid);
+      WiFi.setTxPower(WIFI_POWER_19_5dBm);
       WiFi.begin(staSsid, staPass);
       _staState = StaConnectionState::Connecting;
       _staStartMs = millis();
@@ -871,11 +872,11 @@ private:
       return;
     }
 
-    int kickPwm = FLOW_PID_KICK_PWM;
+    int kickPwm = EoloConfig::flowPid.kickPwm;
     if (kickPwm <= 0) kickPwm = static_cast<int>(MAX_PWM * 0.80f);
     if (kickPwm > MAX_PWM) kickPwm = MAX_PWM;
 
-    unsigned long kickMs = FLOW_PID_KICK_MS;
+    unsigned long kickMs = EoloConfig::flowPid.kickMs;
     if (kickMs == 0) kickMs = 300;
 
     LOG_OUT("Ejecutando pulso de arranque diagnostico: PWM ");

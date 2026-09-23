@@ -1,10 +1,11 @@
 # Arquitectura modular EOLO
 
-La arquitectura se migra de forma incremental y conserva el firmware
-header-only. Las capas tienen una dirección única de dependencias:
+La arquitectura se migra de forma incremental y conserva el código del
+firmware header-only (`.h`/`.hpp`). Las capas actuales tienen una dirección
+única de dependencias:
 
 ```text
-EoloCore  <-  EoloHardware  <-  src (composición de la aplicación)
+EoloCore  <-  src (hardware y composición de la aplicación)
 ```
 
 ## EoloCore
@@ -28,13 +29,17 @@ Modelos portables actuales:
 - máquinas de captura y calibración de motor;
 - `LogRecord`, `TelemetrySnapshot` y estados de sesión/headless.
 
-## EoloHardware y `src`
+## Hardware y aplicación en `src`
 
 Los drivers que necesitan pines, buses, librerías externas o tareas ESP32
 permanecen en `src/Sensors` y `src/Board` hasta que sus configuraciones sean
 explícitas. Son adaptadores del core: `begin()` es idempotente y los sensores
 exponen `getData(DTO&)` con validez y frescura definidas. No se mantienen
 copias de parsers en las demos.
+
+`EoloHardware` es una posibilidad futura, no una librería presente. Extraerla
+solo tiene sentido cuando haya drivers independientes de perfiles globales y
+de `Context`, manteniendo implementaciones en headers.
 
 `src/Data/Context.h` sigue siendo el composition root. Posee componentes,
 inicializa hardware, ejecuta el ciclo y conecta acciones del core con motor,
@@ -46,9 +51,10 @@ térmico explícitos. Eso evita que estos servicios incluyan o recorran
 `Context`.
 
 `CaptureController` conserva temporalmente un adaptador de composición porque
-su flujo aún coordina escenas, sesión, motor, logging y módem. Sus definiciones
-viven en `ContextCaptureController.h`, que se incluye explícitamente después
-de terminar `Context`, sin reinclusiones ni macros de orden. La calibración
+su flujo aún coordina escenas, sesión, motor, logging y módem. Sus definiciones,
+junto con el preflight y la seguridad de captura de `Context`, viven en
+`ContextCaptureController.h`. `Context.h` lo incluye después de declarar el
+tipo completo, sin reinclusiones ni macros de orden. La calibración
 headless histórica sigue separada del flujo de producto y no se reactiva por
 esta organización.
 

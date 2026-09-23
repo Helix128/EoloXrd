@@ -30,8 +30,8 @@ descripción viva de las capas y sus dependencias.
 3. Migrar captura, protección térmica y PID a entradas/salidas explícitas en
    `Context`, conservando los shims de escenas hasta eliminar consumidores
    antiguos.
-4. Promover a `EoloHardware` solo drivers que no dependan de perfiles globales,
-   `Context` o `Config/Legacy.h`.
+4. Considerar `EoloHardware` solo para drivers que no dependan de perfiles
+   globales, `Context` o `Config/Legacy.h`, y conservar el formato header-only.
 
-Cada corte debe mantener compilables las cuatro variantes, las demos soportadas
-y el test nativo de `EoloCore`.
+Cada corte debe mantener compilables los seis ambientes de firmware, las demos
+soportadas y el test nativo de `EoloCore`.

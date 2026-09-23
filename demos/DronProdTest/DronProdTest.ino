@@ -224,7 +224,7 @@ void latchFailure(const char *reason) {
   context.components.motor.setPwmImmediate(0);
   context.resetMotorFlowController();
   if (context.isCaptureActive())
-    context.capture.abort(context, reason);
+    context.capture.abort(context, CaptureEndReason::Safety);
   state = QaState::NotReady;
   stateStartedMs = millis();
   emitEvent("NOT_READY", reason);

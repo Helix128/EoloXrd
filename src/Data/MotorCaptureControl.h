@@ -16,36 +16,16 @@ class MotorCaptureControl
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     DualMotorFlowController pid;
 
-    FlowPidConfig pidCfg = {
-        FLOW_PID_INTERVAL_MS,
-        FLOW_PID_DEADBAND,
-        FLOW_PID_KP,
-        FLOW_PID_KI,
-        FLOW_PID_INTEGRAL_LIMIT,
-        FLOW_PID_MAX_STEP,
-        FLOW_PID_FILTER_ALPHA,
-        FLOW_PID_MIN_ACTIVE,
-        FLOW_PID_KD,
-        FLOW_PID_MAX_DT_MS,
-        FLOW_PID_SENSOR_STALE_MS,
-        FLOW_PID_KICK_PWM,
-        FLOW_PID_KICK_MS,
-        FLOW_PID_STALL_FLOW_LPM,
-        FLOW_PID_RESTALL_COOLDOWN_MS,
-        FLOW_PID_STALL_CONFIRM_MS,
-        FLOW_PID_SOFT_TRIM_MAX,
-        FLOW_PID_SOFT_MAX_STEP,
-        FLOW_PID_SENSITIVITY,
-        FLOW_PID_RECENTER_DELAY_MS,
-        FLOW_PID_SENSOR_FAULT_STOP_MS,
-        FLOW_PID_ZERO_FLOW_CONFIRM_SAMPLES
-    };
+    FlowPidConfig pidCfg = EoloConfig::flowPid;
     bool pidTestRunning = false;
-    float pidTestTargetFlow = DRONE_TARGET_FLOW_LPM;
+    float pidTestTargetFlow = EoloConfig::droneTargetFlowLpm;
     bool pidConfigLogged = false;
     uint16_t _lastLoggedKickCount = 0;
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
+    static constexpr uint32_t kNtcInvalidConfirmMs = 100UL;
+    bool motorNtcInvalidTiming = false;
+    uint32_t motorNtcInvalidSinceMs = 0;
 
 #if defined(FEATURE_FLOW_PID) || defined(FEATURE_FLOW_CALIBRATION)
     void updatePidMotors(MotorManager &motor, const FlowData &flowData,
@@ -115,23 +95,50 @@ inline bool MotorCaptureControl::updateThermalProtection(const NTCData &ntcData,
 #ifdef FEATURE_NTC
     bool previousActive = motorOverheatActive;
     bool previousValid = motorThermalSensorValid;
+    bool previousNtcFaultLatched = motorNtcFaultLatched;
     float previousTemperature = motorThermalTemperature;
 
     motorThermalSensorValid = ntcValid && ntcData.valid && isfinite(ntcData.temperature);
-    motorThermalTemperature = motorThermalSensorValid ? ntcData.temperature : -99.0f;
     if (!motorThermalSensorValid)
     {
-        motorNtcFaultLatched = true;
-        motor.setPwmImmediate(0);
-        resetFlowController();
         const uint32_t nowMs = millis();
-        if (previousValid || nowMs - lastMotorOverheatLogMs >= NTC_MOTOR_OVERHEAT_LOG_INTERVAL_MS)
+        if (!motorNtcInvalidTiming)
         {
-            LOG_LN("ERROR NTC invalido: motor OFF; requiere nuevo arranque con sensor valido");
+            motorNtcInvalidTiming = true;
+            motorNtcInvalidSinceMs = nowMs;
+        }
+
+        const uint32_t invalidDurationMs = nowMs - motorNtcInvalidSinceMs;
+        if (invalidDurationMs >= kNtcInvalidConfirmMs)
+            motorNtcFaultLatched = true;
+
+        // Rechaza una interrupcion ADC breve durante el PWM. Si persiste,
+        // apaga el motor y enclava el fallo hasta el siguiente inicio valido.
+        motorThermalTemperature = -99.0f;
+        if (motorOverheatActive || motorNtcFaultLatched)
+        {
+            motor.setPwmImmediate(0);
+            resetFlowController();
+        }
+
+        if (previousValid ||
+            (!previousNtcFaultLatched && motorNtcFaultLatched) ||
+            nowMs - lastMotorOverheatLogMs >= NTC_MOTOR_OVERHEAT_LOG_INTERVAL_MS)
+        {
+            if (motorNtcFaultLatched)
+                LOG_F("ERROR NTC invalido persistente raw=%d durante %lu ms: motor OFF; requiere nuevo arranque con sensor valido\n",
+                      ntcData.raw, static_cast<unsigned long>(invalidDurationMs));
+            else
+                LOG_F("NTC invalido raw=%d; confirmando durante %lu ms antes de detener la captura\n",
+                      ntcData.raw, static_cast<unsigned long>(kNtcInvalidConfirmMs));
             lastMotorOverheatLogMs = nowMs;
         }
         return true;
     }
+
+    motorNtcInvalidTiming = false;
+    motorNtcInvalidSinceMs = 0;
+    motorThermalTemperature = ntcData.temperature;
     ThermalProtectionInput thermalInput;
     thermalInput.latched = motorOverheatActive;
     thermalInput.sensorValid = motorThermalSensorValid;
