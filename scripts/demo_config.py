@@ -63,7 +63,15 @@ DEMO_CONFIG = {
     "AFM07Scan": {"models": ["express"], "lib_deps": []},
     "I2CDisplayDiag": {"models": ["express"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
     "MotorDirDiag": {"models": ["express"], "lib_deps": []},
-    "SPIStandardDisplayDiag": {"models": ["standard"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
+    "SPIStandardDisplayDiag": {
+        "models": ["standard"],
+        "lib_deps": [
+            "olikraus/U8g2@^2.36.14",
+            "adafruit/Adafruit Unified Sensor@^1.1.15",
+            "adafruit/Adafruit BME280 Library@^2.3.0",
+            "adafruit/RTClib@^2.1.4",
+        ],
+    },
     "DIPSwitchDiag": {"models": ["dron"], "lib_deps": []},
 }
 

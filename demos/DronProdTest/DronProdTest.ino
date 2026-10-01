@@ -14,9 +14,9 @@
 #include <esp_system.h>
 #include <math.h>
 
-#include "../../src/Data/Context.h"
-#include "../../src/Utility/SystemDiagnostics.h"
-#include "../../src/Utility/SerialOutput.h"
+#include "../../src/Common/Data/Context.h"
+#include "../../src/Common/Utility/SystemDiagnostics.h"
+#include "../../src/Common/Utility/SerialOutput.h"
 
 namespace {
 
@@ -284,7 +284,7 @@ void emitSample(const SensorSnapshot &s) {
 
 bool baseSensorsReady(const SensorSnapshot &s) {
   return context.isSdReady() && s.flowValid && s.bmeValid && s.ntcValid &&
-         s.ntc.temperature < NTC_MOTOR_OVERHEAT_HIGH_C && s.rtcValid &&
+         s.ntc.temperature < EoloConfig::motorOverheatHighC && s.rtcValid &&
          !RS485Bus::getInstance().isAfmSafetyBlocked();
 }
 
@@ -301,7 +301,7 @@ bool runtimeGate(const SensorSnapshot &s, bool motorMustBeOff, const char *&reas
   if (!s.flowValid) { reason = "AFM07_INVALID_OR_STALE"; return false; }
   if (RS485Bus::getInstance().isAfmSafetyBlocked()) { reason = "AFM07_DIAGNOSTIC_LATCH"; return false; }
   if (!s.ntcValid) { reason = "NTC_INVALID"; return false; }
-  if (s.ntc.temperature >= NTC_MOTOR_OVERHEAT_HIGH_C) { reason = "NTC_OVER_70C"; return false; }
+  if (s.ntc.temperature >= EoloConfig::motorOverheatHighC) { reason = "NTC_OVER_70C"; return false; }
   if (!s.bmeValid) { reason = "BME280_INVALID"; return false; }
   if (!s.rtcValid) { reason = "RTC_INVALID"; return false; }
   if (previousRtcUnix != 0 && s.rtcUnix < previousRtcUnix) { reason = "RTC_NOT_MONOTONIC"; return false; }
@@ -705,7 +705,7 @@ void setup() {
   pinMode(PPH_PWR_PIN, OUTPUT);
   digitalWrite(PPH_PWR_PIN, HIGH);
 #endif
-  I2CBus::getInstance().setWarmupFromNow(I2C_WARMUP_MS);
+  I2CBus::getInstance().setWarmupFromNow(EoloConfig::i2cWarmupMs);
   context.components.motor.begin();
   context.components.motor.setPwmImmediate(0);
   Serial.begin(115200);

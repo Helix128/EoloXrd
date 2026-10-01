@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "../../src/Board/RTCManager.h"
+#include "../../src/Common/Board/RTCManager.h"
 #include <Eolo/Core/Time/RtcTimeParser.h>
 
 void test_parse_valid_time_server_response() {

@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Effectors/Motor.h"
+#include "../../src/Common/Effectors/Motor.h"
 #include <Eolo/Core/Flow/SmartFlowController.h>
 
 static int runClosedLoopStep(int basePwm, int &currentPwm, float targetFlow, float measuredFlow, float &integral)

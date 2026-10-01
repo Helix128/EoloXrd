@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Board/HeadlessSetupTypes.h"
+#include "../../src/Headless/HeadlessSetupTypes.h"
 #include <Eolo/Core/Flow/FlowSchedule.h>
 
 void test_setup_activation_only_wait_off()
@@ -15,7 +15,7 @@ void test_config_validation()
 {
     HeadlessSetupConfig config;
     config.waitSeconds = 0;
-    config.durationSeconds = 5UL * MINUTE;
+    config.durationSeconds = 5UL * EoloConfig::kMinute;
     config.targetFlow = 5.0f;
     TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config));
 
@@ -26,7 +26,7 @@ void test_config_validation()
     config.durationSeconds = 0;
     TEST_ASSERT_FALSE(HeadlessSetup::validateConfig(config));
 
-    config.durationSeconds = DRONE_DURATION_INFINITE;
+    config.durationSeconds = EoloConfig::kDurationInfinite;
     TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config));
 
     config.targetFlow = -0.1f;
@@ -52,7 +52,7 @@ void test_flow_schedule_transitions_by_elapsed_time()
     sections[1].durationSeconds = 600;
     sections[1].targetFlow = 6.0f;
 
-    TEST_ASSERT_TRUE(FlowSchedule::validate(2, sections, 900, DRONE_DURATION_INFINITE, 0.0f, 8.0f));
+    TEST_ASSERT_TRUE(FlowSchedule::validate(2, sections, 900, EoloConfig::kDurationInfinite, 0.0f, 8.0f));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, FlowSchedule::targetAtElapsed(5.0f, 2, sections, 0));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, FlowSchedule::targetAtElapsed(5.0f, 2, sections, 299));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 6.0f, FlowSchedule::targetAtElapsed(5.0f, 2, sections, 300));
@@ -64,14 +64,14 @@ void test_flow_schedule_validation_rejects_invalid_sections()
     FlowSection sections[1];
     sections[0].durationSeconds = 0;
     sections[0].targetFlow = 4.0f;
-    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 900, DRONE_DURATION_INFINITE, 0.0f, 8.0f));
+    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 900, EoloConfig::kDurationInfinite, 0.0f, 8.0f));
 
     sections[0].durationSeconds = 300;
     sections[0].targetFlow = 8.1f;
-    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 900, DRONE_DURATION_INFINITE, 0.0f, 8.0f));
+    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 900, EoloConfig::kDurationInfinite, 0.0f, 8.0f));
 
     sections[0].targetFlow = 4.0f;
-    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 299, DRONE_DURATION_INFINITE, 0.0f, 8.0f));
+    TEST_ASSERT_FALSE(FlowSchedule::validate(1, sections, 299, EoloConfig::kDurationInfinite, 0.0f, 8.0f));
 }
 
 void test_log_basename_sanitization()

@@ -1,6 +1,6 @@
 # Pinout EOLO Standard
 
-Fuente: `src/Board/Pinout.h` con `EOLO_TARGET_STANDARD`.
+Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_STANDARD`.
 
 El OLED probado usa SPI de hardware sobre VSPI: SCK `GPIO18`, MISO `GPIO19`,
 MOSI `GPIO23`, CS `GPIO27`, DC `GPIO15` y RESET `GPIO2`. El CS queda libre
