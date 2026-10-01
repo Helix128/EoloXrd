@@ -1,6 +1,6 @@
 # Pinout EOLO Express
 
-Fuente: `src/Board/Pinout.h` con `EOLO_TARGET_EXPRESS`.
+Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS`.
 
 **Ground truth:** este mapa proviene de la demo secuencial oficial del EOLO
 Express (demo del profesor). El firmware Express **ya no** comparte el bloque de
@@ -53,7 +53,7 @@ GPIO27/25; la demo del profe usa `Serial1` sobre los mismos pines.
 
 - `GPIO34` es solo entrada (batería ADC).
 - Bombas DC en `GPIO32/33` (MOSFET low-side, PWM **directo**: duty 0 = apagado).
-  El perfil tipado `src/Config/Profiles/Express.h` fija
+  El perfil tipado `src/Variants/Profiles/Express.h` fija
   `motorPwmInverted = false`.
 - RS485/AFM07 en `GPIO27/25/26`, verificado en hardware (lecturas Modbus OK).
 - Plantower/PMS usa `GPIO17` (RX ESP) y `GPIO16` (TX ESP).

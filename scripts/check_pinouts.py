@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PINOUT = ROOT / "src/Board/Pinout.h"
+PINOUT = ROOT / "src/Variants/Pinout.h"
 DEMO = ROOT / "demos/EoloDemoPinout.h"
 
 TARGETS = {
@@ -92,8 +92,8 @@ def main() -> int:
     pending = []
     seen_exceptions = set()
 
-    if '#include "../src/Board/Pinout.h"' not in demo_text:
-        errors.append(f"{DEMO}: no incluye la fuente autoritativa src/Board/Pinout.h")
+    if '#include "../src/Variants/Pinout.h"' not in demo_text:
+        errors.append(f"{DEMO}: no incluye la fuente autoritativa src/Variants/Pinout.h")
 
     for target, cfg in TARGETS.items():
         pinout = parse_defines(cfg["macro"])

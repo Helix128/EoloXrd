@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "../../src/Board/I2CBus.h"
+#include "../../src/Common/Board/I2CBus.h"
 
 void test_i2c_begin_idempotente() {
     I2CBus& bus = I2CBus::getInstance();

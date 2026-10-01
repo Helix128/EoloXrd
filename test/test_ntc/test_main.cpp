@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Sensors/NTC.h"
+#include "../../src/Common/Sensors/NTC.h"
 #include <Eolo/Core/Sensors/NtcThermistor.h>
 
 void test_ntc_core_math_compiles_without_sensor_adapter()

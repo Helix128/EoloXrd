@@ -1,6 +1,6 @@
 # Pinout EOLO Express Legacy
 
-Fuente: `src/Board/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
+Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
 
 EOLO Express Legacy comparte la mayor parte del mapa base con EOLO Standard y EOLO Express. La diferencia funcional principal es el sensor de flujo legacy FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 

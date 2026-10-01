@@ -9,25 +9,25 @@ del dueño y mantenga compilable cada corte.
 
 | Tipo de valor | Dueño | Ejemplo |
 | --- | --- | --- |
-| Capacidad del firmware | `platformio.ini` y `Config/VariantValidation.h` | `FEATURE_FLOW_PID` |
-| Ajuste de una variante | `src/Config/Profiles/<Modelo>.h`, expuesto por `ActiveProfile.h` | `Profile::kFlowPid`, umbrales NTC |
-| GPIO y cableado | `src/Board/Pinouts/<Modelo>.h`, seleccionado por `Pinout.h` | pines de motor, buses y display |
+| Capacidad del firmware | `platformio.ini` y `Variants/VariantValidation.h` | `FEATURE_FLOW_PID` |
+| Ajuste de una variante | `src/Variants/Profiles/<Modelo>.h`, expuesto por `ActiveProfile.h` | `Profile::kFlowPid`, umbrales NTC |
+| GPIO y cableado | `src/Variants/Pinouts/<Modelo>.h`, seleccionado por `Pinout.h` | pines de motor, buses y display |
 | Constante interna de un módulo | Header del módulo | cadencia propia del servicio |
 | Dato de usuario persistido | Servicio que lee y escribe NVS | `SessionStore.h`: namespace `eolo_session`, clave `startDate` |
 
-`Config/Legacy.h` conserva los alias todavía consumidos. Para retirar uno,
+`Variants/Legacy.h` conserva los alias todavía consumidos. Para retirar uno,
 cambie primero sus consumidores a `EoloConfig` o al dueño real, confirme con
 `rg` que no quedan usos y compile las variantes. Los macros de selección de
 código y los símbolos de librerías de display siguen siendo macros.
 
 ## Cómo añadir una variante
 
-1. Añada el perfil completo en `src/Config/Profiles/` y su selección exclusiva
+1. Añada el perfil completo en `src/Variants/Profiles/` y su selección exclusiva
    en `ActiveProfile.h`.
-2. Añada un pinout completo en `src/Board/Pinouts/`, selección en `Pinout.h` y
+2. Añada un pinout completo en `src/Variants/Pinouts/`, selección en `Pinout.h` y
    reglas de conflicto en `PinoutValidation.h`.
 3. Declare target y capacidades explícitas en `platformio.ini` y valídelas en
-   `Config/VariantValidation.h`. Actualice `scripts/demo_config.py` si la
+   `Variants/VariantValidation.h`. Actualice `scripts/demo_config.py` si la
    variante soporta demos; regenere `platformio.demos.ini` con
    `scripts/generate_demo_envs.py`.
 4. Documente el mapa en `pinouts/` y ejecute `scripts/check_pinouts.py`.
@@ -57,12 +57,17 @@ y la aplicación están en `src`; todavía no existe una librería
 ## Prueba mínima por corte
 
 ```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_standard_libraries -e eolo_dron -e eolo_dron_low_power
+pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron -e eolo_dron_low_power
 pio test -e native
 python3 scripts/check_pinouts.py
+python3 scripts/check_family_boundaries.py
 bash scripts/audit_eolo_core_deps.sh
 git diff --check
 ```
+
+`scripts/check_all.sh` ejecuta todo lo anterior y compila los 5 entornos
+(`--with-hw-suites` compila las suites de `test/` en `eolo_dron` y
+`--with-demos` compila todas las demos).
 
 Si se toca la composición de `Context`, compile también
 `demo_dronprodtest_dron`. La compilación no reemplaza una prueba física de

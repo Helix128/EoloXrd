@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Data/Logging/LogIndexService.h"
-#include "Data/Logging/LogSchema.h"
+#include "../../src/Common/Data/Logging/LogIndexService.h"
+#include "../../src/Common/Data/Logging/LogSchema.h"
 
 struct FakeSession
 {

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Data/MotorCaptureControl.h"
-#include "Data/Context.h"
+#include "../../src/Common/Data/MotorCaptureControl.h"
+#include "../../src/Common/Data/Context.h"
 #include <Eolo/Core/Flow/SmartFlowController.h>
 
 static FlowPidConfig validPidConfig()
@@ -195,7 +195,7 @@ void test_flow_motor_controller_caps_dt_after_invalid_sensor()
 void test_drone_actuation_requires_sd_and_fresh_sensors()
 {
     Context ctx;
-    ctx.session.targetFlow = DRONE_TARGET_FLOW_LPM;
+    ctx.session.targetFlow = EoloConfig::droneTargetFlowLpm;
     ctx.components.motor.setPwmImmediate(EoloConfig::flowPidInitialPwm);
 
     ctx.updateMotors();

@@ -1,0 +1,1208 @@
+#ifndef MODEM_H
+#define MODEM_H
+
+#include <Arduino.h>
+#include <RTClib.h>
+#include <Eolo/Core/Communication/AtResponse.h>
+#include <Eolo/Core/Communication/HttpUrl.h>
+#include <Eolo/Types/ModemHttpContract.h>
+#include "../Variants/Legacy.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+
+#define ModemIO Serial1
+
+class Modem
+{
+public:
+  const int powerPin = MODEM_PWR_PIN;
+  const int modemRxPin = MODEM_RX_PIN;
+  const int modemTxPin = MODEM_TX_PIN;
+  static constexpr uint8_t PowerOnLevel = HIGH;
+  static constexpr uint8_t PowerOffLevel = LOW;
+  static constexpr uint32_t PowerOnSettleMs = 15000;
+  static constexpr const char *DefaultApn = EoloConfig::modemApn;
+  const char *apn = DefaultApn;
+
+  Modem() {}
+
+  bool begin()
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return beginLocked();
+  }
+
+  void end()
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return;
+    endLocked();
+  }
+
+  bool connect()
+  {
+    return ensureConnected();
+  }
+
+  bool connect(const char *apnOverride)
+  {
+    return ensureConnected(apnOverride);
+  }
+
+  bool ensureConnected()
+  {
+    return ensureConnected(apn);
+  }
+
+  bool ensureConnected(const char *apnOverride)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return ensureConnectedLocked(apnOverride);
+  }
+
+  bool isConnected()
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return beginLocked() && isConnectedLocked();
+  }
+
+  bool openNetwork()
+  {
+    return openNetwork(apn);
+  }
+
+  bool openNetwork(const char *apnOverride)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return beginLocked() && openNetworkLocked(apnOverride);
+  }
+
+  bool isSerialStarted()
+  {
+    ScopedLock lock(*this, pdMS_TO_TICKS(50));
+    return lock.locked() && serialStarted;
+  }
+
+  bool isPowered()
+  {
+    ScopedLock lock(*this, pdMS_TO_TICKS(50));
+    return lock.locked() && powered;
+  }
+
+  static void configurePowerPinOff()
+  {
+    pinMode(MODEM_PWR_PIN, OUTPUT);
+    digitalWrite(MODEM_PWR_PIN, PowerOffLevel);
+  }
+
+  static void configurePowerPinOn()
+  {
+    pinMode(MODEM_PWR_PIN, OUTPUT);
+    digitalWrite(MODEM_PWR_PIN, PowerOnLevel);
+  }
+
+  const char *lastErrorText()
+  {
+    return lastError;
+  }
+
+  int lastHttpStatus() const { return lastHttpActionStatus; }
+  bool lastHttpResponseTruncated() const { return _lastHttpResponseTruncated; }
+
+  bool rawAT(const char *command, String &response, unsigned long timeout = 5000)
+  {
+    response = "";
+    if (command == nullptr || command[0] == '\0') {
+      setLastError("comando AT vacío");
+      return false;
+    }
+
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+
+    response = sendATResponseUntilFinalLocked(command, timeout, MaxRawResponseLength);
+    return response.length() > 0 && response.indexOf("ERROR") == -1;
+  }
+
+  bool rawAT(const char *command, char *response, size_t responseLen, unsigned long timeout = 5000)
+  {
+    if (response != nullptr && responseLen > 0) response[0] = '\0';
+    if (command == nullptr || command[0] == '\0') {
+      setLastError("comando AT vacío");
+      return false;
+    }
+
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+
+    return sendATResponseUntilFinalLocked(command, response, responseLen, timeout);
+  }
+
+  bool scanOperators(String &response, unsigned long timeout = 180000)
+  {
+    response = "";
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+
+    if (!sendATLocked("AT", "OK", 2000)) return false;
+    response = sendATResponseUntilFinalLocked("AT+COPS=?", timeout, MaxScanResponseLength);
+    return response.indexOf("+COPS:") != -1 && response.indexOf("ERROR") == -1;
+  }
+
+  bool selectOperatorAuto()
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return beginLocked() && sendATLocked("AT+COPS=0", "OK", 120000);
+  }
+
+  bool selectOperatorNumeric(const char *numericCode)
+  {
+    if (numericCode == nullptr || numericCode[0] == '\0') {
+      setLastError("operador vacío");
+      return false;
+    }
+
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+
+    char cmd[40];
+    int written = snprintf(cmd, sizeof(cmd), "AT+COPS=1,2,\"%s\"", numericCode);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("código de operador demasiado largo");
+      return false;
+    }
+    return sendATLocked(cmd, "OK", 120000);
+  }
+
+  void printDiagnostics(Print &out)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) {
+      out.println("Modem ocupado");
+      return;
+    }
+
+    out.printf("power=%s serial=%s at=%s last_error=%s\n",
+               powered ? "on" : "off",
+               serialStarted ? "on" : "off",
+               atReady ? "ready" : "unknown",
+               lastError);
+
+    if (!beginLocked()) {
+      out.println("Modem apagado/no inicializado. Usa: m begin");
+      return;
+    }
+
+    printATLocked(out, "AT");
+    printATLocked(out, "ATI");
+    printATLocked(out, "AT+CPIN?");
+    printATLocked(out, "AT+CSQ");
+    printATLocked(out, "AT+COPS?");
+    printATLocked(out, "AT+CREG?");
+    printATLocked(out, "AT+CGREG?");
+    printATLocked(out, "AT+CEREG?");
+    printATLocked(out, "AT+CGACT?");
+    printATLocked(out, "AT+NETOPEN?");
+    printATLocked(out, "AT+IPADDR");
+  }
+
+  bool get(const char *url, char *respBuffer, int bufferSize)
+  {
+    return executeHttpGet(url, respBuffer, bufferSize);
+  }
+
+  bool post(const char *url, const char *payload, char *respBuffer, int bufferSize)
+  {
+    return executeHttpPost(url, payload, respBuffer, bufferSize);
+  }
+
+  bool executeHttpGet(const char *url, char *respBuffer, int bufferSize)
+  {
+    return executeHttpRequest(0, url, nullptr, respBuffer, bufferSize);
+  }
+
+  bool executeHttpPost(const char *url, const char *payload, char *respBuffer, int bufferSize)
+  {
+    return executeHttpRequest(1, url, payload, respBuffer, bufferSize);
+  }
+
+  // Ping a host. elapsedMs = tiempo del primer reply (si hubo).
+  bool ping(const char *host, unsigned long *elapsedMs = nullptr)
+  {
+    if (host == nullptr || host[0] == '\0') {
+      setLastError("host ping vacío");
+      return false;
+    }
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    if (!beginLocked()) return false;
+    return pingLocked(host, elapsedMs);
+  }
+
+  bool sendAT(const char *command, const char *expected, unsigned long timeout)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+    return beginLocked() && sendATLocked(command, expected, timeout);
+  }
+
+  String sendATResponse(const char *command, unsigned long timeout)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return "";
+    if (!beginLocked()) return "";
+    return sendATResponseLocked(command, timeout, MaxResponseLength);
+  }
+
+  String sendATResponseUntilFinal(const char *command, unsigned long timeout)
+  {
+    ScopedLock lock(*this);
+    if (!lock.locked()) return "";
+    if (!beginLocked()) return "";
+    return sendATResponseUntilFinalLocked(command, timeout, MaxResponseLength);
+  }
+
+private:
+  static const size_t MaxResponseLength = 1024;
+  static const size_t MaxRawResponseLength = 2048;
+  static const size_t MaxScanResponseLength = 4096;
+  static const size_t MaxLineLength = 256;
+  static const size_t WaitBufferLength = 240;
+
+  bool serialStarted = false;
+  bool powered = false;
+  bool atReady = false;
+  SemaphoreHandle_t mutex = nullptr;
+  char lastError[96] = "OK";
+  int lastHttpActionStatus = 0;
+  bool _lastHttpResponseTruncated = false;
+
+  class ScopedLock {
+  public:
+    ScopedLock(Modem &modem, TickType_t waitTicks = portMAX_DELAY) : _modem(modem) {
+      _locked = _modem.lock(waitTicks);
+    }
+
+    ~ScopedLock() {
+      if (_locked) _modem.unlock();
+    }
+
+    bool locked() const {
+      return _locked;
+    }
+
+  private:
+    Modem &_modem;
+    bool _locked = false;
+  };
+
+  bool lock(TickType_t waitTicks) {
+    if (mutex == nullptr) {
+      mutex = xSemaphoreCreateMutex();
+      if (mutex == nullptr) {
+        setLastError("sin memoria para mutex");
+        return false;
+      }
+    }
+
+    if (xSemaphoreTake(mutex, waitTicks) != pdTRUE) {
+      setLastError("modem ocupado");
+      return false;
+    }
+    return true;
+  }
+
+  void unlock() {
+    if (mutex != nullptr) {
+      xSemaphoreGive(mutex);
+    }
+  }
+
+  void setLastError(const char *message) {
+    if (message == nullptr) message = "error desconocido";
+    strncpy(lastError, message, sizeof(lastError) - 1);
+    lastError[sizeof(lastError) - 1] = '\0';
+  }
+
+  void clearLastError() {
+    setLastError("OK");
+  }
+
+  bool executeHttpRequest(uint8_t method, const char *url, const char *payload, char *respBuffer, int bufferSize)
+  {
+    _lastHttpResponseTruncated = false;
+    if (url == nullptr || url[0] == '\0' || respBuffer == nullptr || bufferSize <= 1) {
+      setLastError("parámetros HTTP inválidos");
+      return false;
+    }
+    if (!ModemHttpContract::urlFits(url)) {
+      setLastError("URL HTTP demasiado larga");
+      return false;
+    }
+    if (method == 1 && !ModemHttpContract::payloadFits(payload)) {
+      setLastError("payload HTTP demasiado largo");
+      return false;
+    }
+
+    ScopedLock lock(*this);
+    if (!lock.locked()) return false;
+
+    return ensureConnectedLocked(apn) &&
+           waitForHttpReadyLocked(30000) &&
+           httpRequestLocked(method, url, payload, respBuffer, bufferSize);
+  }
+
+  bool beginLocked()
+  {
+    if (serialStarted)
+    {
+      if (atReady) return true;
+      atReady = waitForATLocked(8000);
+      return atReady;
+    }
+
+    pinMode(powerPin, OUTPUT);
+    digitalWrite(powerPin, PowerOnLevel);
+    powered = true;
+    vTaskDelay(pdMS_TO_TICKS(PowerOnSettleMs));
+
+    // Los nombres modemRxPin/modemTxPin vienen desde la perspectiva del modem.
+    // HardwareSerial espera pines desde la perspectiva del ESP32: rxPin, txPin.
+    ModemIO.begin(115200, SERIAL_8N1, modemTxPin, modemRxPin);
+    serialStarted = true;
+    clearRxLocked();
+    LOG_F("UART modem iniciado ESP32_RX=%d ESP32_TX=%d\n", modemTxPin, modemRxPin);
+
+    if (!waitForATLocked(20000))
+    {
+      LOG_LN("Modem no responde a AT");
+      atReady = false;
+      return false;
+    }
+
+    if (!sendATLocked("ATE0", "OK", 10000))
+    {
+      LOG_LN("No se pudo desactivar eco del modem");
+      atReady = false;
+      return false;
+    }
+
+    atReady = true;
+    clearLastError();
+    return true;
+  }
+
+  void endLocked()
+  {
+    if (serialStarted)
+    {
+      if (atReady)
+      {
+        sendATLocked("AT+NETCLOSE", "OK", 1000);
+      }
+      ModemIO.end();
+      serialStarted = false;
+      atReady = false;
+    }
+
+    pinMode(powerPin, OUTPUT);
+    digitalWrite(powerPin, PowerOffLevel);
+    powered = false;
+    clearLastError();
+  }
+
+  bool ensureConnectedLocked(const char *apnOverride)
+  {
+    if (!beginLocked()) return false;
+    if (!sendATLocked("AT", "OK", 5000)) return false;
+    if (!sendATLocked("AT+CPIN?", "READY", 5000)) return false;
+    if (!waitForNetworkRegistrationLocked(90000)) return false;
+
+    if (isConnectedLocked()) return true;
+
+    if (openNetworkLocked(apnOverride) && isConnectedLocked()) return true;
+
+    LOG_LN("Modem sin IP valida; reintentando conexion PDP");
+    sendATLocked("AT+NETCLOSE", "OK", 5000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    return openNetworkLocked(apnOverride) && isConnectedLocked();
+  }
+
+  bool isConnectedLocked()
+  {
+    if (!sendATLocked("AT", "OK", 5000)) return false;
+
+    String netState = sendATResponseUntilFinalLocked("AT+NETOPEN?", 10000, MaxResponseLength);
+    if (netState.indexOf("+NETOPEN: 1") == -1) return false;
+
+    String ip = sendATResponseUntilFinalLocked("AT+IPADDR", 10000, MaxResponseLength);
+    return AtResponse::hasValidIp(ip.c_str());
+  }
+
+  bool openNetworkLocked(const char *apnOverride)
+  {
+    if (apnOverride == nullptr || apnOverride[0] == '\0') apnOverride = apn;
+
+    char cmd[96];
+    int written = snprintf(cmd, sizeof(cmd), "AT+CGDCONT=1,\"IP\",\"%s\"", apnOverride);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("APN demasiado largo");
+      return false;
+    }
+
+    if (!sendATLocked(cmd, "OK", 10000)) return false;
+
+    // CGACT puede fallar si el contexto ya está activo — tolerar y verificar
+    if (!sendATLocked("AT+CGACT=1,1", "OK", 60000)) {
+      String cgactState = sendATResponseUntilFinalLocked("AT+CGACT?", 10000, MaxResponseLength);
+      if (cgactState.indexOf("+CGACT: 1,1") == -1) {
+        setLastError("contexto PDP no activo");
+        return false;
+      }
+      LOG_LN("CGACT ya activo, continuando...");
+    }
+
+    // Cerrar TCP stack si ya estaba abierto antes de reabrir
+    sendATLocked("AT+NETCLOSE", "OK", 15000);
+    vTaskDelay(pdMS_TO_TICKS(1500));
+
+    if (!sendATLocked("AT+NETOPEN", "0", 90000))
+    {
+      if (!sendATLocked("AT+NETOPEN?", "1", 10000)) return false;
+    }
+
+    if (!waitForValidIpLocked(30000))
+    {
+      setLastError("IP inválida");
+      LOG_LN("Modem no obtuvo direccion IP");
+      return false;
+    }
+
+    clearLastError();
+    return true;
+  }
+
+  bool waitForHttpReadyLocked(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (sendATLocked("AT", "OK", 5000) && isConnectedLocked()) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+        clearRxLocked();
+        clearLastError();
+        return true;
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    setLastError("modem no listo para HTTP");
+    return false;
+  }
+
+  bool waitForNetworkRegistrationLocked(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (isRegisteredLocked()) {
+        clearLastError();
+        return true;
+      }
+      vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    setLastError("timeout registro red");
+    return false;
+  }
+
+  bool isRegisteredLocked()
+  {
+    String response = sendATResponseUntilFinalLocked("AT+CREG?", 10000, MaxResponseLength);
+    if (AtResponse::isRegistered(response.c_str())) return true;
+
+    response = sendATResponseUntilFinalLocked("AT+CGREG?", 10000, MaxResponseLength);
+    if (AtResponse::isRegistered(response.c_str())) return true;
+
+    response = sendATResponseUntilFinalLocked("AT+CEREG?", 10000, MaxResponseLength);
+    return AtResponse::isRegistered(response.c_str());
+  }
+
+  bool waitForValidIpLocked(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      String ip = sendATResponseUntilFinalLocked("AT+IPADDR", 10000, MaxResponseLength);
+      if (AtResponse::hasValidIp(ip.c_str())) {
+        clearLastError();
+        return true;
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    return false;
+  }
+
+  bool httpRequestLocked(uint8_t method, const char *url, const char *payload, char *respBuffer, int bufferSize)
+  {
+    if (url == nullptr || url[0] == '\0' || respBuffer == nullptr || bufferSize <= 1) {
+      setLastError("parámetros HTTP inválidos");
+      return false;
+    }
+    if (!ModemHttpContract::urlFits(url)) {
+      setLastError("URL HTTP demasiado larga");
+      return false;
+    }
+    if (method == 1 && !ModemHttpContract::payloadFits(payload)) {
+      setLastError("payload HTTP demasiado largo");
+      return false;
+    }
+
+    char normalizedUrl[ModemHttpContract::kHttpUrlStorageBytes];
+    char cmd[ModemHttpContract::kHttpAtCommandBufferBytes];
+    // savedError preserva el error real antes del cleanup, que puede machacarlo con "OK"
+    char savedError[sizeof(lastError)];
+    memcpy(savedError, lastError, sizeof(savedError));
+
+    respBuffer[0] = '\0';
+    bool httpStarted = false;
+    bool success = false;
+    int written = 0;
+    int dataLen = 0;
+    bool usingResolvedIp = false;
+
+    if (!normalizeHttpUrl(url, normalizedUrl, sizeof(normalizedUrl))) return false;
+
+    char requestUrl[ModemHttpContract::kHttpUrlStorageBytes];
+    char host[128];
+    copyCString(requestUrl, sizeof(requestUrl), normalizedUrl);
+    bool hasHost = HttpUrl::extractHost(normalizedUrl, host, sizeof(host));
+    bool isHttps = (strncmp(normalizedUrl, "https://", 8) == 0);
+
+retry_http:
+    if (!sendATLocked("AT+HTTPINIT", "OK", 10000)) {
+      sendATLocked("AT+HTTPTERM", "OK", 5000);
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      if (!sendATLocked("AT+HTTPINIT", "OK", 10000)) goto cleanup;
+    }
+    httpStarted = true;
+
+    sendATOptionalLocked("AT+CIPDNSSET=1,30000,3", "OK", 5000);
+    sendATOptionalLocked("AT+HTTPPARA=\"CONNECTTO\",120", "OK", 5000);
+    sendATOptionalLocked("AT+HTTPPARA=\"RECVTO\",60", "OK", 5000);
+    sendATOptionalLocked("AT+HTTPPARA=\"RESPTO\",60", "OK", 5000);
+    sendATOptionalLocked("AT+HTTPPARA=\"ACCEPT\",\"*/*\"", "OK", 5000);
+    sendATOptionalLocked("AT+HTTPPARA=\"UA\",\"EoloXrd SIM7600\"", "OK", 5000);
+
+    if (usingResolvedIp && hasHost) {
+      written = snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"USERDATA\",\"Host: %s\"", host);
+      if (written < 0 || written >= (int)sizeof(cmd)) {
+        setLastError("Host HTTP demasiado largo");
+        goto cleanup;
+      }
+      if (!sendATLocked(cmd, "OK", 10000)) goto cleanup;
+    }
+
+    if (isHttps) {
+      // SIM7600 SSL context 0: strict peer verification and SNI.  The CA
+      // bundle is provisioned at manufacturing as cacert.pem; a missing or
+      // invalid CA therefore fails closed instead of silently using HTTP.
+      if (!sendATLocked("AT+CSSLCFG=\"sslversion\",0,3", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"authmode\",0,1", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"cacert\",0,\"cacert.pem\"", "OK", 10000) ||
+          !sendATLocked("AT+CSSLCFG=\"enableSNI\",0,1", "OK", 10000)) goto cleanup;
+      if (!sendATLocked("AT+HTTPPARA=\"SSLCFG\",\"0\"", "OK", 5000)) goto cleanup;
+    }
+
+    written = snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"%s\"", requestUrl);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("URL demasiado larga");
+      goto cleanup;
+    }
+
+    if (!sendATLocked(cmd, "OK", 10000)) goto cleanup;
+
+    if (method == 1) {
+      if (payload == nullptr) payload = "";
+      if (!sendATLocked("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\"", "OK", 10000)) goto cleanup;
+
+      size_t payloadLen = strlen(payload);
+      written = snprintf(cmd, sizeof(cmd), "AT+HTTPDATA=%u,30000", (unsigned int)payloadLen);
+      if (written < 0 || written >= (int)sizeof(cmd)) {
+        setLastError("payload HTTP demasiado largo");
+        goto cleanup;
+      }
+
+      if (!sendATLocked(cmd, "DOWNLOAD", 15000)) goto cleanup;
+      ModemIO.print(payload);
+      if (!waitForLocked("OK", 30000)) goto cleanup;
+    }
+
+    written = snprintf(cmd, sizeof(cmd), "AT+HTTPACTION=%u", method);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("comando HTTPACTION inválido");
+      goto cleanup;
+    }
+    if (!sendATLocked(cmd, "OK", 30000)) goto cleanup;
+    lastHttpActionStatus = 0;
+
+    {
+      unsigned long actionTimeout = isHttps ? 120000 : 90000;
+      unsigned long readTimeout   = isHttps ? 60000 : 45000;
+      dataLen = waitForHttpActionLocked(method, actionTimeout);
+      if (dataLen < 0) {
+        if (method == 0 && !isHttps && !usingResolvedIp && lastHttpActionStatus == 713 && hasHost) {
+          char resolvedIp[48];
+          char actionError[sizeof(lastError)];
+          copyCString(actionError, sizeof(actionError), lastError);
+
+          if (httpStarted) {
+            sendATLocked("AT+HTTPTERM", "OK", 10000);
+            httpStarted = false;
+          }
+
+          if (resolveHostIPv4Locked(host, resolvedIp, sizeof(resolvedIp)) &&
+              buildHttpUrlWithHostIp(normalizedUrl, resolvedIp, requestUrl, sizeof(requestUrl))) {
+            usingResolvedIp = true;
+            LOG_F("HTTP DNS fallo para %s; reintentando por IP %s con Host header\n", host, resolvedIp);
+            goto retry_http;
+          }
+
+          setLastError(actionError);
+        }
+        goto cleanup;
+      }
+      if (dataLen > 0) {
+        if (!readHttpResponseLocked(dataLen, respBuffer, bufferSize, readTimeout)) goto cleanup;
+      }
+    }
+
+    success = true;
+
+cleanup:
+    // Preservar el error real antes de que HTTPTERM lo limpie
+    memcpy(savedError, lastError, sizeof(savedError));
+    savedError[sizeof(savedError) - 1] = '\0';
+    if (httpStarted) {
+      sendATLocked("AT+HTTPTERM", "OK", 10000);
+    }
+    if (!success) setLastError(savedError);
+    return success;
+  }
+
+  int waitForHttpActionLocked(uint8_t method, unsigned long timeout)
+  {
+    unsigned long start = millis();
+    char expectedPrefix[24];
+    snprintf(expectedPrefix, sizeof(expectedPrefix), "+HTTPACTION: %u,", method);
+    size_t prefixLen = strlen(expectedPrefix);
+
+    String line = "";
+    line.reserve(64);
+
+    while (millis() - start < timeout)
+    {
+      if (!ModemIO.available())
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        continue;
+      }
+
+      char c = (char)ModemIO.read();
+      if (c == '\n')
+      {
+        int prefixIndex = line.indexOf(expectedPrefix);
+        if (prefixIndex != -1)
+        {
+          int statusStart = prefixIndex + (int)prefixLen;
+          int comma = line.indexOf(',', statusStart);
+          if (comma == -1) {
+            setLastError("HTTPACTION inválido");
+            return -1;
+          }
+          int status = line.substring(statusStart, comma).toInt();
+          lastHttpActionStatus = status;
+          int dataLen = line.substring(comma + 1).toInt();
+          if (status < 200 || status >= 300) {
+            char errBuf[64];
+            snprintf(errBuf, sizeof(errBuf), "HTTPACTION %d %s", status, AtResponse::httpActionStatusText(status));
+            setLastError(errBuf);
+            return -1;
+          }
+          return dataLen >= 0 ? dataLen : -1;
+        }
+        line = "";
+      }
+      else if (c != '\r')
+      {
+        appendLimited(line, c, MaxLineLength);
+      }
+    }
+
+    setLastError("timeout HTTPACTION");
+    return -1;
+  }
+
+  bool readHttpResponseLocked(int dataLen, char *respBuffer, int bufferSize, unsigned long timeout)
+  {
+    char cmd[32];
+    int written = snprintf(cmd, sizeof(cmd), "AT+HTTPREAD=%d", dataLen);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("comando HTTPREAD inválido");
+      return false;
+    }
+
+    clearRxLocked();
+    ModemIO.println(cmd);
+
+    unsigned long start = millis();
+    bool headerSeen = false;
+    bool truncated = false;
+    _lastHttpResponseTruncated = false;
+    int idx = 0;
+
+    // Buscar "+HTTPREAD" con streaming, sin quemar 2s por línea
+    {
+      String hdrLine = "";
+      hdrLine.reserve(32);
+      while (millis() - start < timeout && !headerSeen)
+      {
+        if (!ModemIO.available()) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
+        char c = (char)ModemIO.read();
+        if (c == '\n')
+        {
+          if (hdrLine.indexOf("+HTTPREAD") != -1) { headerSeen = true; break; }
+          if (hdrLine.indexOf("ERROR") != -1) { setLastError("HTTPREAD error"); return false; }
+          hdrLine = "";
+        }
+        else if (c != '\r')
+        {
+          appendLimited(hdrLine, c, 64);
+        }
+      }
+    }
+
+    if (!headerSeen) {
+      setLastError("timeout HTTPREAD");
+      return false;
+    }
+
+    while (millis() - start < timeout && idx < dataLen)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        if (idx < bufferSize - 1) {
+          respBuffer[idx++] = c;
+        } else {
+          truncated = true;
+          idx++;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(5));
+      }
+    }
+
+    int stored = idx < bufferSize ? idx : bufferSize - 1;
+    respBuffer[stored] = '\0';
+    if (!waitForHttpReadEndLocked(10000)) return false;
+
+    if (idx < dataLen) {
+      setLastError("respuesta HTTP incompleta");
+      return false;
+    }
+    // The body is intentionally bounded by the caller.  A successful 2xx is
+    // still a successful transaction; callers receive the truncation flag.
+    _lastHttpResponseTruncated = truncated;
+    return true;
+  }
+
+  bool waitForHttpReadEndLocked(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    String buffer = "";
+    buffer.reserve(96);
+
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        appendLimited(buffer, c, 96);
+        if (buffer.indexOf("OK") != -1 || buffer.indexOf("+HTTPREAD: 0") != -1) {
+          clearLastError();
+          return true;
+        }
+        if (buffer.indexOf("ERROR") != -1) {
+          setLastError("HTTPREAD error");
+          return false;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(5));
+      }
+    }
+
+    setLastError("timeout fin HTTPREAD");
+    return false;
+  }
+
+  bool normalizeHttpUrl(const char *input, char *output, size_t outputSize)
+  {
+    const char *error = nullptr;
+    if (HttpUrl::normalize(input, output, outputSize, error)) return true;
+    setLastError(error);
+    return false;
+  }
+
+  bool buildHttpUrlWithHostIp(const char *url, const char *ip, char *output, size_t outputSize)
+  {
+    const char *error = nullptr;
+    if (HttpUrl::withHostIp(url, ip, output, outputSize, error)) return true;
+    if (error != nullptr) setLastError(error);
+    return false;
+  }
+
+  bool resolveHostIPv4Locked(const char *host, char *ip, size_t ipSize)
+  {
+    if (host == nullptr || host[0] == '\0' || ip == nullptr || ipSize == 0) {
+      setLastError("host DNS inválido");
+      return false;
+    }
+
+    char cmd[192];
+    int written = snprintf(cmd, sizeof(cmd), "AT+CDNSGIP=\"%s\"", host);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("host DNS demasiado largo");
+      return false;
+    }
+
+    String response = sendATResponseUntilFinalLocked(cmd, 45000, MaxScanResponseLength);
+    if (response.indexOf("+CDNSGIP: 1") == -1 || response.indexOf("ERROR") != -1) {
+      setLastError("CDNSGIP sin IPv4");
+      return false;
+    }
+
+    int searchFrom = 0;
+    while (searchFrom < (int)response.length())
+    {
+      int quoteStart = response.indexOf('"', searchFrom);
+      if (quoteStart == -1) break;
+      int quoteEnd = response.indexOf('"', quoteStart + 1);
+      if (quoteEnd == -1) break;
+
+      String candidate = response.substring(quoteStart + 1, quoteEnd);
+      if (HttpUrl::isValidIPv4(candidate.c_str())) {
+        if (candidate.length() >= ipSize) {
+          setLastError("IPv4 demasiado larga");
+          return false;
+        }
+        copyCString(ip, ipSize, candidate.c_str());
+        clearLastError();
+        return true;
+      }
+
+      searchFrom = quoteEnd + 1;
+    }
+
+    setLastError("CDNSGIP sin IPv4 válida");
+    return false;
+  }
+
+  bool pingLocked(const char *host, unsigned long *elapsedMs)
+  {
+    char cmd[96];
+    int written = snprintf(cmd, sizeof(cmd), "AT+CPING=\"%s\",1,32,5000", host);
+    if (written < 0 || written >= (int)sizeof(cmd)) {
+      setLastError("host ping demasiado largo");
+      return false;
+    }
+
+    // CPING devuelve OK de inmediato, luego URCs asincrónicos
+    if (!sendATLocked(cmd, "OK", 3000)) return false;
+
+    unsigned long start = millis();
+    String line = "";
+    line.reserve(64);
+
+    while (millis() - start < 8000)
+    {
+      if (!ModemIO.available()) { vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+      char c = (char)ModemIO.read();
+      if (c == '\n')
+      {
+        // Éxito: "+CPING: REPLY,..." o variante numérica del SIM7600
+        if (line.indexOf("+CPING:") != -1)
+        {
+          if (line.indexOf("TIMEOUT") != -1 || line.indexOf("ERROR") != -1 || line.indexOf(": 2") != -1) {
+            setLastError("ping timeout/error");
+            return false;
+          }
+          // Intentar parsear el tiempo de la respuesta
+          if (elapsedMs != nullptr) {
+            // Formato SIM7600: "+CPING: ip,type,bytes,time,ttl" o "+CPING: REPLY,ip,bytes,time,ttl"
+            // Buscar el cuarto campo numérico separado por coma
+            int commas = 0;
+            int timeStart = -1;
+            for (int i = 0; i < (int)line.length(); i++) {
+              if (line.charAt(i) == ',') {
+                commas++;
+                if (commas == 3) { timeStart = i + 1; break; }
+              }
+            }
+            if (timeStart != -1) {
+              *elapsedMs = (unsigned long)line.substring(timeStart).toInt();
+            } else {
+              *elapsedMs = millis() - start;
+            }
+          }
+          return true;
+        }
+        line = "";
+      }
+      else if (c != '\r')
+      {
+        appendLimited(line, c, 128);
+      }
+    }
+
+    setLastError("timeout ping sin respuesta");
+    return false;
+  }
+
+  bool sendATLocked(const char *command, const char *expected, unsigned long timeout)
+  {
+    if (command == nullptr || expected == nullptr || command[0] == '\0') {
+      setLastError("comando AT inválido");
+      return false;
+    }
+    if (!serialStarted) {
+      setLastError("UART modem no iniciada");
+      return false;
+    }
+
+    clearRxLocked();
+    ModemIO.println(command);
+    bool ok = waitForLocked(expected, timeout);
+    if (ok) clearLastError();
+    return ok;
+  }
+
+  bool sendATOptionalLocked(const char *command, const char *expected, unsigned long timeout)
+  {
+    char savedError[sizeof(lastError)];
+    memcpy(savedError, lastError, sizeof(savedError));
+    savedError[sizeof(savedError) - 1] = '\0';
+
+    bool ok = sendATLocked(command, expected, timeout);
+    if (!ok) setLastError(savedError);
+    return ok;
+  }
+
+  String sendATResponseLocked(const char *command, unsigned long timeout, size_t maxLen)
+  {
+    if (command == nullptr || command[0] == '\0' || !serialStarted) return "";
+    clearRxLocked();
+    ModemIO.println(command);
+
+    String response = "";
+    response.reserve(maxLen < 256 ? maxLen : 256);
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        appendLimited(response, c, maxLen);
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+    return response;
+  }
+
+  String sendATResponseUntilFinalLocked(const char *command, unsigned long timeout, size_t maxLen)
+  {
+    if (command == nullptr || command[0] == '\0' || !serialStarted) return "";
+    clearRxLocked();
+    ModemIO.println(command);
+
+    String response = "";
+    response.reserve(maxLen < 256 ? maxLen : 256);
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        appendLimited(response, c, maxLen);
+
+        if (response.indexOf("\r\nOK\r\n") != -1 ||
+            response.indexOf("\nOK\r") != -1 ||
+            response.indexOf("\nOK\n") != -1 ||
+            response.indexOf("ERROR") != -1)
+        {
+          break;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+    return response;
+  }
+
+  bool sendATResponseUntilFinalLocked(const char *command, char *out, size_t outLen, unsigned long timeout)
+  {
+    if (out == nullptr || outLen == 0) return false;
+    out[0] = '\0';
+    if (command == nullptr || command[0] == '\0' || !serialStarted) return false;
+    clearRxLocked();
+    ModemIO.println(command);
+
+    size_t n = 0;
+    bool truncated = false;
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        if (n + 1 < outLen) {
+          out[n++] = c;
+          out[n] = '\0';
+        } else {
+          truncated = true;
+        }
+
+        if (strstr(out, "\r\nOK\r\n") != nullptr ||
+            strstr(out, "\nOK\r") != nullptr ||
+            strstr(out, "\nOK\n") != nullptr ||
+            strstr(out, "ERROR") != nullptr)
+        {
+          break;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+
+    if (truncated) {
+      setLastError("respuesta AT truncada");
+      return false;
+    }
+    return out[0] != '\0' && strstr(out, "ERROR") == nullptr;
+  }
+
+  bool waitForATLocked(unsigned long timeout)
+  {
+    unsigned long start = millis();
+    while (millis() - start < timeout)
+    {
+      if (sendATLocked("AT", "OK", 1000)) return true;
+      vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    setLastError("timeout esperando AT");
+    return false;
+  }
+
+  bool waitForLocked(const char *expected, unsigned long timeout)
+  {
+    unsigned long start = millis();
+    String buffer = "";
+    buffer.reserve(WaitBufferLength);
+    
+    while (millis() - start < timeout)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        appendLimited(buffer, c, WaitBufferLength);
+
+        if (buffer.indexOf(expected) != -1) return true;
+        if (buffer.indexOf("ERROR") != -1) {
+          setLastError("respuesta ERROR del modem");
+          return false;
+        }
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+    }
+    setLastError("timeout esperando respuesta AT");
+    return false;
+  }
+
+  String readLineLocked(size_t maxLen)
+  {
+    String line = "";
+    line.reserve(maxLen < 128 ? maxLen : 128);
+    unsigned long start = millis();
+    while (millis() - start < 2000)
+    {
+      if (ModemIO.available())
+      {
+        char c = (char)ModemIO.read();
+        if (c == '\n') return line;
+        if (c != '\r') appendLimited(line, c, maxLen);
+      }
+      else
+      {
+        vTaskDelay(pdMS_TO_TICKS(5));
+      }
+    }
+    return line;
+  }
+
+  void appendLimited(String &buffer, char c, size_t maxLen)
+  {
+    if (maxLen == 0) return;
+    if (buffer.length() >= maxLen) {
+      buffer.remove(0, buffer.length() - maxLen + 1);
+    }
+    buffer += c;
+  }
+
+  void copyCString(char *dest, size_t size, const char *src)
+  {
+    if (dest == nullptr || size == 0) return;
+    if (src == nullptr) src = "";
+    strncpy(dest, src, size - 1);
+    dest[size - 1] = '\0';
+  }
+
+  void clearRxLocked()
+  {
+    while (ModemIO.available()) ModemIO.read();
+  }
+
+  void printATLocked(Print &out, const char *command)
+  {
+    out.printf("> %s\n", command);
+    String response = sendATResponseUntilFinalLocked(command, 5000, MaxRawResponseLength);
+    response.trim();
+    if (response.length() == 0) response = "(sin respuesta)";
+    out.println(response);
+  }
+};
+
+#endif

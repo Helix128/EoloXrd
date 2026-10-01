@@ -96,7 +96,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
 
 4. **Registro de puntos**: Se almacena cada par (potencia%, flujo L/min) en arreglos de calibración definidos en `Context.h`:
    ```cpp
-   // src/Data/Context.h
+   // src/Common/Data/Context.h
    // Datos de calibración
    static const int MAX_CAL_POINTS = 200;
    int numCalPoints = 0;
@@ -107,7 +107,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
 
 5. **Guardado en Flash**: La tabla se guarda en la memoria Flash del ESP32 mediante `Preferences` en `saveCalibration()`:
    ```cpp
-   // src/Data/Context.h
+   // src/Common/Data/Context.h
    void saveCalibration()
    {
        preferences.begin("eolo_calib", false);
@@ -125,7 +125,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
 
 1. **Carga de calibración**: Al iniciar, el EOLO carga la tabla desde Flash (ya no depende de la SD). Los datos ya vienen ordenados por flujo ascendente desde el proceso de calibración.
    ```cpp
-   // src/Data/Context.h
+   // src/Common/Data/Context.h
    bool loadCalibration()
    {
        preferences.begin("eolo_calib", false);
@@ -161,7 +161,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
 
 2. **Interpolación lineal**: Dado un flujo objetivo, el sistema busca los puntos adyacentes y calcula la potencia necesaria.
    ```cpp
-   // src/Data/Context.h
+   // src/Common/Data/Context.h
    float getTargetMotorPct(float targetFlow)
    {
        if (!isCalibrationLoaded || numCalPoints == 0)
@@ -202,7 +202,7 @@ Esta precalibración es clave porque permite que el FS3000, que mide velocidad d
 
 3. **Aplicación de potencia**: La potencia calculada se aplica directamente en `updateMotors()`.
    ```cpp
-   // src/Data/Context.h
+   // src/Common/Data/Context.h
    void updateMotors()
    {
        if (isCalibrationLoaded && numCalPoints > 0)

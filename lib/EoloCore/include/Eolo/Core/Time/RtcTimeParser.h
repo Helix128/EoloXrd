@@ -19,6 +19,7 @@ struct RtcDateTime
 
 class RtcTimeParser
 {
+public:
     static bool isLeapYear(int year)
     {
         return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
@@ -79,7 +80,6 @@ class RtcTimeParser
         return year >= 2024 && year <= 2099;
     }
 
-public:
     static bool parseFixedInt(const char *text, size_t start, size_t len, int &value)
     {
         if (text == nullptr)

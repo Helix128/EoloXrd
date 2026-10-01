@@ -1,0 +1,69 @@
+#ifndef CAPTURA_BOMBAS_SCENE_H
+#define CAPTURA_BOMBAS_SCENE_H
+
+#include "../../Drawing/Fonts.h"
+#include "../IScene.h"
+#include "../../../Common/Data/Context.h"
+#include "../../Drawing/SceneManager.h"
+#include "../../Drawing/GUI.h"
+
+class CapturaBombasScene : public IScene
+{
+private:
+public:
+    static constexpr const char *Name = "captura_bombas";
+
+    uint16_t frameIntervalMs() const override { return 100; }
+
+    int targetPct = 0;
+    void enter(Context &ctx) override
+    {
+    
+    }
+
+    void update(Context &ctx) override
+    {
+        ctx.u8g2.clearBuffer();
+        GUI::displayHeader(ctx);
+
+        ctx.u8g2.setFont(FONT_BOLD);
+        ctx.u8g2.drawStr(10, 28, "Motor 1:");
+        ctx.u8g2.drawStr(10, 42, "Motor 2:");
+        ctx.u8g2.drawStr(10, 56, "Flujo:");
+
+        int pwm1 = ctx.components.motor.pwmValues[0];
+        int pwm2 = ctx.components.motor.pwmValues[1];
+
+        FlowData flowData;
+        if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
+        {
+            flowData.flow = -1.0;   
+        }
+        float flow = flowData.flow;
+
+        char pwm1Str[6];
+        snprintf(pwm1Str, sizeof(pwm1Str), "%d", pwm1);
+        char pwm2Str[6];
+        snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
+
+        String flowStr = String(flow, 2) + " L/m";
+
+        ctx.u8g2.setFont(FONT_REGULAR_S);
+        ctx.u8g2.drawStr(80, 28, pwm1Str);
+        ctx.u8g2.drawStr(80, 42, pwm2Str);
+        ctx.u8g2.drawStr(80, 56, flowStr.c_str());
+
+        ctx.u8g2.sendBuffer();
+
+        targetPct += ctx.components.input.getEncoderDelta() * 1;
+        targetPct = constrain(targetPct, 0, 100);
+        ctx.components.motor.setPowerPct(targetPct);
+
+        if (ctx.components.input.isButtonPressed())
+        {      
+            ctx.components.motor.setPowerPct(0);
+            SceneManager::setScene("captura_menu", ctx);
+        }
+    }
+};
+#endif
