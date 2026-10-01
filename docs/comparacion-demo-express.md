@@ -2,8 +2,8 @@
 
 Este documento conserva las diferencias que motivaron la consolidación del
 firmware Express. La configuración vigente se consulta en
-`src/Config/Profiles/Express.h` y el mapa eléctrico autoritativo en
-`src/Board/Pinout.h`; los valores de esta página no sustituyen esas fuentes.
+`src/Variants/Profiles/Express.h` y el mapa eléctrico autoritativo en
+`src/Variants/Pinout.h`; los valores de esta página no sustituyen esas fuentes.
 
 ## PWM y motor
 
@@ -46,7 +46,7 @@ Para confirmar el controlador de un panel físico se mantiene
 | Encoder I2C | 0x08 |
 
 El firmware y las demos obtienen estos valores mediante
-`demos/EoloDemoPinout.h`, que incluye directamente `src/Board/Pinout.h`.
+`demos/EoloDemoPinout.h`, que incluye directamente `src/Variants/Pinout.h`.
 `scripts/check_pinouts.py` comprueba la sincronización con la documentación de
 `pinouts/`.
 

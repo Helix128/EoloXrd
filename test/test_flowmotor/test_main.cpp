@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Effectors/Motor.h"
+#include "../../src/Common/Effectors/Motor.h"
 #include <Eolo/Core/Motor/PwmMath.h>
 #include <Eolo/Core/Power/BatteryMath.h>
 #include <Eolo/Core/Flow/FlowMotorController.h>

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Board/CaptureSwitches.h"
-#include "Board/HeadlessSetupTypes.h"
+#include "../../src/Headless/CaptureSwitches.h"
+#include "../../src/Headless/HeadlessSetupTypes.h"
 #include <Eolo/Core/Input/CaptureSwitchLogic.h>
 
 void test_wait_table()
@@ -12,12 +12,12 @@ void test_wait_table()
 
     CaptureSwitchSelection one = CaptureSwitches::decode(0b01, 0b01);
     TEST_ASSERT_TRUE(one.waitEnabled);
-    TEST_ASSERT_EQUAL_UINT32(1UL * MINUTE, one.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(1UL * EoloConfig::kMinute, one.waitSeconds);
     TEST_ASSERT_FALSE(one.instantStart);
 
     CaptureSwitchSelection five = CaptureSwitches::decode(0b10, 0b01);
     TEST_ASSERT_TRUE(five.waitEnabled);
-    TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, five.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(5UL * EoloConfig::kMinute, five.waitSeconds);
     TEST_ASSERT_FALSE(five.instantStart);
 
     CaptureSwitchSelection instant = CaptureSwitches::decode(0b11, 0b01);
@@ -34,17 +34,17 @@ void test_duration_table()
 
     CaptureSwitchSelection five = CaptureSwitches::decode(0b11, 0b01);
     TEST_ASSERT_TRUE(five.durationEnabled);
-    TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, five.durationSeconds);
+    TEST_ASSERT_EQUAL_UINT32(5UL * EoloConfig::kMinute, five.durationSeconds);
     TEST_ASSERT_FALSE(five.infiniteDuration);
 
     CaptureSwitchSelection fifteen = CaptureSwitches::decode(0b11, 0b10);
     TEST_ASSERT_TRUE(fifteen.durationEnabled);
-    TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, fifteen.durationSeconds);
+    TEST_ASSERT_EQUAL_UINT32(15UL * EoloConfig::kMinute, fifteen.durationSeconds);
     TEST_ASSERT_FALSE(fifteen.infiniteDuration);
 
     CaptureSwitchSelection infinite = CaptureSwitches::decode(0b11, 0b11);
     TEST_ASSERT_TRUE(infinite.durationEnabled);
-    TEST_ASSERT_EQUAL_UINT32(DRONE_DURATION_INFINITE, infinite.durationSeconds);
+    TEST_ASSERT_EQUAL_UINT32(EoloConfig::kDurationInfinite, infinite.durationSeconds);
     TEST_ASSERT_TRUE(infinite.infiniteDuration);
 }
 
@@ -52,19 +52,19 @@ void test_sw0_is_lsb()
 {
     CaptureSwitchSelection sw0Only = CaptureSwitches::decode(0b01, 0b01);
     TEST_ASSERT_EQUAL_UINT8(0b01, sw0Only.waitCode);
-    TEST_ASSERT_EQUAL_UINT32(1UL * MINUTE, sw0Only.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(1UL * EoloConfig::kMinute, sw0Only.waitSeconds);
 
     CaptureSwitchSelection sw1Only = CaptureSwitches::decode(0b10, 0b10);
     TEST_ASSERT_EQUAL_UINT8(0b10, sw1Only.waitCode);
-    TEST_ASSERT_EQUAL_UINT32(5UL * MINUTE, sw1Only.waitSeconds);
+    TEST_ASSERT_EQUAL_UINT32(5UL * EoloConfig::kMinute, sw1Only.waitSeconds);
     TEST_ASSERT_EQUAL_UINT8(0b10, sw1Only.durationCode);
-    TEST_ASSERT_EQUAL_UINT32(15UL * MINUTE, sw1Only.durationSeconds);
+    TEST_ASSERT_EQUAL_UINT32(15UL * EoloConfig::kMinute, sw1Only.durationSeconds);
 }
 
 void test_decode_full_table()
 {
-    const uint32_t waitSeconds[] = {0, 1UL * MINUTE, 5UL * MINUTE, 0};
-    const uint32_t durationSeconds[] = {0, 5UL * MINUTE, 15UL * MINUTE, DRONE_DURATION_INFINITE};
+    const uint32_t waitSeconds[] = {0, 1UL * EoloConfig::kMinute, 5UL * EoloConfig::kMinute, 0};
+    const uint32_t durationSeconds[] = {0, 5UL * EoloConfig::kMinute, 15UL * EoloConfig::kMinute, EoloConfig::kDurationInfinite};
 
     for (uint8_t waitCode = 0; waitCode < 4; waitCode++) {
         for (uint8_t durationCode = 0; durationCode < 4; durationCode++) {

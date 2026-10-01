@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Sensors/Plantower.h"
-#include "Config/Legacy.h"
+#include "../../src/Common/Sensors/Plantower.h"
+#include "../../src/Variants/Legacy.h"
 
 void test_parser_valid_frame() {
     PlantowerParser parser;

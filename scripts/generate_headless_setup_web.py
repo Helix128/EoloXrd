@@ -10,7 +10,7 @@ except NameError:
 PROJECT_DIR = Path(env.subst("$PROJECT_DIR")) if env else Path(__file__).resolve().parents[1]
 WEB_DIR = PROJECT_DIR / "web-server"
 INDEX_PATH = WEB_DIR / "index.html"
-HEADER_PATH = PROJECT_DIR / "src" / "Board" / "HeadlessSetupWebPage.h"
+HEADER_PATH = PROJECT_DIR / "src" / "Headless" / "HeadlessSetupWebPage.h"
 
 
 def read_source(name):
