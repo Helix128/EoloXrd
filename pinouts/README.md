@@ -1,6 +1,6 @@
 # Pinouts técnicos EOLO
 
-Pinouts extraídos del firmware en `src/Board/Pinout.h` y contrastados con `demos/EoloDemoPinout.h`. Esta carpeta documenta el mapeo real usado por los ambientes PlatformIO del repositorio.
+Pinouts extraídos del firmware en `src/Variants/Pinout.h` y contrastados con `demos/EoloDemoPinout.h`. Esta carpeta documenta el mapeo real usado por los ambientes PlatformIO del repositorio.
 
 ## Variantes
 
@@ -15,7 +15,7 @@ Pinouts extraídos del firmware en `src/Board/Pinout.h` y contrastados con `demo
 
 - `GPIO34`, `GPIO35`, `GPIO36`, `GPIO37`, `GPIO38` y `GPIO39` son solo entrada.
 - `GPIO34-39` no tienen pull-up/down interno; el firmware los configura como `INPUT` cuando aplica.
-- El firmware valida conflictos básicos de pines en `src/Board/Pinout.h`.
-- `scripts/check_pinouts.py` verifica que `src/Board/Pinout.h`, `demos/EoloDemoPinout.h` y estos documentos sigan sincronizados.
+- El firmware valida conflictos básicos de pines en `src/Variants/Pinout.h`.
+- `scripts/check_pinouts.py` verifica que `src/Variants/Pinout.h`, `demos/EoloDemoPinout.h` y estos documentos sigan sincronizados.
 - La configuración de Dron declara `DRONE_SWITCHES_HAVE_EXTERNAL_PULLS` en `platformio.ini`.
 - `EOLO_PIN_UNUSED` equivale a `-1`: función no cableada o no usada para ese target.

@@ -1,23 +1,23 @@
 #ifndef EOLO_APPLICATION_ACTIVE_APPLICATION_H
 #define EOLO_APPLICATION_ACTIVE_APPLICATION_H
 
-#include "../Config/ActiveProfile.h"
+#include "../Variants/ActiveProfile.h"
 
 #if defined(EOLO_TARGET_DRON)
   #pragma message("Compilando para EOLO Dron headless.")
-  #include "DronApplication.h"
+  #include "../Headless/DronApplication.h"
   using ActiveApplication = DronApplication;
 #elif defined(EOLO_TARGET_STANDARD)
   #pragma message("Compilando para EOLO Standard.")
-  #include "UiApplication.h"
+  #include "../Ui/UiApplication.h"
   using ActiveApplication = UiApplication;
 #elif defined(EOLO_TARGET_EXPRESS_LEGACY)
   #pragma message("Compilando para EOLO Express Legacy.")
-  #include "UiApplication.h"
+  #include "../Ui/UiApplication.h"
   using ActiveApplication = UiApplication;
 #elif defined(EOLO_TARGET_EXPRESS)
   #pragma message("Compilando para EOLO Express.")
-  #include "UiApplication.h"
+  #include "../Ui/UiApplication.h"
   using ActiveApplication = UiApplication;
 #else
   #error "Define un target EOLO_TARGET_* en platformio.ini"

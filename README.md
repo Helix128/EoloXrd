@@ -46,7 +46,6 @@ python3 -m pip install platformio
 | `eolo_express` | Build default. Display, AFM07, Plantower. |
 | `eolo_express_legacy` | Express con FS3000 legacy. |
 | `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
-| `eolo_standard_libraries` | Standard con RTClib/Adafruit en vez de los drivers I²C directos. |
 | `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
 | `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
 
@@ -81,7 +80,7 @@ La plataforma ESP32 está fijada en `espressif32@6.10.0` para builds reproducibl
 
 ## Pinouts técnicos
 
-Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan de `src/Board/Pinout.h`:
+Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan de `src/Variants/Pinout.h`:
 
 - [EOLO Dron](pinouts/eolo-dron.md)
 - [EOLO Standard](pinouts/eolo-standard.md)

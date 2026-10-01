@@ -27,12 +27,15 @@ Modelos portables actuales:
 - PID y control de ignición del motor;
 - protección térmica NTC, PWM, batería y programación de flujo;
 - máquinas de captura y calibración de motor;
-- `LogRecord`, `TelemetrySnapshot` y estados de sesión/headless.
+- `LogRecord`, `TelemetrySnapshot` y estados de sesión/headless;
+- utilidades del módem (`HttpUrl`, `AtResponse`, `SignalQuality`), paleta del
+  LED de estado (`StatusLedPalette`) y parseo de comandos de consola
+  (`ConsoleArgs`).
 
 ## Hardware y aplicación en `src`
 
 Los drivers que necesitan pines, buses, librerías externas o tareas ESP32
-permanecen en `src/Sensors` y `src/Board` hasta que sus configuraciones sean
+permanecen en `src/Common/Sensors` y `src/Common/Board` hasta que sus configuraciones sean
 explícitas. Son adaptadores del core: `begin()` es idempotente y los sensores
 exponen `getData(DTO&)` con validez y frescura definidas. No se mantienen
 copias de parsers en las demos.
@@ -41,7 +44,7 @@ copias de parsers en las demos.
 solo tiene sentido cuando haya drivers independientes de perfiles globales y
 de `Context`, manteniendo implementaciones en headers.
 
-`src/Data/Context.h` sigue siendo el composition root. Posee componentes,
+`src/Common/Data/Context.h` sigue siendo el composition root. Posee componentes,
 inicializa hardware, ejecuta el ciclo y conecta acciones del core con motor,
 UI, SD y módem. Expone consultas estrechas, no aliases por referencia al
 estado de captura, térmico, SD, logging o upload. `LogService` solo recibe
@@ -64,12 +67,12 @@ La entrada Arduino no contiene lógica de producto: `main.cpp` instancia
 
 ## Configuración y persistencia
 
-`src/Config/ActiveProfile.h` expone constantes de variante con nombre y el
+`src/Variants/ActiveProfile.h` expone constantes de variante con nombre y el
 contrato `FlowPidConfig`, y selecciona un único perfil por ambiente. Los GPIO
 de display viven con el mapa del modelo en `Board/Pinouts/`.
 `VariantValidation.h` exige que el entorno declare sus capacidades completas,
 y `Board/Pinout.h` selecciona un mapa completo por modelo sin herencia de
-pinout. `src/Config/Legacy.h` es solo un shim de macros para código antiguo; el
+pinout. `src/Variants/Legacy.h` es solo un shim de macros para código antiguo; el
 código nuevo no agrega macros de configuración.
 
 `SettingsStore` es la interfaz portable. `PreferencesSettingsStore` adapta NVS
@@ -91,7 +94,7 @@ a la cola.
 Antes de un cambio de arquitectura se ejecutan:
 
 ```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_standard_libraries -e eolo_dron -e eolo_dron_low_power
+pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron -e eolo_dron_low_power
 pio test -e native
 python3 scripts/check_pinouts.py
 bash scripts/audit_eolo_core_deps.sh

@@ -1,16 +1,16 @@
 # Progreso de modularización de sensores EOLO
 
 La lógica reutilizable vive en `lib/EoloCore`; los adaptadores con Arduino,
-FreeRTOS, pines y buses permanecen en `src/Sensors`.
+FreeRTOS, pines y buses permanecen en `src/Common/Sensors`.
 
 | Sensor | Modelo core | Adaptador | Contrato |
 | --- | --- | --- | --- |
-| AFM07 | `AFM07Model` | `src/Sensors/AFM07.h` | `getData(FlowData&)`, fresco/obsoleto |
-| FS3000 | `FS3000FlowModel` | `src/Sensors/FS3000.h` | `getData(FlowData&)` |
-| Anemometer | `AnemometerModel` | `src/Sensors/Anemometer.h` | `getData(AnemometerData&)` |
-| Plantower | `PlantowerParser` | `src/Sensors/Plantower.h` | `getData(PlantowerData&)` |
-| BME280 | `BME280Data` | `src/Sensors/BME280.h` | `getData(BME280Data&)` |
-| NTC | `NtcThermistor` | `src/Sensors/NTC.h` | `getData(NTCData&)` |
+| AFM07 | `AFM07Model` | `src/Common/Sensors/AFM07.h` | `getData(FlowData&)`, fresco/obsoleto |
+| FS3000 | `FS3000FlowModel` | `src/Common/Sensors/FS3000.h` | `getData(FlowData&)` |
+| Anemometer | `AnemometerModel` | `src/Common/Sensors/Anemometer.h` | `getData(AnemometerData&)` |
+| Plantower | `PlantowerParser` | `src/Common/Sensors/Plantower.h` | `getData(PlantowerData&)` |
+| BME280 | `BME280Data` | `src/Common/Sensors/BME280.h` | `getData(BME280Data&)` |
+| NTC | `NtcThermistor` | `src/Common/Sensors/NTC.h` | `getData(NTCData&)` |
 
 Las demos oficiales de PlatformIO incluyen los mismos modelos core. El test
 `test_eolo_core_native` cubre conversiones, límites, checksum y transiciones

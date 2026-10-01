@@ -15,13 +15,19 @@
 #include <Eolo/Core/Thermal/ThermalProtectionModel.h>
 #include <Eolo/Core/Sensors/PlantowerParser.h>
 #include <Eolo/Core/Communication/GnssParser.h>
+#include <Eolo/Core/Communication/AtResponse.h>
+#include <Eolo/Core/Communication/HttpUrl.h>
+#include <Eolo/Core/Communication/SignalQuality.h>
+#include <Eolo/Core/Ui/StatusLedPatterns.h>
+#include <Eolo/Core/Debug/ConsoleArgs.h>
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
 #include <Eolo/Core/Power/BatteryProtocol.h>
 #include <Eolo/Core/Communication/RS485Protocol.h>
+#include <Eolo/Core/Communication/RS485Stats.h>
 #include <Eolo/Types/ModemHttpContract.h>
-#include "Board/I2CRetryPolicy.h"
-#include "Config/Profiles/Dron.h"
+#include "../../src/Common/Board/I2CRetryPolicy.h"
+#include "../../src/Variants/Profiles/Dron.h"
 
 static void test_rtc_parser_is_calendar_aware()
 {
@@ -1088,6 +1094,256 @@ static void test_dual_motor_multi_stage_seamless_pwm()
     TEST_ASSERT_TRUE(out.virtualPwm >= runningPwm);
 }
 
+static void test_http_url_normalize_adds_path_and_reports_errors()
+{
+    char out[32];
+    const char *error = nullptr;
+    TEST_ASSERT_TRUE(HttpUrl::normalize("http://a.cl", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("http://a.cl/", out);
+    TEST_ASSERT_TRUE(HttpUrl::normalize("https://a.cl/x?y=1", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("https://a.cl/x?y=1", out);
+
+    TEST_ASSERT_FALSE(HttpUrl::normalize("ftp://a.cl", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("URL debe iniciar con http:// o https://", error);
+    TEST_ASSERT_FALSE(HttpUrl::normalize("http:///x", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("URL sin host", error);
+    TEST_ASSERT_FALSE(HttpUrl::normalize("http://a.cl/abcdefghijklmnop", out, 16, error));
+    TEST_ASSERT_EQUAL_STRING("URL demasiado larga", error);
+    TEST_ASSERT_FALSE(HttpUrl::normalize(nullptr, out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("URL HTTP inválida", error);
+}
+
+static void test_http_url_host_and_ip_rewrite()
+{
+    char host[16];
+    TEST_ASSERT_TRUE(HttpUrl::extractHost("http://time.cmasccp.cl:80/p", host, sizeof(host)));
+    TEST_ASSERT_EQUAL_STRING("time.cmasccp.cl", host);
+    TEST_ASSERT_FALSE(HttpUrl::extractHost("http://time.cmasccp.cl/", host, 8));
+    TEST_ASSERT_FALSE(HttpUrl::extractHost("ftp://x", host, sizeof(host)));
+
+    char out[40];
+    const char *error = nullptr;
+    TEST_ASSERT_TRUE(HttpUrl::withHostIp("http://a.cl/p?q=1", "1.2.3.4", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("http://1.2.3.4/p?q=1", out);
+    TEST_ASSERT_TRUE(HttpUrl::withHostIp("http://a.cl", "1.2.3.4", out, sizeof(out), error));
+    TEST_ASSERT_EQUAL_STRING("http://1.2.3.4/", out);
+    TEST_ASSERT_FALSE(HttpUrl::withHostIp("https://a.cl/", "1.2.3.4", out, sizeof(out), error));
+    TEST_ASSERT_NULL(error);
+    TEST_ASSERT_FALSE(HttpUrl::withHostIp("http://a.cl/long/path", "1.2.3.4", out, 12, error));
+    TEST_ASSERT_EQUAL_STRING("URL IP demasiado larga", error);
+}
+
+static void test_http_url_ipv4_validation()
+{
+    TEST_ASSERT_TRUE(HttpUrl::isValidIPv4("10.0.255.1"));
+    TEST_ASSERT_FALSE(HttpUrl::isValidIPv4("256.0.0.1"));
+    TEST_ASSERT_FALSE(HttpUrl::isValidIPv4("1.2.3"));
+    TEST_ASSERT_FALSE(HttpUrl::isValidIPv4("1.2.3.4.5"));
+    TEST_ASSERT_FALSE(HttpUrl::isValidIPv4("1..3.4"));
+    TEST_ASSERT_FALSE(HttpUrl::isValidIPv4(""));
+}
+
+static void test_at_response_registration_status()
+{
+    TEST_ASSERT_TRUE(AtResponse::isRegistered("+CREG: 0,1\r\nOK"));
+    TEST_ASSERT_TRUE(AtResponse::isRegistered("+CGREG: 2,5"));
+    TEST_ASSERT_TRUE(AtResponse::isRegistered("+CEREG: 1"));
+    TEST_ASSERT_FALSE(AtResponse::isRegistered("+CREG: 0,2"));
+    TEST_ASSERT_FALSE(AtResponse::isRegistered("+CREG: 0,1\r\nERROR"));
+    TEST_ASSERT_FALSE(AtResponse::isRegistered("sin dos puntos"));
+    TEST_ASSERT_FALSE(AtResponse::isRegistered(nullptr));
+}
+
+static void test_at_response_ip_address_detection()
+{
+    TEST_ASSERT_TRUE(AtResponse::hasValidIp("+IPADDR: 10.20.30.40\r\nOK"));
+    TEST_ASSERT_FALSE(AtResponse::hasValidIp("+IPADDR: 999.999"));
+    TEST_ASSERT_FALSE(AtResponse::hasValidIp("+IPADDR: 1.2.3"));
+    TEST_ASSERT_FALSE(AtResponse::hasValidIp("ERROR 1.2.3.4"));
+    TEST_ASSERT_FALSE(AtResponse::hasValidIp(""));
+    TEST_ASSERT_EQUAL_STRING("Timeout", AtResponse::httpActionStatusText(705));
+    TEST_ASSERT_EQUAL_STRING("", AtResponse::httpActionStatusText(200));
+}
+
+static void test_signal_quality_parses_csq_and_maps_bars()
+{
+    int ber = 0;
+    TEST_ASSERT_EQUAL_INT(20, SignalQuality::parseCsq("\r\n+CSQ: 20,3\r\nOK", &ber));
+    TEST_ASSERT_EQUAL_INT(3, ber);
+    TEST_ASSERT_EQUAL_INT(31, SignalQuality::parseCsq("+CSQ:\t31", &ber));
+    TEST_ASSERT_EQUAL_INT(199, SignalQuality::parseCsq("+CSQ: 199,99", &ber));
+    TEST_ASSERT_EQUAL_INT(-1, SignalQuality::parseCsq("+CSQ: 200,0", &ber));
+    TEST_ASSERT_EQUAL_INT(-1, SignalQuality::parseCsq("ERROR", &ber));
+    TEST_ASSERT_EQUAL_INT(-1, SignalQuality::parseCsq(nullptr, &ber));
+
+    TEST_ASSERT_EQUAL_UINT8(0, SignalQuality::barsFromCsq(99, true));
+    TEST_ASSERT_EQUAL_UINT8(0, SignalQuality::barsFromCsq(20, false));
+    TEST_ASSERT_EQUAL_UINT8(4, SignalQuality::barsFromCsq(20, true));   // -73 dBm
+    TEST_ASSERT_EQUAL_UINT8(3, SignalQuality::barsFromCsq(14, true));   // -85 dBm
+    TEST_ASSERT_EQUAL_UINT8(2, SignalQuality::barsFromCsq(8, true));    // -97 dBm
+    TEST_ASSERT_EQUAL_UINT8(1, SignalQuality::barsFromCsq(2, true));    // -109 dBm
+    TEST_ASSERT_EQUAL_UINT8(0, SignalQuality::barsFromCsq(0, true));    // -113 dBm
+    TEST_ASSERT_EQUAL_UINT8(4, SignalQuality::barsFromCsq(150, true));  // -66 dBm
+    TEST_ASSERT_EQUAL_UINT8(0, SignalQuality::barsFromCsq(50, true));
+}
+
+static void test_status_led_temperature_gradient_and_low_power_peak()
+{
+    using StatusLedPalette::temperatureColor;
+    auto green = temperatureColor(25.0f, false);
+    TEST_ASSERT_EQUAL_UINT8(0, green.r);
+    TEST_ASSERT_EQUAL_UINT8(55, green.g);
+    auto lowGreen = temperatureColor(25.0f, true);
+    TEST_ASSERT_EQUAL_UINT8(45, lowGreen.g);
+
+    auto lime = temperatureColor(35.0f, false);
+    TEST_ASSERT_EQUAL_UINT8(13, lime.r);
+    TEST_ASSERT_EQUAL_UINT8(55, lime.g);
+    auto yellow = temperatureColor(45.0f, false);
+    TEST_ASSERT_EQUAL_UINT8(55, yellow.r);
+    TEST_ASSERT_EQUAL_UINT8(55, yellow.g);
+    auto orange = temperatureColor(55.0f, false);
+    TEST_ASSERT_EQUAL_UINT8(55, orange.r);
+    TEST_ASSERT_EQUAL_UINT8(27, orange.g);
+    auto red = temperatureColor(60.0f, true);
+    TEST_ASSERT_EQUAL_UINT8(45, red.r);
+    TEST_ASSERT_EQUAL_UINT8(0, red.g);
+}
+
+static void test_status_led_profiles_select_power_mode()
+{
+    auto normal = StatusLedPalette::profile(StatusLedPattern::Error, false);
+    TEST_ASSERT_EQUAL_UINT8(55, normal.primary.r);
+    TEST_ASSERT_EQUAL_UINT16(220, normal.onMs);
+    auto low = StatusLedPalette::profile(StatusLedPattern::Error, true);
+    TEST_ASSERT_EQUAL_UINT8(45, low.primary.r);
+    TEST_ASSERT_EQUAL_UINT16(800, low.gapMs);
+    TEST_ASSERT_EQUAL_UINT8(3, low.flashes);
+    auto off = StatusLedPalette::profile(StatusLedPattern::Off, true);
+    TEST_ASSERT_EQUAL_UINT8(0, off.flashes);
+    TEST_ASSERT_EQUAL_UINT8(0, off.primary.r);
+}
+
+static void test_console_args_read_named_values()
+{
+    int i = -1;
+    float f = -1.0f;
+    TEST_ASSERT_TRUE(ConsoleArgs::readInt("set kick=1650 kickMs=300", "kick", i));
+    TEST_ASSERT_EQUAL_INT(1650, i);
+    TEST_ASSERT_TRUE(ConsoleArgs::readInt("set kick=1650 kickMs=300", "kickMs", i));
+    TEST_ASSERT_EQUAL_INT(300, i);
+    TEST_ASSERT_TRUE(ConsoleArgs::readFloat("kp=35.5 ki=1", "kp", f));
+    TEST_ASSERT_EQUAL_FLOAT(35.5f, f);
+    TEST_ASSERT_FALSE(ConsoleArgs::readInt("kp=1", "ki", i));
+    // Valor vacio: no debe leer el argumento siguiente.
+    TEST_ASSERT_TRUE(ConsoleArgs::readInt("kp= ki=5", "kp", i));
+    TEST_ASSERT_EQUAL_INT(0, i);
+}
+
+static void test_console_args_parse_pid_config_overrides_only_given_fields()
+{
+    FlowPidConfig base = EoloConfig::Profile::kFlowPid;
+    FlowPidConfig cfg = ConsoleArgs::parsePidConfig("set kp=12.5 interval=250 zeroConfirm=4", base);
+    TEST_ASSERT_EQUAL_FLOAT(12.5f, cfg.kp);
+    TEST_ASSERT_EQUAL_UINT32(250, cfg.intervalMs);
+    TEST_ASSERT_EQUAL_UINT8(4, cfg.zeroFlowConfirmSamples);
+    TEST_ASSERT_EQUAL_FLOAT(base.ki, cfg.ki);
+    TEST_ASSERT_EQUAL_INT(base.kickPwm, cfg.kickPwm);
+}
+
+static void test_console_args_format_duration()
+{
+    char out[32];
+    ConsoleArgs::formatDuration(UINT32_MAX, UINT32_MAX, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("infinita", out);
+    ConsoleArgs::formatDuration(42, UINT32_MAX, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("42 s", out);
+    ConsoleArgs::formatDuration(187, UINT32_MAX, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("3 min 07 s", out);
+    ConsoleArgs::formatDuration(7500, UINT32_MAX, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("2 h 05 min", out);
+}
+
+static void test_rtc_to_unix_calendar_boundaries()
+{
+    uint32_t unixTime = 0;
+    TEST_ASSERT_TRUE(RtcTimeParser::toUnix(2000, 1, 1, 0, 0, 0, unixTime));
+    TEST_ASSERT_EQUAL_UINT32(946684800UL, unixTime);
+    TEST_ASSERT_TRUE(RtcTimeParser::toUnix(2000, 2, 29, 23, 59, 59, unixTime));
+    TEST_ASSERT_FALSE(RtcTimeParser::toUnix(2023, 2, 29, 0, 0, 0, unixTime));
+    TEST_ASSERT_FALSE(RtcTimeParser::toUnix(2024, 4, 31, 0, 0, 0, unixTime));
+    TEST_ASSERT_FALSE(RtcTimeParser::toUnix(2024, 1, 1, 24, 0, 0, unixTime));
+    TEST_ASSERT_FALSE(RtcTimeParser::toUnix(2100, 1, 1, 0, 0, 0, unixTime));
+}
+
+static void test_rs485_stats_state_transitions()
+{
+    RS485SlaveStats stats;
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Offline, (int)stats.state);
+
+    // Fallos antes del primer exito: Offline.
+    stats.record(false, RS485_TIMEOUT, 0, 100, 250, 0, 0, 350);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Offline, (int)stats.state);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.timeoutErrors);
+
+    stats.record(true, RS485_OK, 0, 400, 20, 0, 0, 420);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Online, (int)stats.state);
+    TEST_ASSERT_EQUAL_UINT32(0, stats.consecutiveFailures);
+    TEST_ASSERT_EQUAL_UINT32(420, stats.lastSuccessMs);
+
+    // 2 fallos siguen Online, el 3 degrada, el 6 da de baja.
+    stats.record(false, RS485_INVALID_CRC, 0, 450, 30, 0, 0, 480);
+    stats.record(false, RS485_MALFORMED, 0, 500, 30, 0, 0, 530);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Online, (int)stats.state);
+    stats.record(false, RS485_BUS_BUSY, 0, 550, 30, 0, 0, 580);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Degraded, (int)stats.state);
+    stats.record(false, RS485_INCOMPLETE_FRAME, 0, 600, 30, 0, 0, 630);
+    stats.record(false, RS485_UNEXPECTED_FRAME, 0, 650, 30, 0, 0, 680);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Degraded, (int)stats.state);
+    stats.record(false, RS485_INVALID_SLAVE, 0, 700, 30, 0, 0, 730);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Offline, (int)stats.state);
+    TEST_ASSERT_EQUAL_UINT32(6, stats.consecutiveFailures);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.crcErrors);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.malformedFrames);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.busBusyErrors);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.incompleteFrames);
+    TEST_ASSERT_EQUAL_UINT32(2, stats.unexpectedFrameErrors);
+
+    // Un exito recupera el endpoint y reinicia la racha.
+    stats.record(true, RS485_OK, 0, 750, 20, 0, 0, 770);
+    TEST_ASSERT_EQUAL((int)RS485EndpointState::Online, (int)stats.state);
+    TEST_ASSERT_EQUAL_UINT32(0, stats.consecutiveFailures);
+    TEST_ASSERT_EQUAL_UINT32(350, stats.maxSuccessGapMs);
+}
+
+static void test_rs485_stats_exceptions_and_timing()
+{
+    RS485SlaveStats stats;
+    stats.record(true, RS485_OK, 0, 1000, 20, 3, 1, 1020);
+    TEST_ASSERT_EQUAL_UINT32(3, stats.lateBytes);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.unexpectedFrames);
+
+    stats.record(false, RS485_EXCEPTION, 0x06, 1250, 15, 0, 0, 1265);
+    TEST_ASSERT_EQUAL_UINT8(0x06, stats.lastExceptionCode);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.modbusExceptions[6]);
+    stats.record(false, RS485_EXCEPTION, 0x42, 1500, 15, 0, 0, 1515);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.otherExceptionErrors);
+    TEST_ASSERT_EQUAL_UINT8(0x42, stats.lastExceptionCode);
+    // Un timeout posterior conserva el ultimo codigo de excepcion.
+    stats.record(false, RS485_TIMEOUT, 0, 1750, 250, 0, 0, 2000);
+    TEST_ASSERT_EQUAL_UINT8(0x42, stats.lastExceptionCode);
+
+    TEST_ASSERT_EQUAL_UINT32(230, stats.minRestMs);
+    TEST_ASSERT_EQUAL_UINT32(250, stats.maxAttemptGapMs);
+    TEST_ASSERT_EQUAL_UINT32(250, stats.maxLatencyMs);
+
+    TEST_ASSERT_FALSE(RS485SlaveStats::isDeadlineMiss(500, 500));
+    TEST_ASSERT_FALSE(RS485SlaveStats::isDeadlineMiss(520, 500));
+    TEST_ASSERT_TRUE(RS485SlaveStats::isDeadlineMiss(521, 500));
+    // Adelantado respecto al vencimiento no es fallo (diferencia negativa).
+    TEST_ASSERT_FALSE(RS485SlaveStats::isDeadlineMiss(480, 500));
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -1099,6 +1355,20 @@ int main(int, char **)
     RUN_TEST(test_plantower_parser_decodes_signed_temperature_and_humidity);
     RUN_TEST(test_gnss_parser_converts_coordinates_speed_and_satellites);
     RUN_TEST(test_gnss_parser_rejects_missing_fix);
+    RUN_TEST(test_http_url_normalize_adds_path_and_reports_errors);
+    RUN_TEST(test_http_url_host_and_ip_rewrite);
+    RUN_TEST(test_http_url_ipv4_validation);
+    RUN_TEST(test_at_response_registration_status);
+    RUN_TEST(test_at_response_ip_address_detection);
+    RUN_TEST(test_signal_quality_parses_csq_and_maps_bars);
+    RUN_TEST(test_status_led_temperature_gradient_and_low_power_peak);
+    RUN_TEST(test_status_led_profiles_select_power_mode);
+    RUN_TEST(test_console_args_read_named_values);
+    RUN_TEST(test_console_args_parse_pid_config_overrides_only_given_fields);
+    RUN_TEST(test_console_args_format_duration);
+    RUN_TEST(test_rtc_to_unix_calendar_boundaries);
+    RUN_TEST(test_rs485_stats_state_transitions);
+    RUN_TEST(test_rs485_stats_exceptions_and_timing);
     RUN_TEST(test_i2c_retry_policy_matches_historical_backoff);
     RUN_TEST(test_fs3000_conversion_boundaries);
     RUN_TEST(test_afm07_fresh_stale_contract);

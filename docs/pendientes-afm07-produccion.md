@@ -25,8 +25,7 @@ intervalo aprobado hasta cerrar todas las casillas de este documento.
       hardware (`pio test -e eolo_dron_low_power --without-testing`).
 - [ ] Ejecutar `pio run -e eolo_dron_low_power`.
 - [ ] Repetir, si el tiempo lo permite, la compilación de
-      `eolo_express`, `eolo_express_legacy`, `eolo_standard` y
-      `eolo_standard_libraries`.
+      `eolo_express`, `eolo_express_legacy` y `eolo_standard`.
 - [ ] Verificar el portal con `node --check web-server/app.js`.
 - [ ] Verificar los scripts con:
 
@@ -35,7 +34,7 @@ intervalo aprobado hasta cerrar todas las casillas de este documento.
         scripts/platformio_afm07_gap.py
       ```
 
-- [ ] Regenerar `src/Board/HeadlessSetupWebPage.h` con
+- [ ] Regenerar `src/Headless/HeadlessSetupWebPage.h` con
       `python3 scripts/generate_headless_setup_web.py` y comprobar que el
       recurso generado corresponde exactamente al portal fuente.
 - [ ] Confirmar que el portal solo muestra `pollGapMs`; no debe existir un

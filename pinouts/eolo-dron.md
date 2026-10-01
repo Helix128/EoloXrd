@@ -1,6 +1,6 @@
 # Pinout EOLO Dron
 
-Fuente: `src/Board/Pinout.h` con `EOLO_TARGET_DRON`.
+Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_DRON`.
 
 ## Resumen
 

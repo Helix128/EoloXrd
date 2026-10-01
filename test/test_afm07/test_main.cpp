@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "Sensors/AFM07.h"
-#include "Effectors/Motor.h"
-#include "Config/Legacy.h"
+#include "../../src/Common/Sensors/AFM07.h"
+#include "../../src/Common/Effectors/Motor.h"
+#include "../../src/Variants/Legacy.h"
 
 // Hacer el sensor global para que la tarea de FreeRTOS persista entre tests
 AFM07 sensor;

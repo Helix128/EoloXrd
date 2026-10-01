@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <unity.h>
 #include <atomic>
-#include "../../src/Board/RS485Bus.h"
-#include "../../src/Config/Legacy.h"
+#include "../../src/Common/Board/RS485Bus.h"
+#include "../../src/Variants/Legacy.h"
 
 // Prueba de placa: no presupone que los dos instrumentos estén conectados.
 // La matriz de disponibilidad se informa por las estadísticas de cada endpoint;

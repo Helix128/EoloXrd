@@ -11,7 +11,7 @@ descripción viva de las capas y sus dependencias.
   PID, captura y calibración sin dependencias de hardware.
 - Adaptadores de sensores con contratos uniformes y demos PlatformIO generadas
   desde una matriz de modelos.
-- `src/Board/Pinout.h` como fuente autoritativa, documentación sincronizada y
+- `src/Variants/Pinout.h` como fuente autoritativa, documentación sincronizada y
   auditorías automáticas de pinout/dependencias.
 - DTOs portables `LogRecord` y `TelemetrySnapshot`, contrato de configuración
   `SettingsStore` y adaptador `PreferencesSettingsStore`.
@@ -31,7 +31,7 @@ descripción viva de las capas y sus dependencias.
    `Context`, conservando los shims de escenas hasta eliminar consumidores
    antiguos.
 4. Considerar `EoloHardware` solo para drivers que no dependan de perfiles
-   globales, `Context` o `Config/Legacy.h`, y conservar el formato header-only.
+   globales, `Context` o `Variants/Legacy.h`, y conservar el formato header-only.
 
 Cada corte debe mantener compilables los seis ambientes de firmware, las demos
 soportadas y el test nativo de `EoloCore`.
