@@ -43,6 +43,13 @@ inline constexpr bool kModemAllowHttpFallback = false;
 inline constexpr float kAfm07FlowDivisor = 100.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
 
+// Barrido de duty con tubo conectado (una bomba, 0..2047). Ver
+// docs/optimizacion-pid-flujo-dron.md, sección 2.1.
+inline constexpr FlowFeedForwardPoint kFlowFeedForward[] = {
+    {184, 0.00f}, {410, 0.80f}, {594, 1.71f}, {819, 2.51f}, {1003, 3.11f},
+    {1228, 3.78f}, {1412, 4.60f}, {1638, 5.28f}, {1823, 5.87f}, {2047, 6.58f},
+};
+
 constexpr FlowPidConfig makeFlowPidConfig()
 {
     FlowPidConfig config{};
@@ -67,10 +74,15 @@ constexpr FlowPidConfig makeFlowPidConfig()
     config.sensitivity = 1.0f;
     config.recenterDelayMs = 4000UL;
     config.zeroFlowConfirmSamples = 5;
+    config.feedForward = {kFlowFeedForward,
+                          static_cast<uint8_t>(sizeof(kFlowFeedForward) / sizeof(kFlowFeedForward[0]))};
+    config.rampCountsPerSecond = kMotorRampStep * 1000.0f / static_cast<float>(kMotorRampIntervalMs);
     return config;
 }
 
 inline constexpr FlowPidConfig kFlowPid = makeFlowPidConfig();
+static_assert(kFlowPid.feedForward.valid((1 << kMotorPwmResolutionBits) - 1),
+              "kFlowFeedForward debe ser monótona y caber en el PWM de una bomba");
 }
 
 #endif

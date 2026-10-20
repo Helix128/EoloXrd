@@ -160,6 +160,7 @@ private:
     case SMART_FLOW_SEEK_CENTER: return "SEEK_CENTER";
     case SMART_FLOW_CENTER_LOCKED: return "CENTER_LOCKED";
     case SMART_FLOW_RECENTER: return "RECENTER";
+    case SMART_FLOW_APPROACH: return "APPROACH";
     default: return "UNKNOWN";
     }
   }

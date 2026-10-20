@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 #include <Eolo/Core/Capture/CaptureControllerModel.h>
 #include <Eolo/Core/Capture/CaptureSafetyModel.h>
 #include <Eolo/Core/Calibration/MotorCalibrationModel.h>
@@ -969,6 +970,306 @@ static void test_smart_flow_uncenters_on_close_targets()
     TEST_ASSERT_TRUE(status.pwm > 800);
 }
 
+// Copia del barrido del perfil Dron V2 (src/Variants/Profiles/Dron.h); el suite
+// nativo compila con el perfil Legacy y no puede incluir ambos.
+static const FlowFeedForwardPoint kTestFeedForward[] = {
+    {184, 0.00f}, {410, 0.80f}, {594, 1.71f}, {819, 2.51f}, {1003, 3.11f},
+    {1228, 3.78f}, {1412, 4.60f}, {1638, 5.28f}, {1823, 5.87f}, {2047, 6.58f},
+};
+
+static FlowPidConfig dron_v2_flow_config(bool withFeedForward)
+{
+    FlowPidConfig c{};
+    c.intervalMs = 100; c.deadband = 0.08f; c.kp = 20.0f; c.ki = 0.8f;
+    c.integralLimit = 20.0f; c.maxStep = 24; c.filterAlpha = 0.30f;
+    c.minActive = 0.20f; c.kd = 0.0f; c.maxDtMs = 1000; c.sensorStaleMs = 1200;
+    c.kickPwm = 800; c.kickMs = 250; c.stallFlowLpm = 0.10f;
+    c.restallCooldownMs = 8000; c.stallConfirmMs = 1500; c.softTrimMax = 80;
+    c.softMaxStep = 2; c.sensitivity = 1.0f; c.recenterDelayMs = 4000;
+    c.zeroFlowConfirmSamples = 5;
+    if (withFeedForward)
+    {
+        c.feedForward = {kTestFeedForward, 10};
+        c.rampCountsPerSecond = 1000.0f;
+    }
+    return c;
+}
+
+// Planta de una bomba: rampa física de 1 cuenta/ms tras el mando, tiempo
+// muerto, retardo de primer orden, umbral de arranque desde reposo y AFM07
+// cuantizado a 0,01 L/min cada 250 ms con ruido pseudoaleatorio opcional.
+struct PumpPlantSim
+{
+    float gainScale = 1.0f;
+    float deadTimeS = 0.30f;
+    float tauS = 0.40f;
+    float noiseLpm = 0.0f;
+    int breakawayPwm = 0;     // PWM físico necesario para arrancar desde reposo
+    bool blocked = false;
+    int command = 0;
+    float physicalPwm = 0.0f;
+    float flow = 0.0f;
+    bool spinning = false;
+    float history[160] = {};
+    uint8_t head = 0;
+    uint32_t noiseState = 12345u;
+
+    float staticFlow(float pwm) const
+    {
+        if (blocked || !spinning || pwm <= kTestFeedForward[0].pwm) return 0.0f;
+        for (int i = 1; i < 10; ++i)
+        {
+            if (pwm <= kTestFeedForward[i].pwm)
+            {
+                const FlowFeedForwardPoint &a = kTestFeedForward[i - 1];
+                const FlowFeedForwardPoint &b = kTestFeedForward[i];
+                const float t = (pwm - a.pwm) / static_cast<float>(b.pwm - a.pwm);
+                return gainScale * (a.flowLpm + t * (b.flowLpm - a.flowLpm));
+            }
+        }
+        return gainScale * kTestFeedForward[9].flowLpm;
+    }
+
+    // Avanza 10 ms con el último PWM comandado.
+    void step()
+    {
+        const float dt = 0.010f;
+        if (physicalPwm < command) physicalPwm = fminf(physicalPwm + 10.0f, command);
+        else physicalPwm = fmaxf(physicalPwm - 10.0f, command);
+        history[head] = physicalPwm;
+        head = (head + 1) % 160;
+        const int delaySteps = static_cast<int>(deadTimeS / dt);
+        const float delayedPwm = history[(head + 160 - 1 - delaySteps) % 160];
+        if (delayedPwm <= kTestFeedForward[0].pwm) spinning = false;
+        else if (delayedPwm >= breakawayPwm) spinning = true;
+        flow += (staticFlow(delayedPwm) - flow) * (dt / tauS);
+    }
+
+    float reading()
+    {
+        noiseState = noiseState * 1664525u + 1013904223u;
+        const float unit = static_cast<float>(noiseState >> 8) / 16777216.0f; // [0, 1)
+        const float y = flow > 0.005f ? flow + noiseLpm * (2.0f * unit - 1.0f) : 0.0f;
+        return roundf(fmaxf(y, 0.0f) * 100.0f) / 100.0f;
+    }
+};
+
+struct FlowSimResult
+{
+    float lockSeconds = -1.0f;
+    float maxFlow = 0.0f;           // Flujo real (sin ruido de medida)
+    float minFlow = 99.0f;
+    float minFlowAfterLock = 99.0f;
+    float maxFlowAfterLock = 0.0f;
+    bool zeroFlowLatched = false;
+};
+
+// Ejecuta el lazo completo (DualMotorFlowController) desde startMs hasta
+// startMs + durationMs con una consigna fija. El tiempo de enclave se mide
+// desde startMs.
+static FlowSimResult run_flow_sim(DualMotorFlowController &controller, PumpPlantSim &plant,
+                                  const FlowPidConfig &config, float target,
+                                  uint32_t startMs, uint32_t durationMs, uint32_t &sampleId)
+{
+    FlowSimResult result;
+    for (uint32_t t = startMs; t < startMs + durationMs; t += 10)
+    {
+        plant.step();
+        if ((t % 250) != 0) continue;
+        DualMotorFlowInput input;
+        input.nowMs = t;
+        input.targetFlow = target;
+        input.measuredFlow = plant.reading();
+        input.flowValid = true;
+        input.flowFresh = true;
+        input.sampleId = ++sampleId;
+        input.maxPwm = 2047;
+        const DualMotorFlowOutput out = controller.update(input, config);
+        plant.command = out.motor0Pwm;
+        const float y = plant.flow;
+        if (out.zeroFlowFailureLatched) result.zeroFlowLatched = true;
+        if (y > result.maxFlow) result.maxFlow = y;
+        if (y < result.minFlow) result.minFlow = y;
+        if (result.lockSeconds < 0.0f && out.smartStatus.centerFound)
+            result.lockSeconds = (t - startMs) / 1000.0f;
+        if (result.lockSeconds >= 0.0f && (t - startMs) / 1000.0f >= result.lockSeconds + 2.0f)
+        {
+            if (y < result.minFlowAfterLock) result.minFlowAfterLock = y;
+            if (y > result.maxFlowAfterLock) result.maxFlowAfterLock = y;
+        }
+    }
+    return result;
+}
+
+static void test_feed_forward_table_inverse_and_validation()
+{
+    const FlowFeedForwardTable table = {kTestFeedForward, 10};
+    TEST_ASSERT_TRUE(table.valid(2047));
+    TEST_ASSERT_FALSE(table.valid(2000));
+    TEST_ASSERT_EQUAL_INT(410, table.startPwm());
+    TEST_ASSERT_EQUAL_INT(184, table.pwmForFlow(0.0f));
+    TEST_ASSERT_EQUAL_INT(1228, table.pwmForFlow(3.78f));
+    // La consigna enclavada en hardware fue PWM 1695 para 5,48 L/min.
+    TEST_ASSERT_INT_WITHIN(15, 1695, table.pwmForFlow(5.48f));
+    TEST_ASSERT_EQUAL_INT(2047, table.pwmForFlow(8.0f));
+
+    const FlowFeedForwardPoint descending[] = {{100, 1.0f}, {200, 0.5f}};
+    TEST_ASSERT_FALSE((FlowFeedForwardTable{descending, 2}.valid(2047)));
+
+    FlowPidConfig config = dron_v2_flow_config(true);
+    TEST_ASSERT_TRUE(FlowMotorController::validateConfig(config, 2047));
+    config.feedForward = {descending, 2};
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(config, 2047));
+}
+
+static void test_feed_forward_limits_start_kick_for_low_targets()
+{
+    const FlowPidConfig config = dron_v2_flow_config(true);
+    TEST_ASSERT_EQUAL_INT(800, FlowMotorController::startKickPwm(config, 5.5f, 2047));
+    TEST_ASSERT_EQUAL_INT(594, FlowMotorController::startKickPwm(config, 1.71f, 2047));
+    // Nunca por debajo del umbral de arranque medido.
+    TEST_ASSERT_EQUAL_INT(410, FlowMotorController::startKickPwm(config, 0.4f, 2047));
+    TEST_ASSERT_EQUAL_INT(800, FlowMotorController::startKickPwm(dron_v2_flow_config(false), 0.4f, 2047));
+}
+
+// Planta realista por defecto: ruido de medida ±0,04 L/min (dispersión vista
+// en mantenimiento) y arranque desde reposo solo sobre ~350 cuentas físicas.
+static PumpPlantSim realistic_plant(float gain, float deadTimeS, float tauS)
+{
+    PumpPlantSim plant;
+    plant.gainScale = gain;
+    plant.deadTimeS = deadTimeS;
+    plant.tauS = tauS;
+    plant.noiseLpm = 0.04f;
+    plant.breakawayPwm = 350;
+    return plant;
+}
+
+// Tolerancia de enclave: la banda de búsqueda es absoluta (±0,10 L/min), así
+// que en consignas bajas domina sobre el 3 %.
+static float flow_tolerance(float target)
+{
+    return fmaxf(0.03f * target, 0.12f);
+}
+
+static void test_feed_forward_approach_locks_fast_without_overshoot()
+{
+    const float deadTimes[] = {0.3f, 0.6f};
+    const float taus[] = {0.4f, 0.9f};
+    const float gains[] = {0.85f, 1.0f, 1.15f};
+    const float targets[] = {1.0f, 2.0f, 4.0f, 5.5f};
+    for (float deadTime : deadTimes)
+        for (float tau : taus)
+            for (float gain : gains)
+                for (float target : targets)
+                {
+                    DualMotorFlowController controller;
+                    PumpPlantSim plant = realistic_plant(gain, deadTime, tau);
+                    uint32_t sampleId = 0;
+                    const FlowSimResult r = run_flow_sim(controller, plant, dron_v2_flow_config(true),
+                                                         target, 0, 25000, sampleId);
+                    char message[112];
+                    snprintf(message, sizeof(message),
+                             "theta %.1f tau %.1f gain %.2f target %.1f lock %.2fs max %.2f",
+                             deadTime, tau, gain, target, r.lockSeconds, r.maxFlow);
+                    TEST_ASSERT_FALSE_MESSAGE(r.zeroFlowLatched, message);
+                    TEST_ASSERT_TRUE_MESSAGE(r.lockSeconds > 0.0f && r.lockSeconds < 12.0f, message);
+                    if (deadTime == 0.3f && tau == 0.4f && gain == 1.0f)
+                    {
+                        TEST_MESSAGE(message);
+                        TEST_ASSERT_TRUE_MESSAGE(r.lockSeconds < 6.0f, message);
+                    }
+                    TEST_ASSERT_TRUE_MESSAGE(r.maxFlow <= target + flow_tolerance(target), message);
+                    TEST_ASSERT_TRUE_MESSAGE(fabsf(r.minFlowAfterLock - target) <= 0.2f &&
+                                                 fabsf(r.maxFlowAfterLock - target) <= 0.2f, message);
+                }
+}
+
+static void test_feed_forward_low_target_starts_pump_without_zero_flow()
+{
+    const float gains[] = {0.85f, 1.0f, 1.15f};
+    const float targets[] = {0.5f, 1.0f};
+    for (float gain : gains)
+        for (float target : targets)
+        {
+            DualMotorFlowController controller;
+            PumpPlantSim plant = realistic_plant(gain, 0.3f, 0.4f);
+            uint32_t sampleId = 0;
+            const FlowSimResult r = run_flow_sim(controller, plant, dron_v2_flow_config(true),
+                                                 target, 0, 25000, sampleId);
+            char message[96];
+            snprintf(message, sizeof(message), "gain %.2f target %.1f lock %.2fs max %.2f",
+                     gain, target, r.lockSeconds, r.maxFlow);
+            TEST_ASSERT_FALSE_MESSAGE(r.zeroFlowLatched, message);
+            TEST_ASSERT_TRUE_MESSAGE(r.lockSeconds > 0.0f, message);
+            TEST_ASSERT_TRUE_MESSAGE(fabsf(r.maxFlowAfterLock - target) <= 0.2f, message);
+        }
+}
+
+static void test_feed_forward_approach_handles_target_changes()
+{
+    const float deadTimes[] = {0.3f, 0.6f};
+    const float taus[] = {0.4f, 0.9f};
+    const float gains[] = {0.85f, 1.0f, 1.15f};
+    for (float deadTime : deadTimes)
+        for (float tau : taus)
+            for (float gain : gains)
+            {
+                DualMotorFlowController controller;
+                PumpPlantSim plant = realistic_plant(gain, deadTime, tau);
+                uint32_t sampleId = 0;
+                const FlowPidConfig config = dron_v2_flow_config(true);
+                run_flow_sim(controller, plant, config, 5.5f, 0, 20000, sampleId);
+                const float steps[][2] = {{5.5f, 2.0f}, {2.0f, 4.0f}, {4.0f, 5.5f}};
+                uint32_t start = 20000;
+                for (const auto &step : steps)
+                {
+                    const FlowSimResult r = run_flow_sim(controller, plant, config, step[1],
+                                                         start, 20000, sampleId);
+                    start += 20000;
+                    char message[112];
+                    snprintf(message, sizeof(message),
+                             "theta %.1f tau %.1f gain %.2f %.1f->%.1f lock %.2fs min %.2f max %.2f",
+                             deadTime, tau, gain, step[0], step[1], r.lockSeconds, r.minFlow, r.maxFlow);
+                    TEST_ASSERT_TRUE_MESSAGE(r.lockSeconds > 0.0f && r.lockSeconds < 12.0f, message);
+                    // Sin cruzar la consigna en el sentido del cambio.
+                    if (step[1] > step[0])
+                        TEST_ASSERT_TRUE_MESSAGE(r.maxFlow <= step[1] + flow_tolerance(step[1]), message);
+                    else
+                        TEST_ASSERT_TRUE_MESSAGE(r.minFlow >= step[1] - flow_tolerance(step[1]), message);
+                    TEST_ASSERT_TRUE_MESSAGE(fabsf(r.minFlowAfterLock - step[1]) <= 0.2f &&
+                                                 fabsf(r.maxFlowAfterLock - step[1]) <= 0.2f, message);
+                }
+            }
+}
+
+static void test_feed_forward_is_faster_than_ramp_seek_and_keeps_zero_flow_guard()
+{
+    DualMotorFlowController seekController;
+    PumpPlantSim seekPlant = realistic_plant(1.0f, 0.3f, 0.4f);
+    uint32_t sampleId = 0;
+    const FlowSimResult seek = run_flow_sim(seekController, seekPlant, dron_v2_flow_config(false),
+                                            5.5f, 0, 40000, sampleId);
+    DualMotorFlowController ffController;
+    PumpPlantSim ffPlant = realistic_plant(1.0f, 0.3f, 0.4f);
+    sampleId = 0;
+    const FlowSimResult ff = run_flow_sim(ffController, ffPlant, dron_v2_flow_config(true),
+                                          5.5f, 0, 40000, sampleId);
+    char message[64];
+    snprintf(message, sizeof(message), "seek %.2fs feed-forward %.2fs", seek.lockSeconds, ff.lockSeconds);
+    TEST_MESSAGE(message);
+    TEST_ASSERT_TRUE_MESSAGE(seek.lockSeconds > 10.0f, message);
+    TEST_ASSERT_TRUE_MESSAGE(ff.lockSeconds > 0.0f && ff.lockSeconds * 2.0f < seek.lockSeconds, message);
+
+    DualMotorFlowController blockedController;
+    PumpPlantSim blocked = realistic_plant(1.0f, 0.3f, 0.4f);
+    blocked.blocked = true;
+    sampleId = 0;
+    const FlowSimResult r = run_flow_sim(blockedController, blocked, dron_v2_flow_config(true),
+                                         5.5f, 0, 5000, sampleId);
+    TEST_ASSERT_TRUE(r.zeroFlowLatched);
+}
+
 static void test_flow_motor_controller_no_kick_on_running_target_change()
 {
     FlowMotorController controller;
@@ -1418,6 +1719,12 @@ int main(int, char **)
     RUN_TEST(test_smart_flow_recenter_on_sustained_drift);
     RUN_TEST(test_smart_flow_fluid_transition_on_target_change);
     RUN_TEST(test_smart_flow_uncenters_on_close_targets);
+    RUN_TEST(test_feed_forward_table_inverse_and_validation);
+    RUN_TEST(test_feed_forward_limits_start_kick_for_low_targets);
+    RUN_TEST(test_feed_forward_approach_locks_fast_without_overshoot);
+    RUN_TEST(test_feed_forward_low_target_starts_pump_without_zero_flow);
+    RUN_TEST(test_feed_forward_approach_handles_target_changes);
+    RUN_TEST(test_feed_forward_is_faster_than_ramp_seek_and_keeps_zero_flow_guard);
     RUN_TEST(test_flow_motor_controller_no_kick_on_running_target_change);
     RUN_TEST(test_dual_motor_multi_stage_seamless_pwm);
     return UNITY_END();

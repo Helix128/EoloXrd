@@ -49,6 +49,12 @@ struct FlowPidConfig
     // Cero desactiva la protección; los perfiles AFM07 de captura usan 5
     // muestras (~1,25 s con la cadencia nominal de 250 ms).
     uint8_t zeroFlowConfirmSamples = 0;
+    // Curva PWM→flujo medida. Vacía conserva la búsqueda por rampa; con datos
+    // habilita la aproximación directa y limita el kick inicial.
+    FlowFeedForwardTable feedForward{};
+    // Velocidad de la rampa física del motor, para esperar a que el PWM real
+    // alcance el mando antes de evaluar la aproximación.
+    float rampCountsPerSecond = 0.0f;
 };
 
 struct FlowPidStatus
@@ -211,6 +217,10 @@ public:
             return false;
         if (config.sensorFaultStopMs < config.intervalMs || config.sensorFaultStopMs > FlowPidLimits::SENSOR_STALE_MAX_MS)
             return false;
+        if (config.feedForward.points != nullptr && !config.feedForward.valid(maxPwm))
+            return false;
+        if (isnan(config.rampCountsPerSecond) || config.rampCountsPerSecond < 0.0f)
+            return false;
         return true;
     }
 
@@ -233,7 +243,25 @@ public:
         tune.softStepLimit = config.softMaxStep > 0 ? config.softMaxStep : 2;
         tune.sensitivity = config.sensitivity > 0.05f ? config.sensitivity : 1.0f;
         tune.recenterDelayMs = config.recenterDelayMs >= 500 ? config.recenterDelayMs : 4000;
+        tune.feedForward = config.feedForward;
+        tune.rampCountsPerSecond = config.rampCountsPerSecond;
         return tune;
+    }
+
+    // Kick de arranque en frío. Con curva medida no supera el PWM previsto
+    // para el objetivo (evita sobrepico en consignas bajas), pero tampoco baja
+    // del umbral de arranque de la bomba.
+    static int startKickPwm(const FlowPidConfig &config, float targetFlow, int maxPwm)
+    {
+        int kick = config.kickPwm;
+        if (config.feedForward.available())
+        {
+            int expected = config.feedForward.pwmForFlow(targetFlow);
+            const int start = config.feedForward.startPwm();
+            if (expected < start) expected = start;
+            if (expected < kick) kick = expected;
+        }
+        return kick < maxPwm ? kick : maxPwm;
     }
 
     static const char *ignitionPhaseText(IgnitionPhase phase)
@@ -263,6 +291,7 @@ public:
         _ignPhase = IgnitionPhase::Off;
         _kickStartMs = 0;
         _kickCount = 0;
+        _kickPwm = 0;
         _lastKickMs = 0;
         _stallStartMs = 0;
         _stallDetected = false;
@@ -324,6 +353,7 @@ public:
             _kickStartMs = input.nowMs;
             _lastKickMs = input.nowMs;
             _kickCount++;
+            _kickPwm = config.kickPwm;
             _stallStartMs = 0;
             _stallDetected = false;
             _smart.resetController(true);
@@ -425,6 +455,7 @@ public:
             _kickStartMs = input.nowMs;
             _lastKickMs = input.nowMs;
             _kickCount++;
+            _kickPwm = startKickPwm(config, input.targetFlow, input.maxPwm);
             _stallStartMs = 0;
             _stallDetected = false;
             _smart.resetController(false);
@@ -434,7 +465,7 @@ public:
         if (_ignPhase == IgnitionPhase::Kick)
         {
             _zeroFlowCount = 0;
-            const int kp = (config.kickPwm < input.maxPwm) ? config.kickPwm : input.maxPwm;
+            const int kp = (_kickPwm < input.maxPwm) ? _kickPwm : input.maxPwm;
             _currentPwm = kp;
             _lastUpdateMs = input.nowMs;
             if ((input.nowMs - _kickStartMs) >= config.kickMs)
@@ -573,10 +604,11 @@ public:
                 _kickStartMs = input.nowMs;
                 _lastKickMs = input.nowMs;
                 _kickCount++;
+                _kickPwm = config.kickPwm;
                 _stallStartMs = 0;
                 _smart.resetController(true);
                 _zeroFlowCount = 0;
-                const int kp = (config.kickPwm < input.maxPwm) ? config.kickPwm : input.maxPwm;
+                const int kp = (_kickPwm < input.maxPwm) ? _kickPwm : input.maxPwm;
                 _currentPwm = kp;
                 output.updated = true;
                 output.initialized = true;
@@ -689,6 +721,7 @@ private:
     IgnitionPhase _ignPhase = IgnitionPhase::Off;
     uint32_t _kickStartMs = 0;
     uint16_t _kickCount = 0;
+    int _kickPwm = 0;
     uint32_t _lastKickMs = 0;
     uint32_t _stallStartMs = 0;
     bool _stallDetected = false;

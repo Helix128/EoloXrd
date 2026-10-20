@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
+#include <Eolo/Core/Flow/FlowFeedForwardTable.h>
 
 struct SmartFlowTune
 {
@@ -22,6 +23,9 @@ struct SmartFlowTune
     uint32_t recenterDelayMs = 4000;// Sustained drift time before recentering
     int recenterStep = 1;           // PWM step size when shifting center
     float breakoutThreshold = 2.0f; // Error threshold for re-seeking
+    // Curva PWM→flujo para aproximación directa; vacía = búsqueda por rampa.
+    FlowFeedForwardTable feedForward;
+    float rampCountsPerSecond = 0.0f; // Rampa física del motor (0 = desconocida)
     // Backward-compatibility aliases
     int maxStep = 16;
     int maxFeedForwardStep = 10;
@@ -32,6 +36,7 @@ enum SmartFlowMode : uint8_t
     SMART_FLOW_SEEK_CENTER = 0,     // Seeking target flow crossing / operating point
     SMART_FLOW_CENTER_LOCKED = 1,   // Center found and locked; soft trimming active
     SMART_FLOW_RECENTER = 2,        // Shifting center due to sustained drift
+    SMART_FLOW_APPROACH = 4,        // Feed-forward jump + bounded secant corrections
     // Backward-compatibility aliases
     SMART_FLOW_PID_ONLY = 0,
     SMART_FLOW_GAIN_PREDICT = 1,
@@ -47,6 +52,8 @@ struct SmartFlowStatus
     int pwmFF = 0;                  // Alias to centerPwm / base
     int pidCorrection = 0;          // Alias to trimPwm
     int step = 0;
+    int approachPwm = 0;            // Last feed-forward command (0 = unused)
+    uint8_t approachSecants = 0;
     SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
     bool centerFound = false;
     float rawFlow = 0.0f;
@@ -90,6 +97,38 @@ class SmartFlowController
     SmartFlowMode mode = SMART_FLOW_SEEK_CENTER;
     float previousTargetFlow = -1.0f;
 
+    // Aproximación por feed-forward: se arma cada vez que se pierde el centro.
+    bool approachArmed = true;
+    bool approachActive = false;
+    bool approachBaseSettled = false;
+    int approachCmd = 0;
+    int approachBasePwm = 0;
+    float approachBaseFlow = 0.0f;
+    float approachExpectedDelta = 0.0f;
+    float approachHistory[4] = {};
+    uint8_t approachSamples = 0;
+    uint8_t approachSecants = 0;
+    uint32_t approachStartMs = 0;
+    uint32_t approachRampMs = 0;
+
+    // Fracción del salto inicial: queda por debajo del objetivo porque la
+    // bomba no puede frenar rápido. 0,87 ≈ 1/1,15: una tabla con ganancia
+    // 15 % optimista todavía no sobrepasa la consigna.
+    static constexpr float kApproachFraction = 0.87f;
+    static constexpr float kSecantGain = 0.90f;
+    static constexpr uint8_t kMaxSecants = 2;
+    // Régimen: la media de las 2 últimas muestras difiere < kApproachStableDelta
+    // de la de las 2 anteriores y el flujo ya recorrió la mitad del cambio
+    // esperado (el tramo muerto inicial también parece "estable"). Sin eso,
+    // el timeout cubre tiempo muerto + 3τ del peor caso estimado.
+    static constexpr uint32_t kApproachMinSettleMs = 600;
+    static constexpr uint32_t kApproachMaxSettleMs = 4000;
+    static constexpr float kApproachStableDelta = 0.05f;
+    static constexpr float kApproachMinResponse = 0.5f;
+    static constexpr int kSecantMinDeltaPwm = 20;
+    static constexpr float kMinGainRatio = 0.6f;
+    static constexpr float kMaxGainRatio = 1.6f;
+
     static int clampInt(int value, int low, int high)
     {
         if (value < low) return low;
@@ -127,6 +166,11 @@ public:
 
     void uncenter()
     {
+        // Un centro enclavado deja una medida en régimen para la secante.
+        if (!approachArmed)
+            approachBaseSettled = centerFound;
+        approachArmed = true;
+        approachActive = false;
         centerFound = false;
         centerPwm = 0;
         mode = SMART_FLOW_SEEK_CENTER;
@@ -152,6 +196,8 @@ public:
             isDrifting = false;
             isBreakout = false;
             previousTargetFlow = -1.0f;
+            approachArmed = false;
+            approachActive = false;
         }
     }
 
@@ -176,6 +222,12 @@ public:
         isBreakout = false;
         breakoutStartMs = 0;
         previousTargetFlow = -1.0f;
+        if (!preserveModel || !centerFound)
+        {
+            approachArmed = true;
+            approachActive = false;
+            approachBaseSettled = false;
+        }
 
         if (!preserveModel)
         {
@@ -189,6 +241,117 @@ public:
         }
     }
 
+private:
+    uint32_t rampMsFor(int deltaPwm) const
+    {
+        if (tune.rampCountsPerSecond <= 0.0f) return 0;
+        return static_cast<uint32_t>(fabsf(static_cast<float>(deltaPwm)) * 1000.0f / tune.rampCountsPerSecond);
+    }
+
+    // Razón ganancia real / tabla medida en un régimen (flujo, PWM). Supone un
+    // error multiplicativo de la tabla (batería, tubo, desgaste).
+    float gainRatioAt(float flow, int pwm) const
+    {
+        const float tableFlow = tune.feedForward.flowForPwm(pwm);
+        if (tableFlow <= 0.05f || flow <= 0.05f) return 1.0f;
+        return clampFloat(flow / tableFlow, kMinGainRatio, kMaxGainRatio);
+    }
+
+    void startApproachStep(uint32_t nowMs, uint32_t rampMs, float expectedDelta)
+    {
+        approachSamples = 0;
+        approachStartMs = nowMs;
+        approachRampMs = rampMs;
+        approachExpectedDelta = expectedDelta;
+    }
+
+    void beginApproach(uint32_t nowMs, int currentPwm, float targetFlow, float baseFlow, int maxPwm)
+    {
+        const FlowFeedForwardTable &ff = tune.feedForward;
+        approachArmed = false;
+        approachActive = true;
+        approachSecants = 0;
+        approachBasePwm = currentPwm;
+        approachBaseFlow = baseFlow;
+
+        const float partialFlow = baseFlow + kApproachFraction * (targetFlow - baseFlow);
+        int cmd;
+        if (approachBaseSettled)
+        {
+            // Desde un régimen conocido: paso relativo escalado por la ganancia
+            // observada; conserva la deriva que ya corrigió el mantenimiento.
+            const float ratio = gainRatioAt(baseFlow, currentPwm);
+            cmd = currentPwm + ff.pwmForFlow(partialFlow / ratio) - ff.pwmForFlow(baseFlow / ratio);
+            startApproachStep(nowMs, rampMsFor(cmd - currentPwm), partialFlow - baseFlow);
+        }
+        else
+        {
+            // Arranque: el PWM físico aún sube desde ~0 tras el kick y la bomba
+            // puede no haber girado todavía; no bajar del umbral de arranque.
+            cmd = ff.pwmForFlow(partialFlow);
+            if (cmd < ff.startPwm()) cmd = ff.startPwm();
+            startApproachStep(nowMs, rampMsFor(cmd), partialFlow - baseFlow);
+        }
+        approachCmd = clampInt(cmd, 0, maxPwm);
+    }
+
+    // Devuelve true cuando la aproximación terminó con el flujo ya dentro de
+    // la banda: el PWM actual es el centro y puede enclavarse directamente.
+    bool updateApproach(uint32_t nowMs, float targetFlow, float rawFlow, float settlingBand, int maxPwm)
+    {
+        approachHistory[3] = approachHistory[2];
+        approachHistory[2] = approachHistory[1];
+        approachHistory[1] = approachHistory[0];
+        approachHistory[0] = rawFlow;
+        if (approachSamples < UINT8_MAX) approachSamples++;
+
+        const uint32_t elapsed = nowMs - approachStartMs;
+        if (approachSamples < 4 || elapsed < approachRampMs + kApproachMinSettleMs)
+            return false;
+        const float flow = 0.5f * (approachHistory[0] + approachHistory[1]);
+        const float older = 0.5f * (approachHistory[2] + approachHistory[3]);
+        const bool stable = fabsf(flow - older) < kApproachStableDelta;
+        const bool responded = fabsf(flow - approachBaseFlow) >= kApproachMinResponse * fabsf(approachExpectedDelta);
+        if (!(stable && responded) && elapsed < approachRampMs + kApproachMaxSettleMs)
+            return false;
+
+        const float error = targetFlow - flow;
+        if (fabsf(error) <= settlingBand || approachSecants >= kMaxSecants)
+        {
+            approachActive = false;
+            return fabsf(error) <= settlingBand;
+        }
+
+        // Corrección secante acotada sobre la curva: el paso sale de la tabla
+        // (respeta su no linealidad). Con base en régimen se escala por la
+        // ganancia incremental del paso anterior; si no, por la ganancia
+        // absoluta del punto actual.
+        const FlowFeedForwardTable &ff = tune.feedForward;
+        float tableStep;
+        const int deltaPwm = approachCmd - approachBasePwm;
+        if (approachBaseSettled && abs(deltaPwm) >= kSecantMinDeltaPwm)
+        {
+            const int tableDelta = ff.pwmForFlow(flow) - ff.pwmForFlow(approachBaseFlow);
+            const float ratio = clampFloat(static_cast<float>(tableDelta) / static_cast<float>(deltaPwm),
+                                           kMinGainRatio, kMaxGainRatio);
+            tableStep = static_cast<float>(ff.pwmForFlow(targetFlow) - ff.pwmForFlow(flow)) / ratio;
+        }
+        else
+        {
+            const float ratio = gainRatioAt(flow, approachCmd);
+            tableStep = static_cast<float>(ff.pwmForFlow(targetFlow / ratio) - ff.pwmForFlow(flow / ratio));
+        }
+        const int step = static_cast<int>(lroundf(kSecantGain * tableStep));
+        approachBasePwm = approachCmd;
+        approachBaseFlow = flow;
+        approachBaseSettled = true;
+        approachCmd = clampInt(approachCmd + step, 0, maxPwm);
+        approachSecants++;
+        startApproachStep(nowMs, rampMsFor(step), kSecantGain * error);
+        return false;
+    }
+
+public:
     SmartFlowStatus update(uint32_t nowMs, int currentPwm, float targetFlow, float rawFlow, float dtSeconds, int maxPwm)
     {
         SmartFlowStatus status;
@@ -245,6 +408,12 @@ public:
         // 3. FASE: Búsqueda y Estabilización de Centro (SEEK_CENTER)
         if (!centerFound)
         {
+            if (approachArmed && tune.feedForward.available())
+                beginApproach(nowMs, currentPwm, targetFlow,
+                              approachBaseSettled ? fastFlow : rawFlow, maxPwm);
+            else
+                approachArmed = false;
+
             mode = SMART_FLOW_SEEK_CENTER;
             const float absErr = fabsf(errorFast);
 
@@ -263,8 +432,23 @@ public:
 
             const uint8_t requiredSettledTicks = 3;
 
-            if (settledTicks >= requiredSettledTicks)
+            const bool approachInBand = approachActive &&
+                                        updateApproach(nowMs, targetFlow, rawFlow, settlingBand, maxPwm);
+
+            if (approachActive)
             {
+                mode = SMART_FLOW_APPROACH;
+                nextPwm = approachCmd;
+            }
+            else if (approachInBand || settledTicks >= requiredSettledTicks)
+            {
+                if (approachInBand)
+                {
+                    // El EMA aún arrastra la subida; re-sincronizarlo evita que
+                    // el trim reaccione a un error que ya no existe.
+                    fastFlow = rawFlow;
+                    slowFlow = rawFlow;
+                }
                 centerPwm = currentPwm;
                 centerPwm = clampInt(centerPwm, 0, maxPwm);
                 centerFound = true;
@@ -309,6 +493,8 @@ public:
                     isBreakout = false;
                     breakoutStartMs = 0;
                     mode = SMART_FLOW_SEEK_CENTER;
+                    approachArmed = true;
+                    approachBaseSettled = false;
                 }
             }
             else
@@ -393,6 +579,8 @@ public:
         status.pwmFF = centerPwm;
         status.pidCorrection = static_cast<int>(currentTrim);
         status.step = abs(nextPwm - currentPwm);
+        status.approachPwm = approachCmd;
+        status.approachSecants = approachSecants;
         status.mode = mode;
         status.centerFound = centerFound;
         status.fastFlow = fastFlow;
