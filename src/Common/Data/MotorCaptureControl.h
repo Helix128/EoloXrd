@@ -433,6 +433,13 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
             LOG_OUT(output.smartStatus.dTerm, 1);
             LOG_OUT(" modo ");
             LOG_OUT(static_cast<int>(output.smartStatus.mode));
+            if (pidCfg.feedForward.available())
+            {
+                LOG_OUT(" ff=");
+                LOG_OUT(output.smartStatus.approachPwm);
+                LOG_OUT(" sec=");
+                LOG_OUT(static_cast<int>(output.smartStatus.approachSecants));
+            }
             LOG_OUT(" locked=");
             LOG_OUT_LN(output.smartStatus.centerFound ? "si" : "no");
             lastPidLogMs = nowMs;
