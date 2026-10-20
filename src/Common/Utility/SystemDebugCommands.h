@@ -26,7 +26,7 @@ private:
         out.println("  time              mostrar hora RTC");
         out.println("  time set YYYY-MM-DD HH:MM:SS");
         out.println("  time epoch <unix_utc> <offset_seconds>");
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
         out.println("  switches/sw       estado de switches de captura");
         out.println("  drone status      diagnostico compacto EOLO Dron");
         out.println("  system status     salud de loop, tareas, heap y HTTP");

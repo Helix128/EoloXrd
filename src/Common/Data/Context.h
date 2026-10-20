@@ -724,7 +724,7 @@ public:
         // realiza su propio sondeo antes de permitir PWM.
         if (checkMotorThermal || isCaptureActive())
             updateMotorThermalProtection();
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
         if (isCaptureActive() && !enforceCaptureSafety())
         {
             // La rutina de seguridad ya apagó el motor y marcó la captura como
@@ -759,7 +759,7 @@ public:
 
     bool hasFreshAfmSampleForCapture()
     {
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
         FlowData flowData;
         const bool afmRead = components.flowSensor.getData(flowData);
         return afmRead && flowData.valid && flowData.fresh && !flowData.stale;
@@ -799,7 +799,7 @@ public:
     bool prepareCaptureStart();
     bool actuationSensorsReady(bool requireFreshNtc = true)
     {
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
         const bool afmReady = hasFreshAfmSampleForCapture();
         bool ntcReady = motorCapture.motorThermalSensorValid &&
                          !motorCapture.motorNtcFaultLatched;
@@ -828,7 +828,7 @@ public:
     }
     void updateMotors()
     {
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
         const bool captureNtcCheckPending = isCaptureActive() &&
             !motorCapture.motorThermalSensorValid &&
             !motorCapture.motorNtcFaultLatched &&

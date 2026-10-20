@@ -14,7 +14,7 @@
 namespace LogSchema
 {
     static constexpr float LogMissingValue = -1.0f;
-#if defined(EOLO_TARGET_DRON)
+#if defined(EOLO_TARGET_DRON_LEGACY)
     static constexpr bool BatteryColumnEnabled = false;
 #else
     static constexpr bool BatteryColumnEnabled = true;

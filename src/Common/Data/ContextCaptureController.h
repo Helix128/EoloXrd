@@ -15,7 +15,7 @@
 
 inline bool Context::beginCapture()
 {
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
     if (!prepareCaptureStart())
     {
         components.motor.setPwmImmediate(0);
@@ -35,7 +35,7 @@ inline bool Context::beginCapture()
 inline bool Context::prepareCaptureStart()
 {
     captureStartFault = CaptureSafetyFault::None;
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
     FlowData flowData;
     const bool afmRead = components.flowSensor.getData(flowData);
     NTCData ntcData;
@@ -68,7 +68,7 @@ inline bool Context::prepareCaptureStart()
 
 inline bool Context::enforceCaptureSafety()
 {
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_HEADLESS)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_HEADLESS)
     FlowData flowData;
     const bool afmRead = components.flowSensor.getData(flowData);
     CaptureSafetyInput input;
@@ -124,7 +124,7 @@ inline void CaptureController::begin(Context &ctx)
     volumeIntegrator.reset(millis());
     ctx.resetMotorFlowControllerForCaptureStart();
     bool motorOverheat = ctx.updateMotorThermalProtection();
-#if defined(FEATURE_FLOW_PID) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_FLOW_PID) && defined(EOLO_TARGET_DRON_LEGACY)
     if (!motorOverheat)
         ctx.components.motor.setPwmImmediate(EoloConfig::flowPidInitialPwm);
 #endif

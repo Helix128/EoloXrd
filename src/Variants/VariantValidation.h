@@ -31,7 +31,7 @@
   #error "EOLO_I2C_DIRECT_DRIVERS debe ser 0 o 1"
 #endif
 
-#if defined(EOLO_TARGET_DRON)
+#if defined(EOLO_TARGET_DRON_LEGACY)
   #if !defined(FEATURE_HEADLESS) || !defined(FEATURE_MOTOR_PWM) || \
       !defined(FEATURE_FLOW_AFM07) || !defined(FEATURE_FLOW_PID) || \
       !defined(FEATURE_NEOPIXEL) || !defined(FEATURE_NTC) || \
@@ -42,6 +42,19 @@
       defined(FEATURE_FLOW_CALIBRATION) || defined(FEATURE_MODEM) || \
       defined(FEATURE_ANEMOMETER) || defined(FEATURE_DUAL_BATTERY) || \
       defined(FEATURE_PLANTOWER)
+    #error "EOLO Dron recibió una capacidad de otro modelo"
+  #endif
+#elif defined(EOLO_TARGET_DRON)
+  #if !defined(FEATURE_MOTOR_PWM) || !defined(FEATURE_FLOW_AFM07) || \
+      !defined(FEATURE_FLOW_CALIBRATION)
+    #error "EOLO Dron requiere PWM directo, AFM07 y calibración explícitos"
+  #endif
+  #if defined(FEATURE_HEADLESS) || defined(FEATURE_MOTOR_PWM_POWER_PIN) || \
+      defined(FEATURE_FLOW_FS3000) || defined(FEATURE_FLOW_PID) || \
+      defined(FEATURE_MODEM) || defined(FEATURE_ANEMOMETER) || \
+      defined(FEATURE_DUAL_BATTERY) || defined(FEATURE_PLANTOWER) || \
+      defined(FEATURE_NEOPIXEL) || defined(FEATURE_NTC) || \
+      defined(DRONE_SWITCHES_HAVE_EXTERNAL_PULLS)
     #error "EOLO Dron recibió una capacidad de otro modelo"
   #endif
 #elif defined(EOLO_TARGET_EXPRESS)
@@ -83,7 +96,10 @@
   #endif
 #endif
 
-#if defined(STATUS_LED_LOW_POWER) && !defined(EOLO_TARGET_DRON)
+static_assert((ENCODER_SDA_PIN >= 0) == (EoloConfig::encoderBusClockHz != 0),
+              "El bus I2C del encoder requiere pines y frecuencia, o ninguno");
+
+#if defined(STATUS_LED_LOW_POWER) && !defined(EOLO_TARGET_DRON_LEGACY)
   #error "STATUS_LED_LOW_POWER solo es válido para EOLO Dron"
 #endif
 

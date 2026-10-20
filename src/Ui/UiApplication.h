@@ -116,16 +116,38 @@ public:
         // Actualizar el contexto de la app y la escena actual
         const bool externalDirty = _context.update();
         {
-            // El OLED actual usa SPI; las lecturas I2C viven en EoloI2CTask y el
+#if EOLO_DISPLAY_SPI
+            // El OLED usa SPI; las lecturas I2C viven en EoloI2CTask y el
             // render no debe esperar al bus.
             // La SD comparte el bus SPI con el OLED. Durante una operación larga de
             // SD se omite este frame para que el loop siga atendiendo sensores,
             // entradas y tareas de fondo en vez de quedar bloqueado en el mutex.
-            SPIBus::Guard spiGuard(pdMS_TO_TICKS(1));
-            if (spiGuard.acquired())
+            SPIBus::Guard displayGuard(pdMS_TO_TICKS(1));
+#else
+            // El OLED va por el bus I2C principal: cada frame lo toma como un
+            // sensor más. Si el worker lo tiene, se omite el frame.
+            I2CBus::Guard displayGuard(1);
+#endif
+            if (displayGuard.acquired())
             {
                 SceneManager::update(_context, externalDirty);
             }
+            else if (externalDirty)
+            {
+                // Frame omitido: Context ya consumió el aviso de cambio; se
+                // reintenta en el siguiente frame en vez de esperar al timer
+                // de la escena.
+                _context.markUiDirty();
+            }
+        }
+
+        // Una escena nueva no hereda giros hechos mientras otra pantalla
+        // ignoraba el encoder.
+        const int sceneIndex = SceneManager::getSceneIndex();
+        if (sceneIndex != _lastSceneIndex)
+        {
+            _lastSceneIndex = sceneIndex;
+            _context.components.input.clearEncoderDelta();
         }
 
         const unsigned long frameExecutionMs = millis() - _frameStartMs;
@@ -144,6 +166,7 @@ private:
     DebugConsole _debugConsole;
     unsigned long _lastFrameMs = 0;
     unsigned long _frameStartMs = 0;
+    int _lastSceneIndex = -1;
 
     inline static UiApplication *activeInstance_ = nullptr;
 

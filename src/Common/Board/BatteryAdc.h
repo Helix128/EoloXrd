@@ -45,13 +45,23 @@ private:
     float alpha = 0.005f;
     bool emaInitialized = false;
 
-    int getLevel() { return analogRead(battery_pin); }
+    // "Level" es la cuenta cruda del ADC; en el pack 2S son los mV de pin que
+    // entrega analogReadMilliVolts (ya calibrados por el ESP32).
+    int getLevel() {
+        if constexpr (EoloConfig::batteryModel == EoloConfig::BatteryModel::Pack2sLiIon)
+            return (int)analogReadMilliVolts(battery_pin);
+        return analogRead(battery_pin);
+    }
 
     float voltageFromLevel(float level) {
+        if constexpr (EoloConfig::batteryModel == EoloConfig::BatteryModel::Pack2sLiIon)
+            return BatteryMath::pack2sVoltageFromPinMv(level);
         return BatteryMath::voltageFromAdcLevel(level, ADC_MAX, ADC_VREF, DIVIDER_RATIO);
     }
 
     float pctFromVoltage(float v) {
+        if constexpr (EoloConfig::batteryModel == EoloConfig::BatteryModel::Pack2sLiIon)
+            return BatteryMath::pack2sPctFromVoltage(v);
         return BatteryMath::pctFromVoltage(v, BATT_MAX_VOLTAGE);
     }
 

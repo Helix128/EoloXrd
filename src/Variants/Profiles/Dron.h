@@ -4,29 +4,33 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
-#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME2_F_4W_SW_SPI
-#define EOLO_DISPLAY_SPI 1
+// OLED 1.3" SH1106 por I2C hardware en el bus principal (Wire). El SSD1306 de
+// otras variantes deja una franja blanca/texto cortado en este panel.
+#define EOLO_DISPLAY_MODEL U8G2_SH1106_128X64_NONAME_F_HW_I2C
+#define EOLO_DISPLAY_SPI 0
 #define EOLO_DISPLAY_HW_SPI 0
 
 namespace EoloConfig::Profile
 {
 inline constexpr const char kModelName[] = "EOLO Dron";
-// Producción y calificación Dron siempre parten del PID vivo. Las curvas de
-// calibración históricas permanecen guardadas, pero no inicializan los motores.
 inline constexpr bool kUseCalibrationSeed = false;
 
-inline constexpr uint32_t kI2cClockHz = 150000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 8000000UL;
+inline constexpr uint32_t kI2cClockHz = 100000UL;
+inline constexpr uint32_t kDisplaySpiClockHz = 0UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;
-inline constexpr int kMotorRampStep = 16;
+inline constexpr int kMotorRampStep = 4;
 inline constexpr uint32_t kMotorRampIntervalMs = 8UL;
 inline constexpr ModemPowerMode kModemPowerMode = ModemPowerMode::AlwaysOn;
 inline constexpr int kFlowPidInitialPwm = 300;
 inline constexpr uint32_t kI2cWarmupMs = 0UL;
 inline constexpr uint32_t kI2cTransactionTimeoutMs = 20UL;
 inline constexpr bool kEncoderInverted = false;
+// 0: el encoder comparte el bus I2C principal; otro valor: Wire1 a esa frecuencia
+// (pines ENCODER_SDA_PIN/ENCODER_SCL_PIN).
+inline constexpr uint32_t kEncoderBusClockHz = 10000UL;
+inline constexpr BatteryModel kBatteryModel = BatteryModel::Pack2sLiIon;
 
 inline constexpr float kMotorOverheatHighC = 70.0f;
 inline constexpr float kMotorOverheatLowC = 60.0f;
@@ -42,29 +46,26 @@ inline constexpr float kDroneTargetFlowLpm = 5.0f;
 constexpr FlowPidConfig makeFlowPidConfig()
 {
     FlowPidConfig config{};
-    config.intervalMs = 200UL;
-    config.deadband = 0.06f;
-    config.kp = 35.0f;
-    config.ki = 1.0f;
-    config.integralLimit = 16.0f;
-    config.maxStep = 32;
-    config.filterAlpha = 0.35f;
-    config.minActive = 0.30f;
+    config.intervalMs = 100UL;
+    config.deadband = 0.08f;
+    config.kp = 20.0f;
+    config.ki = 0.8f;
+    config.integralLimit = 20.0f;
+    config.maxStep = 24;
+    config.filterAlpha = 0.30f;
+    config.minActive = 0.20f;
     config.kd = 0.0f;
-    config.maxDtMs = 1500UL;
-    config.sensorStaleMs = 1500UL;
-    config.kickPwm = 1650;
-    config.kickMs = 300UL;
-    config.stallFlowLpm = 0.15f;
-    config.restallCooldownMs = 10000UL;
-    config.stallConfirmMs = 2000UL;
-    config.softTrimMax = 64;
-    config.softMaxStep = 3;
-    config.sensitivity = 0.8f;
-    config.recenterDelayMs = 1500UL;
-    // Un AFM inválido/obsoleto no puede mantener una bomba activa más de la
-    // ventana de seguridad del perfil Dron.
-    config.sensorFaultStopMs = 1500UL;
+    config.maxDtMs = 1000UL;
+    config.sensorStaleMs = 1200UL;
+    config.kickPwm = 800;
+    config.kickMs = 250UL;
+    config.stallFlowLpm = 0.10f;
+    config.restallCooldownMs = 8000UL;
+    config.stallConfirmMs = 1500UL;
+    config.softTrimMax = 80;
+    config.softMaxStep = 2;
+    config.sensitivity = 1.0f;
+    config.recenterDelayMs = 4000UL;
     config.zeroFlowConfirmSamples = 5;
     return config;
 }

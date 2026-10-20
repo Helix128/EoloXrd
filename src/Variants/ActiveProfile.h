@@ -1,13 +1,16 @@
 #ifndef EOLO_CONFIG_ACTIVE_PROFILE_H
 #define EOLO_CONFIG_ACTIVE_PROFILE_H
 
-#if (defined(EOLO_TARGET_DRON) + defined(EOLO_TARGET_STANDARD) + \
+#if (defined(EOLO_TARGET_DRON) + defined(EOLO_TARGET_DRON_LEGACY) + \
+     defined(EOLO_TARGET_STANDARD) + \
      defined(EOLO_TARGET_EXPRESS) + defined(EOLO_TARGET_EXPRESS_LEGACY)) != 1
   #error "Define exactamente un target EOLO_TARGET_* en platformio.ini"
 #endif
 
 #if defined(EOLO_TARGET_DRON)
   #include "Profiles/Dron.h"
+#elif defined(EOLO_TARGET_DRON_LEGACY)
+  #include "Profiles/DronLegacy.h"
 #elif defined(EOLO_TARGET_STANDARD)
   #include "Profiles/Standard.h"
 #elif defined(EOLO_TARGET_EXPRESS_LEGACY)
@@ -33,6 +36,8 @@ inline constexpr int flowPidInitialPwm = Profile::kFlowPidInitialPwm;
 inline constexpr uint32_t i2cWarmupMs = Profile::kI2cWarmupMs;
 inline constexpr uint32_t i2cTransactionTimeoutMs = Profile::kI2cTransactionTimeoutMs;
 inline constexpr bool encoderInverted = Profile::kEncoderInverted;
+inline constexpr uint32_t encoderBusClockHz = Profile::kEncoderBusClockHz;
+inline constexpr BatteryModel batteryModel = Profile::kBatteryModel;
 
 inline constexpr int displayCsPin = EOLO_DISPLAY_CS_PIN;
 inline constexpr int displayDcPin = EOLO_DISPLAY_DC_PIN;

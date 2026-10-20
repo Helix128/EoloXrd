@@ -191,7 +191,7 @@ void test_flow_motor_controller_caps_dt_after_invalid_sensor()
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, status.dtSeconds);
 }
 
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_FLOW_PID)
 void test_drone_actuation_requires_sd_and_fresh_sensors()
 {
     Context ctx;
@@ -224,7 +224,7 @@ void setup()
     RUN_TEST(test_flow_motor_controller_finishes_kick_after_configured_time);
     RUN_TEST(test_flow_motor_controller_rejects_stale_sensor_without_pwm_update);
     RUN_TEST(test_flow_motor_controller_caps_dt_after_invalid_sensor);
-#if defined(EOLO_TARGET_DRON) && defined(FEATURE_FLOW_PID)
+#if defined(EOLO_TARGET_DRON_LEGACY) && defined(FEATURE_FLOW_PID)
     RUN_TEST(test_drone_actuation_requires_sd_and_fresh_sensors);
 #endif
     RUN_TEST(test_smart_flow_controller_uses_bounded_static_memory);
