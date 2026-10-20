@@ -50,10 +50,19 @@ public:
 
         if (delta != 0)
         {
-            cycleFooter = (cycleFooter + delta) % FooterPageCount;
-            if (cycleFooter < 0)
-                cycleFooter += FooterPageCount;
+            // Avanza una página por paso del encoder saltando las que no
+            // aplican (la 0 siempre existe, así que el ciclo termina).
+            const int direction = delta > 0 ? 1 : -1;
+            for (int steps = abs(delta); steps > 0; --steps)
+            {
+                do
+                {
+                    cycleFooter = (cycleFooter + direction + FooterPageCount) % FooterPageCount;
+                } while (!footerPageAvailable(ctx, cycleFooter));
+            }
         }
+        if (!footerPageAvailable(ctx, cycleFooter))
+            cycleFooter = 0;
 
         if (button)
         {
@@ -82,6 +91,14 @@ public:
     }
 
     int cycleFooter = 0;
+
+    // PM solo existe con Plantower compilado y habilitado en la sesión; sin él
+    // la página quedaba en blanco.
+    static bool footerPageAvailable(Context &ctx, int page)
+    {
+        return page != 1 || ctx.getUiSnapshot().airQuality.enabled;
+    }
+
     void footer(Context &ctx)
     {
         Renderer::separatorLine(ctx.u8g2, 40);
@@ -108,11 +125,6 @@ public:
         }
         case 1: // pm1 pm2.5 pm10
         {
-            if (!snapshot.airQuality.enabled)
-            {
-                break;
-            }
-
             float pm1 = snapshot.airQuality.valid ? snapshot.airQuality.pm1 : 0.0f;
             float pm25 = snapshot.airQuality.valid ? snapshot.airQuality.pm25 : 0.0f;
             float pm10 = snapshot.airQuality.valid ? snapshot.airQuality.pm10 : 0.0f;
