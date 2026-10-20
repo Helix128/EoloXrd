@@ -57,7 +57,7 @@ y la aplicación están en `src`; todavía no existe una librería
 ## Prueba mínima por corte
 
 ```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron -e eolo_dron_low_power
+pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron_legacy -e eolo_dron_legacy_low_power
 pio test -e native
 python3 scripts/check_pinouts.py
 python3 scripts/check_family_boundaries.py
@@ -66,7 +66,7 @@ git diff --check
 ```
 
 `scripts/check_all.sh` ejecuta todo lo anterior y compila los 5 entornos
-(`--with-hw-suites` compila las suites de `test/` en `eolo_dron` y
+(`--with-hw-suites` compila las suites de `test/` en `eolo_dron_legacy` y
 `--with-demos` compila todas las demos).
 
 Si se toca la composición de `Context`, compile también

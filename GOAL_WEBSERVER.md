@@ -170,7 +170,7 @@ Prioridad baja / opcional:
 9. Añadir un pool de buffers para respuestas JSON para reducir malloc/free.
 
 ### 7) Checklist de verificación y pruebas
-- Build: `pio run -e eolo_dron` debe pasar.
+- Build: `pio run -e eolo_dron_legacy` debe pasar.
 - Runtime tests en dispositivo:
   - Conectar a AP headless, abrir página, probar endpoints.
   - Listar logs, preview, descargar archivo, download-all.

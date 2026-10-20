@@ -11,7 +11,7 @@ Las fases 5 y 6 siguen diferidas (requieren placa Dron).
 
 | Fase | Resultado |
 |---|---|
-| 0 | Línea base: 6 entornos, 39 tests nativos, 22 tests Python, 12 suites hardware compiladas en `eolo_dron`. |
+| 0 | Línea base: 6 entornos, 39 tests nativos, 22 tests Python, 12 suites hardware compiladas en `eolo_dron_legacy`. |
 | 1 | Borradas las ramas muertas y los tres `#define`. Tamaños de `firmware.bin` idénticos en los 6 entornos. |
 | 2 | `I2C_TRANSACTION_TIMEOUT_MS` pasó a los perfiles y los alias de `Legacy.h` se reemplazaron por `EoloConfig::`. Quedan `DisplayModel`, `CMD_RESET_*`, `DRONE_DURATION_INFINITE` y `FONT_*` (no son configuración de variante). Tamaños idénticos. |
 | 2b | `eolo_standard_libraries` retirado; `EOLO_I2C_DIRECT_DRIVERS` se mantiene como único toggle. |
@@ -42,7 +42,7 @@ Desviaciones respecto al plan original:
   `Common/`) para seguir la convención de `src/`. `Variants/` agrupa también
   `Legacy.h`, `Types.h`, `ActiveProfile.h`, `Pinout.h` y sus validaciones.
 - **Fase 4, `[headless]`:** no se creó una base aparte porque Dron es la única
-  familia headless y `eolo_dron_low_power` ya extiende `eolo_dron`.
+  familia headless y `eolo_dron_legacy_low_power` ya extiende `eolo_dron_legacy`.
 - **Fase 4, límites:** `Ui` y `Headless` no se incluyen entre sí y `Headless` no
   incluye `Modem`. `Common` todavía depende de `Ui`/`Headless`/`Modem` en 14
   includes (`Context.h`, `Components.h`, `DebugConsole.h`, `RTCNetworkSync.h`,
@@ -195,7 +195,7 @@ estado compartido o hardware.
   `ContextHeadlessMotorCalibration.h` pasan al contexto de su familia.
 - Quedarán algunos `#if` dentro de la familia UI (modem, anemómetro, batería
   dual entre Express y Standard). Es aceptable: el objetivo es eliminar
-  `FEATURE_HEADLESS` y `EOLO_TARGET_DRON` del código compartido.
+  `FEATURE_HEADLESS` y `EOLO_TARGET_DRON_LEGACY` del código compartido.
 - **Avanzar cuando:** revalidación en placa Dron
   (`docs/validacion-entrega-eolo-dron-2026-08-31.md`). Compilar no basta.
 

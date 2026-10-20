@@ -22,8 +22,8 @@ intervalo aprobado hasta cerrar todas las casillas de este documento.
       discrepancia histórica de pinout.
 - [ ] Ejecutar `pio test -e native`.
 - [ ] Compilar las suites embarcadas Dron sin ejecutar pruebas que requieran
-      hardware (`pio test -e eolo_dron_low_power --without-testing`).
-- [ ] Ejecutar `pio run -e eolo_dron_low_power`.
+      hardware (`pio test -e eolo_dron_legacy_low_power --without-testing`).
+- [ ] Ejecutar `pio run -e eolo_dron_legacy_low_power`.
 - [ ] Repetir, si el tiempo lo permite, la compilación de
       `eolo_express`, `eolo_express_legacy` y `eolo_standard`.
 - [ ] Verificar el portal con `node --check web-server/app.js`.

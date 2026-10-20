@@ -94,7 +94,7 @@ a la cola.
 Antes de un cambio de arquitectura se ejecutan:
 
 ```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron -e eolo_dron_low_power
+pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron -e eolo_dron_legacy -e eolo_dron_legacy_low_power
 pio test -e native
 python3 scripts/check_pinouts.py
 bash scripts/audit_eolo_core_deps.sh
