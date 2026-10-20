@@ -11,7 +11,7 @@ La arquitectura de software y el roadmap de modularización se mantienen en
 
 | Modelo | Manual | Pinout técnico | Caracteristicas principales |
 | --- | --- | --- | --- |
-| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron.md) | [Pinout EOLO Dron](../pinouts/eolo-dron.md) | Sin pantalla, switches fisicos o setup Wi-Fi headless, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
+| EOLO Dron | [Manual EOLO Dron](manual-eolo-dron-legacy.md) | [Pinout EOLO Dron](../pinouts/eolo-dron-legacy.md) | Sin pantalla, switches fisicos o setup Wi-Fi headless, captura automatica, flujo configurable por Wi-Fi, sin Plantower. |
 | EOLO Standard | [Manual EOLO Standard](manual-eolo-standard.md) | [Pinout EOLO Standard](../pinouts/eolo-standard.md) | Pantalla y encoder, modem, anemometro, doble bateria/DC, AFM07 y Plantower. |
 | EOLO Express | [Manual EOLO Express](manual-eolo-express.md) | [Pinout EOLO Express](../pinouts/eolo-express.md) | Pantalla y encoder, AFM07, Plantower, bateria simple, sin modem ni anemometro. |
 

@@ -6,7 +6,8 @@ Pinouts extraídos del firmware en `src/Variants/Pinout.h` y contrastados con `d
 
 | Variante | Target / ambiente | Pinout |
 | --- | --- | --- |
-| EOLO Dron | `EOLO_TARGET_DRON` / `eolo_dron`, `eolo_dron_low_power` | [eolo-dron.md](eolo-dron.md) |
+| EOLO Dron (base, V2) | `EOLO_TARGET_DRON` / `eolo_dron` | [eolo-dron.md](eolo-dron.md) |
+| EOLO Dron Legacy | `EOLO_TARGET_DRON_LEGACY` / `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | [eolo-dron-legacy.md](eolo-dron-legacy.md) |
 | EOLO Standard | `EOLO_TARGET_STANDARD` / `eolo_standard` | [eolo-standard.md](eolo-standard.md) |
 | EOLO Express | `EOLO_TARGET_EXPRESS` / `eolo_express` | [eolo-express.md](eolo-express.md) |
 | EOLO Express Legacy | `EOLO_TARGET_EXPRESS_LEGACY` / `eolo_express_legacy` | [eolo-express-legacy.md](eolo-express-legacy.md) |

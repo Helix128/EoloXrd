@@ -14,7 +14,7 @@ Con switches fisicos, el flujo objetivo del Dron es **5.0 L/min**. En setup Wi-F
 
 ## Pinout técnico
 
-El pinout real usado por el firmware de EOLO Dron está documentado en [`../pinouts/eolo-dron.md`](../pinouts/eolo-dron.md).
+El pinout real usado por el firmware de EOLO Dron está documentado en [`../pinouts/eolo-dron-legacy.md`](../pinouts/eolo-dron-legacy.md).
 
 ## Switches
 
@@ -114,7 +114,7 @@ La indicacion repite un ciclo de 4 segundos:
 | 2–3 s | Estado actual, usando el color de arriba. |
 | 3–4 s | Temperatura del motor en pasos de 10 °C: verde hasta 30 °C, verde amarillento entre 30–40 °C, amarillo entre 40–50 °C, naranja entre 50–60 °C y rojo desde 60 °C. Sobre 65 °C titila rojo rapido durante este segundo. |
 
-Si la lectura NTC no es valida, el intervalo de temperatura muestra morado. Durante setup Wi-Fi se pausa el sondeo NTC con el motor apagado y ese intervalo también muestra morado mientras no hay una lectura actualizada. El intervalo de estado conserva la indicacion de error existente. El brillo se ajusta en `src/Variants/Pinouts/Dron.h` con `NEOPIXEL_STRENGTH_PERCENT`, de 0 a 100. Este porcentaje escala el brillo base `NEOPIXEL_BRIGHTNESS` (60); 100 conserva el brillo actual y 0 apaga la emision de luz, aunque el NeoPixel mantiene un pequeño consumo en reposo. `STATUS_LED_LOW_POWER` conserva perfiles de color de menor intensidad y usa el mismo ciclo.
+Si la lectura NTC no es valida, el intervalo de temperatura muestra morado. Durante setup Wi-Fi se pausa el sondeo NTC con el motor apagado y ese intervalo también muestra morado mientras no hay una lectura actualizada. El intervalo de estado conserva la indicacion de error existente. El brillo se ajusta en `src/Variants/Pinouts/DronLegacy.h` con `NEOPIXEL_STRENGTH_PERCENT`, de 0 a 100. Este porcentaje escala el brillo base `NEOPIXEL_BRIGHTNESS` (60); 100 conserva el brillo actual y 0 apaga la emision de luz, aunque el NeoPixel mantiene un pequeño consumo en reposo. `STATUS_LED_LOW_POWER` conserva perfiles de color de menor intensidad y usa el mismo ciclo.
 
 Si una captura termina con un error, el LED deja el ciclo y queda fijo en rojo hasta que el dispositivo entre en deep sleep.
 

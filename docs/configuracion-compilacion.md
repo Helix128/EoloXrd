@@ -28,7 +28,7 @@ un setter en el portal. Los nombres históricos `EOLO_AFM07_POLL_INTERVAL_MS` y
 Para construir un candidato de barrido sin editar el árbol:
 
 ```bash
-EOLO_AFM07_POLL_GAP_MS=400 pio run -e eolo_dron_low_power
+EOLO_AFM07_POLL_GAP_MS=400 pio run -e eolo_dron_legacy_low_power
 ```
 
 La lectura exclusiva del estado AFM07 se solicita por `POST
@@ -57,4 +57,20 @@ La selección de ejecución sigue esta ruta:
 platformio.ini -> ActiveProfile + Pinout -> ActiveApplication -> Context/Components
 ```
 
-`eolo_dron_low_power` es un overlay del patrón LED Dron y no define otro modelo ni otro pinout. El backend I²C (drivers directos o librerías RTClib/Adafruit BME280) se elige para todos los sensores a la vez con `EOLO_I2C_DIRECT_DRIVERS=1|0`.
+`eolo_dron_legacy_low_power` es un overlay del patrón LED Dron y no define otro modelo ni otro pinout. El backend I²C (drivers directos o librerías RTClib/Adafruit BME280) se elige para todos los sensores a la vez con `EOLO_I2C_DIRECT_DRIVERS=1|0`.
+
+## Dron base (V2) y Dron Legacy
+
+`eolo_dron` (`EOLO_TARGET_DRON`) es el Dron base de hardware V2 y pertenece a la
+familia UI: OLED SH1106 por I2C (`EOLO_DISPLAY_SPI 0`), encoder en un bus propio
+(`ENCODER_SDA_PIN`/`ENCODER_SCL_PIN`, `Wire1` a `kEncoderBusClockHz`), una bomba,
+AFM07 y batería 2S (`BatteryModel::Pack2sLiIon`). No habilita Plantower, por lo
+que su entorno declara las capacidades en vez de heredar `[ui]`. Usa
+`FEATURE_FLOW_CALIBRATION`; el control PID, la captura por switches, el NeoPixel
+y el NTC son de `eolo_dron_legacy` (`EOLO_TARGET_DRON_LEGACY`, headless).
+
+Consideraciones del OLED por I2C: cada frame (≈1 KB, ≈90 ms a 100 kHz) toma el
+`I2CBus` como cualquier sensor y el timeout de espera del worker sube a 120 ms
+para esta configuración; si hay lecturas I2C degradadas en hardware, evaluar
+subir `kI2cClockHz` sólo tras validar el bus a esa velocidad. La referencia
+validada en hardware es `demos/DronBase`.

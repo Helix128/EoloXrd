@@ -12,7 +12,8 @@ Este repositorio contiene firmware, manuales y definiciones de pinout para la fa
 
 | Variante | Ambiente PlatformIO | Perfil |
 | --- | --- | --- |
-| EOLO Dron | `eolo_dron`, `eolo_dron_low_power` | Equipo headless. Switches físicos o setup Wi-Fi, AFM07, NTC, NeoPixel, captura automática. |
+| EOLO Dron (base, V2) | `eolo_dron` | Pantalla OLED I2C y encoder (bus propio), una bomba, AFM07, batería 2S. Compila; sin validar en hardware. |
+| EOLO Dron Legacy | `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | Equipo headless. Switches físicos o setup Wi-Fi, AFM07, NTC, NeoPixel, captura automática. |
 | EOLO Standard | `eolo_standard` | Pantalla y encoder, módem, anemómetro, doble batería/DC, AFM07 y Plantower. |
 | EOLO Express | `eolo_express` | Pantalla y encoder, AFM07, Plantower, batería simple, sin módem ni anemómetro. |
 | EOLO Express Legacy | `eolo_express_legacy` | Express con sensor de flujo FS3000 legacy. |
@@ -46,8 +47,9 @@ python3 -m pip install platformio
 | `eolo_express` | Build default. Display, AFM07, Plantower. |
 | `eolo_express_legacy` | Express con FS3000 legacy. |
 | `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
-| `eolo_dron` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
-| `eolo_dron_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
+| `eolo_dron` | Dron base (V2): OLED SH1106 I2C, encoder en Wire1, bomba PWM, AFM07, batería 2S. |
+| `eolo_dron_legacy` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
+| `eolo_dron_legacy_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
 
 La configuración de compilación y perfiles de hardware está documentada en [Configuración de compilación](docs/configuracion-compilacion.md). Para continuar el desarrollo, ver [Guía para continuar](docs/guia-para-continuar.md).
 
@@ -55,8 +57,9 @@ Comandos básicos:
 
 ```bash
 pio run                          # compila ambiente default eolo_express
-pio run -e eolo_dron              # compila variante dron
-pio run -e eolo_dron -t upload     # sube firmware
+pio run -e eolo_dron              # compila Dron base (V2)
+pio run -e eolo_dron_legacy       # compila Dron Legacy (headless)
+pio run -e eolo_dron -t upload    # sube firmware
 pio device monitor -b 115200       # monitor serial
 ```
 
@@ -82,7 +85,7 @@ La plataforma ESP32 está fijada en `espressif32@6.10.0` para builds reproducibl
 
 Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan de `src/Variants/Pinout.h`:
 
-- [EOLO Dron](pinouts/eolo-dron.md)
+- [EOLO Dron](pinouts/eolo-dron-legacy.md)
 - [EOLO Standard](pinouts/eolo-standard.md)
 - [EOLO Express](pinouts/eolo-express.md)
 - [EOLO Express Legacy](pinouts/eolo-express-legacy.md)
@@ -91,7 +94,7 @@ Las discrepancias que requieren equipo o esquemático están congeladas en [vali
 
 ## Setup Wi-Fi headless
 
-`HeadlessSetup` es una feature para equipos sin pantalla. Actualmente se activa solo en `eolo_dron`.
+`HeadlessSetup` es una feature para equipos sin pantalla. Actualmente se activa solo en `eolo_dron_legacy`.
 Este feature crea un servidor web para configurar los parámetros de forma más libre, se puede acceder a través de la siguiente red AP + url web.
 
 Defaults:
@@ -130,5 +133,5 @@ Las capas de validacion se reportan por separado:
 
 ```bash
 pio test -e native
-pio test -e eolo_dron -f test_capture_switches --without-uploading --without-testing
+pio test -e eolo_dron_legacy -f test_capture_switches --without-uploading --without-testing
 ```
