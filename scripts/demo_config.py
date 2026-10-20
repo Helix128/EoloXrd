@@ -91,6 +91,9 @@ DEMO_CONFIG = {
         "models": ["dron"],
         "lib_deps": ["olikraus/U8g2@^2.36.14"],
     },
+    # Diagnóstico de la microSD: niveles de MISO, CMD0/CMD8 manuales y montaje
+    # a varias frecuencias.
+    "DronSdDiag": {"models": ["dron"], "lib_deps": []},
     "DIPSwitchDiag": {"models": ["dron_legacy"], "lib_deps": []},
 }
 
