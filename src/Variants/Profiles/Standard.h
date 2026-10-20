@@ -31,6 +31,10 @@ inline constexpr uint32_t kI2cWarmupMs = 5000UL;
 // clock stretching y 20 ms resultó demasiado agresivo en Standard.
 inline constexpr uint32_t kI2cTransactionTimeoutMs = 50UL;
 inline constexpr bool kEncoderInverted = true;
+// 0: el encoder comparte el bus I2C principal; otro valor: Wire1 a esa frecuencia
+// (pines ENCODER_SDA_PIN/ENCODER_SCL_PIN).
+inline constexpr uint32_t kEncoderBusClockHz = 0UL;
+inline constexpr BatteryModel kBatteryModel = BatteryModel::LegacyDivider;
 
 inline constexpr float kMotorOverheatHighC = 70.0f;
 inline constexpr float kMotorOverheatLowC = 60.0f;

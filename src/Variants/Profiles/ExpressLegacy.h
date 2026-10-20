@@ -27,6 +27,10 @@ inline constexpr int kFlowPidInitialPwm = 300;
 inline constexpr uint32_t kI2cWarmupMs = 0UL;
 inline constexpr uint32_t kI2cTransactionTimeoutMs = 20UL;
 inline constexpr bool kEncoderInverted = false;
+// 0: el encoder comparte el bus I2C principal; otro valor: Wire1 a esa frecuencia
+// (pines ENCODER_SDA_PIN/ENCODER_SCL_PIN).
+inline constexpr uint32_t kEncoderBusClockHz = 0UL;
+inline constexpr BatteryModel kBatteryModel = BatteryModel::LegacyDivider;
 
 inline constexpr float kMotorOverheatHighC = 70.0f;
 inline constexpr float kMotorOverheatLowC = 60.0f;

@@ -4,7 +4,11 @@
 #include "../Variants/ActiveProfile.h"
 
 #if defined(EOLO_TARGET_DRON)
-  #pragma message("Compilando para EOLO Dron headless.")
+  #pragma message("Compilando para EOLO Dron.")
+  #include "../Ui/UiApplication.h"
+  using ActiveApplication = UiApplication;
+#elif defined(EOLO_TARGET_DRON_LEGACY)
+  #pragma message("Compilando para EOLO Dron Legacy headless.")
   #include "../Headless/DronApplication.h"
   using ActiveApplication = DronApplication;
 #elif defined(EOLO_TARGET_STANDARD)

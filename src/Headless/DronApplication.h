@@ -1,7 +1,7 @@
 #ifndef EOLO_APPLICATION_DRON_APPLICATION_H
 #define EOLO_APPLICATION_DRON_APPLICATION_H
 
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
 
 #include "../Variants/Legacy.h"
 
@@ -488,7 +488,7 @@ private:
 };
 
 #else
-#error "DronApplication requiere EOLO_TARGET_DRON con FEATURE_HEADLESS"
+#error "DronApplication requiere EOLO_TARGET_DRON_LEGACY con FEATURE_HEADLESS"
 #endif
 
 #endif

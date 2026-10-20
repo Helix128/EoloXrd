@@ -22,14 +22,32 @@
 #include <Eolo/Core/Debug/ConsoleArgs.h>
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
+#include <Eolo/Core/Power/BatteryMath.h>
 #include <Eolo/Core/Power/BatteryProtocol.h>
 #include <Eolo/Core/Communication/RS485Protocol.h>
 #include <Eolo/Core/Communication/RS485Stats.h>
 #include <Eolo/Types/ModemHttpContract.h>
 #include "../../src/Common/Board/I2CRetryPolicy.h"
-#include "../../src/Variants/Profiles/Dron.h"
+#include "../../src/Variants/Profiles/DronLegacy.h"
 
-static void test_rtc_parser_is_calendar_aware()
+static void test_battery_2s_pct_follows_discharge_curve()
+{
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, BatteryMath::pack2sPctFromVoltage(9.0f));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, BatteryMath::pack2sPctFromVoltage(8.40f));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, BatteryMath::pack2sPctFromVoltage(7.68f));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, BatteryMath::pack2sPctFromVoltage(6.54f));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, BatteryMath::pack2sPctFromVoltage(5.0f));
+    // Punto medio entre 7.68 V (50 %) y 7.64 V (45 %).
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 47.5f, BatteryMath::pack2sPctFromVoltage(7.66f));
+}
+
+void test_battery_2s_voltage_uses_divider_ratio()
+{
+    // 8.4 V de pack => 2.625 V en el pin del ADC.
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 8.4f, BatteryMath::pack2sVoltageFromPinMv(2625.0f));
+}
+
+void test_rtc_parser_is_calendar_aware()
 {
     RtcDateTime value;
     TEST_ASSERT_TRUE(RtcTimeParser::parseDateTime("2028-02-29 23:59:59", value));
@@ -1347,6 +1365,8 @@ static void test_rs485_stats_exceptions_and_timing()
 int main(int, char **)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_battery_2s_pct_follows_discharge_curve);
+    RUN_TEST(test_battery_2s_voltage_uses_divider_ratio);
     RUN_TEST(test_rtc_parser_is_calendar_aware);
     RUN_TEST(test_session_is_epoch_only);
     RUN_TEST(test_flow_schedule_boundary);

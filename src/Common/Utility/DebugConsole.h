@@ -8,7 +8,7 @@
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
 #include "../Board/RTCManager.h"
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
 #include "../../Headless/CaptureSwitchDebugCommands.h"
 #include "../../Headless/DroneDebugCommands.h"
 #endif
@@ -29,7 +29,7 @@ private:
     SystemDebugCommands _systemCommands;
     ModemDebugCommands _modemCommands;
     I2CDebugCommands _i2cCommands;
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
     CaptureSwitchDebugCommands _captureSwitchCommands;
     DroneDebugCommands _droneCommands;
 #endif
@@ -110,7 +110,7 @@ public:
         _router.addHandler(_systemCommands);
         _router.addHandler(_modemCommands);
         _router.addHandler(_i2cCommands);
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
         _router.addHandler(_captureSwitchCommands);
         _router.addHandler(_droneCommands);
 #endif
@@ -130,7 +130,7 @@ public:
 #endif
     }
 
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
     void attachCaptureSwitches(CaptureSwitches* switches) {
         _captureSwitchCommands.attachCaptureSwitches(switches);
         _droneCommands.attachCaptureSwitches(switches);

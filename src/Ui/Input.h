@@ -4,7 +4,7 @@
 #include "../Variants/Legacy.h"
 
 #include <Arduino.h>
-#include "../Common/Board/I2CBus.h"
+#include "../Common/Board/EncoderBus.h"
 #include "Profiler.h"
 #include <atomic>
 
@@ -25,6 +25,9 @@ public:
   std::atomic_bool buttonPressed{false};
   std::atomic_bool prevButtonPressed{false};
   std::atomic_bool buttonClick{false};
+  // Movimiento acumulado desde la última lectura. El ATmega entrega un
+  // contador absoluto de 8 bits; el worker suma cada diferencia y la UI la
+  // consume una sola vez, así ningún clic se pierde aunque se omita un frame.
   std::atomic_int encoderDelta{0};
   bool isReady = false;
   std::atomic_bool hasChanged{false};
@@ -47,16 +50,25 @@ public:
     return buttonClick.exchange(false);
   }
 
+  // Consume el movimiento acumulado (la segunda llamada devuelve 0 hasta que
+  // llegue movimiento nuevo). Cada escena debe leerlo una sola vez por update.
   int getEncoderDelta(int exponent = 2)
   {
 #if PROFILE_ENABLED && PROFILE_VERBOSE
     PROFILE_SCOPE("input.delta");
 #endif
-    int rawDelta = encoderDelta.load();
+    int rawDelta = encoderDelta.exchange(0);
     int delta = intPow(rawDelta, exponent);
     if (rawDelta < 0 && exponent % 2 == 0)
       delta = -delta;
     return delta;
+  }
+
+  // Descarta movimiento pendiente; una escena nueva no debe heredar giros
+  // hechos mientras otra pantalla ignoraba el encoder.
+  void clearEncoderDelta()
+  {
+    encoderDelta = 0;
   }
 
   void begin()
@@ -66,7 +78,7 @@ public:
       return;
     }
 
-    I2CBus::getInstance().begin();
+    // El primer acceso inicializa el bus del encoder (principal o Wire1).
     LOG_LN("Encoder inicializado");
     delay(100);
     resetButton();
@@ -122,13 +134,11 @@ private:
 
   const bool FLIP_ENCODER = EoloConfig::encoderInverted;
   const int BUTTON_DEBOUNCE_MS = 150;
-  const int ENCODER_DEBOUNCE_MS = 50;
-  unsigned long lastEncoderMs = 0;
   unsigned long lastButtonMs = 0;
 
   bool resetCounterHardware()
   {
-    bool ok = I2CBus::getInstance().writeCommand(EoloConfig::attinyAddress, InputCommand::ResetCounter, false);
+    bool ok = EncoderBus::writeCommand(EoloConfig::attinyAddress, InputCommand::ResetCounter);
     if (ok) {
       rawCounter = 0;
       prevRawCounter = 0;
@@ -138,7 +148,7 @@ private:
 
   bool resetButtonHardware()
   {
-    bool ok = I2CBus::getInstance().writeCommand(EoloConfig::attinyAddress, InputCommand::ResetButton, false);
+    bool ok = EncoderBus::writeCommand(EoloConfig::attinyAddress, InputCommand::ResetButton);
     if (ok) {
       rawButton = false;
       prevButtonRaw = false;
@@ -151,8 +161,6 @@ private:
 
   void debounce()
   {
-    encoderDelta = 0;
-
     if (rawButton != prevButtonRaw) {
       unsigned long currentMs = millis();
       if (currentMs - lastButtonMs > BUTTON_DEBOUNCE_MS) {
@@ -171,30 +179,25 @@ private:
     }
 
     if (rawCounter != prevRawCounter) {
-      unsigned long currentMs = millis();
-      if (currentMs - lastEncoderMs > ENCODER_DEBOUNCE_MS) {
-        if (FLIP_ENCODER)
-          encoderDelta -= (rawCounter - prevRawCounter);
-        else
-          encoderDelta += (rawCounter - prevRawCounter);
-
-        if (encoderDelta > 127)
-          encoderDelta -= 256;
-        else if (encoderDelta < -127)
-          encoderDelta += 256;
-
-        prevRawCounter = rawCounter;
-        lastEncoderMs = currentMs;
-        if (EoloDebug::verboseLogsEnabled())
-          LOG_F("Encoder cambiado a: %d\n", encoderDelta.load());
-      }
+      // Contador de 8 bits con desbordamiento: la diferencia módulo 256 con
+      // signo es el movimiento real entre dos lecturas.
+      int diff = (int8_t)(uint8_t)(rawCounter - prevRawCounter);
+      prevRawCounter = rawCounter;
+      if (FLIP_ENCODER)
+        diff = -diff;
+      encoderDelta += diff;
+      // La bandera se levanta después de acumular: la UI nunca ve el aviso
+      // antes de que exista el movimiento.
+      hasChanged = true;
+      if (EoloDebug::verboseLogsEnabled())
+        LOG_F("Encoder acumulado: %d\n", encoderDelta.load());
     }
   }
 
   bool readEncoderData()
   {
     uint8_t buffer[3];
-    bool readOk = I2CBus::getInstance().readBytes(EoloConfig::attinyAddress, buffer, sizeof(buffer), false);
+    bool readOk = EncoderBus::readBytes(EoloConfig::attinyAddress, buffer, sizeof(buffer));
     if (!readOk)
       return false;
 
@@ -209,12 +212,10 @@ private:
     if (rawCounter != previousCounter) {
       if (EoloDebug::verboseLogsEnabled())
         LOG_F("Encoder: Contador cambio a %d\n", rawCounter);
-      hasChanged = true;
     }
     if (rawDirection != previousDirection) {
       if (EoloDebug::verboseLogsEnabled())
         LOG_F("Encoder: Dirección cambio a %d\n", rawDirection);
-      hasChanged = true;
     }
     if (rawButton != previousButton) {
       if (EoloDebug::verboseLogsEnabled())

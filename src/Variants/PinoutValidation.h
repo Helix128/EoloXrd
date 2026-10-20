@@ -24,6 +24,22 @@
   #error "Pinout invalido: switches DIP duplican GPIO"
 #endif
 
+#if (ENCODER_SDA_PIN < 0) != (ENCODER_SCL_PIN < 0)
+  #error "Pinout invalido: el bus I2C del encoder necesita SDA y SCL"
+#endif
+
+#if EOLO_SAME_USED_PIN(ENCODER_SDA_PIN, ENCODER_SCL_PIN) || \
+    EOLO_SAME_USED_PIN(ENCODER_SDA_PIN, SDA_PIN) || \
+    EOLO_SAME_USED_PIN(ENCODER_SDA_PIN, SCL_PIN) || \
+    EOLO_SAME_USED_PIN(ENCODER_SCL_PIN, SDA_PIN) || \
+    EOLO_SAME_USED_PIN(ENCODER_SCL_PIN, SCL_PIN)
+  #error "Pinout invalido: el bus I2C del encoder duplica un GPIO"
+#endif
+
+#if EOLO_INPUT_ONLY_PIN(ENCODER_SDA_PIN) || EOLO_INPUT_ONLY_PIN(ENCODER_SCL_PIN)
+  #error "Pinout invalido: el bus I2C del encoder no puede usar GPIO34-39"
+#endif
+
 #if EOLO_INPUT_ONLY_PIN(RS485_TX_PIN) || EOLO_INPUT_ONLY_PIN(RS485_DE_RE_PIN)
   #error "Pinout invalido: RS485 TX y DE/RE no pueden usar GPIO34-39"
 #endif
@@ -36,11 +52,11 @@
   #error "Pinout invalido: salidas de perifericos/modem no pueden usar GPIO34-39"
 #endif
 
-#if defined(EOLO_TARGET_DRON) && PPH_PWR_PIN == 4
+#if defined(EOLO_TARGET_DRON_LEGACY) && PPH_PWR_PIN == 4
   #error "EOLO Dron usa GPIO4 como RS485 DE/RE; no lo configures como PPH_PWR_PIN"
 #endif
 
-#if defined(EOLO_TARGET_DRON) && MODEM_PWR_PIN == 13
+#if defined(EOLO_TARGET_DRON_LEGACY) && MODEM_PWR_PIN == 13
   #error "EOLO Dron usa GPIO13 como DIP4; no lo configures como modem"
 #endif
 

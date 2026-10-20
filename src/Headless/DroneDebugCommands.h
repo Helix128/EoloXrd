@@ -1,7 +1,7 @@
 #ifndef DRONE_DEBUG_COMMANDS_H
 #define DRONE_DEBUG_COMMANDS_H
 
-#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
 
 #include <Arduino.h>
 #include "../Common/Utility/DebugCommandRouter.h"

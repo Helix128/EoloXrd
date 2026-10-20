@@ -51,6 +51,10 @@
 #define MODEM_RX_PIN 16
 #define MODEM_TX_PIN 17
 
+// Bus I2C secundario dedicado al encoder; sin usar en este modelo.
+#define ENCODER_SDA_PIN EOLO_PIN_UNUSED
+#define ENCODER_SCL_PIN EOLO_PIN_UNUSED
+
 #define EOLO_PINOUT_COMPLETE 1
 
 #endif

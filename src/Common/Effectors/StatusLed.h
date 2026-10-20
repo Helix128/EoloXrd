@@ -25,7 +25,7 @@ public:
     _pixel.setBrightness(NEOPIXEL_BRIGHTNESS);
     _pixel.clear();
     _pixel.show();
-#ifdef EOLO_TARGET_DRON
+#ifdef EOLO_TARGET_DRON_LEGACY
     _cycleStartedAtMs = millis();
 #endif
     _hasLastShownColor = false;
@@ -71,7 +71,7 @@ public:
 #endif
   }
 
-#if defined(FEATURE_NEOPIXEL) && defined(EOLO_TARGET_DRON)
+#if defined(FEATURE_NEOPIXEL) && defined(EOLO_TARGET_DRON_LEGACY)
   void setDronePresentation(StatusLedPattern pattern, bool temperatureValid, float temperatureC)
   {
     if (_pattern != pattern)
@@ -111,7 +111,7 @@ public:
     if (!_ready)
       return;
 
-#ifdef EOLO_TARGET_DRON
+#ifdef EOLO_TARGET_DRON_LEGACY
     (void)force;
     pollDroneCycle(millis());
 #else
@@ -182,7 +182,7 @@ private:
   uint32_t _lastStepMs = 0;
   bool _hasLastShownColor = false;
   Color _lastShownColor{0, 0, 0};
-#ifdef EOLO_TARGET_DRON
+#ifdef EOLO_TARGET_DRON_LEGACY
   uint32_t _cycleStartedAtMs = 0;
   bool _terminalErrorLatched = false;
   bool _motorTemperatureValid = false;
@@ -221,7 +221,7 @@ private:
     return static_cast<uint8_t>((static_cast<uint16_t>(value) * _strengthPercent + 50U) / 100U);
   }
 
-#ifdef EOLO_TARGET_DRON
+#ifdef EOLO_TARGET_DRON_LEGACY
   void pollDroneCycle(uint32_t now)
   {
     if (_terminalErrorLatched)
