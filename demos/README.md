@@ -30,18 +30,18 @@ Comandos utiles:
 
 ```bash
 ./scripts/demo.py list
-./scripts/demo.py build AFM07 dron
-./scripts/demo.py upload AFM07 dron
-./scripts/demo.py monitor AFM07 dron
+./scripts/demo.py build AFM07 dron_legacy
+./scripts/demo.py upload AFM07 dron_legacy
+./scripts/demo.py monitor AFM07 dron_legacy
 ```
 
 Equivalente directo con PlatformIO:
 
 ```bash
 python3 scripts/generate_demo_envs.py
-pio run -e demo_afm07_dron
-pio run -e demo_afm07_dron -t upload
-pio device monitor -e demo_afm07_dron
+pio run -e demo_afm07_dron_legacy
+pio run -e demo_afm07_dron_legacy -t upload
+pio device monitor -e demo_afm07_dron_legacy
 ```
 
 Para probar primero solo la pantalla Standard:
@@ -54,7 +54,7 @@ pio device monitor -e demo_spistandarddisplaydiag_standard
 Tambien hay un target custom por ambiente para ver informacion rapida:
 
 ```bash
-pio run -e demo_afm07_dron -t demo_info
+pio run -e demo_afm07_dron_legacy -t demo_info
 ```
 
 Para agregar una demo nueva, crear `demos/NuevaDemo/NuevaDemo.ino` y registrar
@@ -64,7 +64,7 @@ al default.
 Modelo de pinout:
 
 - Cada sketch tiene arriba un bloque `#define EOLO_MODEL_*`.
-- Para cambiar de placa, dejar activo solo uno entre `EOLO_MODEL_DRON`, `EOLO_MODEL_STANDARD`, `EOLO_MODEL_EXPRESS` o `EOLO_MODEL_EXPRESS_LEGACY`.
+- Para cambiar de placa, dejar activo solo uno entre `EOLO_MODEL_DRON_LEGACY`, `EOLO_MODEL_STANDARD`, `EOLO_MODEL_EXPRESS` o `EOLO_MODEL_EXPRESS_LEGACY`.
 - Los pines estan en `EoloDemoPinout.h`.
 - EOLO Dron: RS485 RX `GPIO16`, TX `GPIO17`, DE/RE `GPIO4`; motor PWM `GPIO26`; FG `GPIO35`; DIP `GPIO32`, `GPIO33`, `GPIO14`, `GPIO13`.
 - EOLO Express: RS485 RX `GPIO27`, TX `GPIO25`, DE/RE `GPIO26`; Plantower RX `GPIO17`, TX `GPIO16`; bombas PWM `GPIO32/33`; alimentacion perifericos `GPIO4`.

@@ -3,7 +3,7 @@
 # corre los tests nativos y Python y los chequeos estaticos del repositorio.
 #
 # Uso: scripts/check_all.sh [--with-hw-suites] [--with-demos]
-#   --with-hw-suites  compila (sin ejecutar) las suites de test/ en eolo_dron
+#   --with-hw-suites  compila (sin ejecutar) las suites de test/ en eolo_dron_legacy
 #   --with-demos      compila todos los entornos demo_* de platformio.demos.ini
 set -u
 cd "$(dirname "$0")/.."
@@ -41,7 +41,7 @@ step "git diff --check" git diff --check
 
 if [ "$with_suites" -eq 1 ]; then
   for suite in $(ls test | grep '^test_' | grep -v '\.py$' | grep -v '^test_eolo_core_native$'); do
-    step "suite $suite (compilar)" pio test -e eolo_dron -f "$suite" --without-uploading --without-testing
+    step "suite $suite (compilar)" pio test -e eolo_dron_legacy -f "$suite" --without-uploading --without-testing
   done
 fi
 

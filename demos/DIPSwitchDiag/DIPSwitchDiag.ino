@@ -1,8 +1,8 @@
 #include <Arduino.h>
 
-#if !defined(EOLO_MODEL_DRON) && !defined(EOLO_MODEL_STANDARD) && \
+#if !defined(EOLO_MODEL_DRON_LEGACY) && !defined(EOLO_MODEL_STANDARD) && \
     !defined(EOLO_MODEL_EXPRESS) && !defined(EOLO_MODEL_EXPRESS_LEGACY)
-#define EOLO_MODEL_DRON
+#define EOLO_MODEL_DRON_LEGACY
 #endif
 
 #include "../EoloDemoPinout.h"

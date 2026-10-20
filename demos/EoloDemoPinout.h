@@ -3,6 +3,8 @@
 
 #if defined(EOLO_MODEL_DRON)
 #define EOLO_TARGET_DRON
+#elif defined(EOLO_MODEL_DRON_LEGACY)
+#define EOLO_TARGET_DRON_LEGACY
 #elif defined(EOLO_MODEL_STANDARD)
 #define EOLO_TARGET_STANDARD
 #elif defined(EOLO_MODEL_EXPRESS)
@@ -18,6 +20,13 @@
 // reproducen las capacidades actuales sin convertir una demo en otra variante
 // productiva. El backend por librerías preserva el fallback histórico de demos.
 #if defined(EOLO_TARGET_DRON)
+  #ifndef EOLO_I2C_DIRECT_DRIVERS
+    #define EOLO_I2C_DIRECT_DRIVERS 0
+  #endif
+  #define FEATURE_MOTOR_PWM
+  #define FEATURE_FLOW_AFM07
+  #define FEATURE_FLOW_CALIBRATION
+#elif defined(EOLO_TARGET_DRON_LEGACY)
   // Las demos históricas conservan los drivers por librería. Una demo que
   // compone producción puede seleccionar los drivers directos antes de incluir.
   #ifndef EOLO_I2C_DIRECT_DRIVERS

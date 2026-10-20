@@ -880,7 +880,7 @@ def main():
     sub.add_parser("list", help="Listar todos los respaldos organizados.")
 
     snap_p = sub.add_parser("snapshot", help="Crear un snapshot formal de entrega.")
-    snap_p.add_argument("target", help="Target a respaldar (ej. eolo_express, eolo_dron).")
+    snap_p.add_argument("target", help="Target a respaldar (ej. eolo_express, eolo_dron_legacy).")
     snap_p.add_argument("-n", "--name", required=True, help="Nombre del snapshot (ej. V1.2_Produccion).")
     snap_p.add_argument("--notes", default="", help="Notas o descripcion del snapshot.")
 

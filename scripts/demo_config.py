@@ -6,6 +6,7 @@ DEMOS_DIR = PROJECT_ROOT / "demos"
 
 MODELS = {
     "dron": "EOLO_MODEL_DRON",
+    "dron_legacy": "EOLO_MODEL_DRON_LEGACY",
     "standard": "EOLO_MODEL_STANDARD",
     "express": "EOLO_MODEL_EXPRESS",
     "express_legacy": "EOLO_MODEL_EXPRESS_LEGACY",
@@ -13,7 +14,7 @@ MODELS = {
 
 DEMO_CONFIG = {
     "AFM07": {
-        "models": ["dron", "standard", "express", "express_legacy"],
+        "models": ["dron_legacy", "standard", "express", "express_legacy"],
         "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],
     },
     "Anemometer": {
@@ -21,14 +22,14 @@ DEMO_CONFIG = {
         "lib_deps": [],
     },
     "BME280": {
-        "models": ["dron", "standard", "express", "express_legacy"],
+        "models": ["dron_legacy", "standard", "express", "express_legacy"],
         "lib_deps": [
             "adafruit/Adafruit Unified Sensor@^1.1.15",
             "adafruit/Adafruit BME280 Library@^2.3.0",
         ],
     },
     "FS3000": {
-        "models": ["dron", "standard", "express", "express_legacy"],
+        "models": ["dron_legacy", "standard", "express", "express_legacy"],
         "lib_deps": ["sparkfun/SparkFun_FS3000_Arduino_Library@^1.0.5"],
     },
     "Plantower": {
@@ -36,7 +37,7 @@ DEMO_CONFIG = {
         "lib_deps": [],
     },
     "DronFull": {
-        "models": ["dron"],
+        "models": ["dron_legacy"],
         "lib_deps": [
             "adafruit/Adafruit NeoPixel@^1.12.5",
             "adafruit/Adafruit Unified Sensor@^1.1.15",
@@ -45,7 +46,7 @@ DEMO_CONFIG = {
         ],
     },
     "DronProdTest": {
-        "models": ["dron"],
+        "models": ["dron_legacy"],
         "lib_deps": [
             "adafruit/Adafruit NeoPixel@^1.12.5",
             "adafruit/Adafruit Unified Sensor@^1.1.15",
@@ -56,7 +57,7 @@ DEMO_CONFIG = {
         ],
     },
     "DynamicMotorCalibration": {
-        "models": ["dron"],
+        "models": ["dron_legacy"],
         "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],
     },
     "AFM07ProfPins": {"models": ["express"], "lib_deps": []},
@@ -72,7 +73,25 @@ DEMO_CONFIG = {
             "adafruit/RTClib@^2.1.4",
         ],
     },
-    "DIPSwitchDiag": {"models": ["dron"], "lib_deps": []},
+    # Referencia validada en hardware del Dron base (V2): OLED SH1106, encoder
+    # en Wire1, SD, RTC, BME280, bomba PWM, AFM07 y bateria 2S.
+    "DronBase": {
+        "models": ["dron"],
+        "lib_deps": [
+            "olikraus/U8g2@^2.36.14",
+            "adafruit/Adafruit Unified Sensor@^1.1.15",
+            "adafruit/Adafruit BME280 Library@^2.3.0",
+            "adafruit/RTClib@^2.1.4",
+            "4-20ma/ModbusMaster@^2.0.1",
+        ],
+    },
+    # Reproduce la concurrencia OLED I2C + encoder en Wire1 + sensores y mide la
+    # perdida de eventos del encoder (algoritmo actual de Input vs acumulado).
+    "DronEncoderTest": {
+        "models": ["dron"],
+        "lib_deps": ["olikraus/U8g2@^2.36.14"],
+    },
+    "DIPSwitchDiag": {"models": ["dron_legacy"], "lib_deps": []},
 }
 
 
@@ -86,6 +105,6 @@ def demo_sketches():
 
 def config_for(demo_name):
     return DEMO_CONFIG.get(demo_name, {
-        "models": ["dron"],
+        "models": ["dron_legacy"],
         "lib_deps": [],
     })
