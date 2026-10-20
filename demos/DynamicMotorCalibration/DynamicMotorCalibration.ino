@@ -2,8 +2,8 @@
 #include <ModbusMaster.h>
 #include <Eolo/Core/Flow/SmartFlowController.h>
 
-#if !defined(EOLO_MODEL_DRON)
-#define EOLO_MODEL_DRON
+#if !defined(EOLO_MODEL_DRON_LEGACY)
+#define EOLO_MODEL_DRON_LEGACY
 #endif
 #include "../EoloDemoPinout.h"
 

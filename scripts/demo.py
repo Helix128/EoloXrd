@@ -110,7 +110,7 @@ def main():
     for command in ("build", "upload"):
         p = sub.add_parser(command, help=f"{command} a demo environment.")
         p.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
-        p.add_argument("model", nargs="?", default="dron", help="Board model. Default: dron.")
+        p.add_argument("model", nargs="?", default="dron_legacy", help="Board model. Default: dron_legacy.")
         p.add_argument("--tag", default="", help="Optional version tag for this build.")
         p.set_defaults(func={
             "build": lambda a: build_or_upload(a),
@@ -119,7 +119,7 @@ def main():
 
     p_mon = sub.add_parser("monitor", help="Monitor serial output for a demo environment.")
     p_mon.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
-    p_mon.add_argument("model", nargs="?", default="dron", help="Board model. Default: dron.")
+    p_mon.add_argument("model", nargs="?", default="dron_legacy", help="Board model. Default: dron_legacy.")
     p_mon.set_defaults(func=monitor)
 
     args = parser.parse_args()

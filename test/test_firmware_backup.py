@@ -51,16 +51,16 @@ class FirmwareBackupTests(unittest.TestCase):
         ):
             dest = fb.create_backup(
                 build_dir,
-                "eolo_dron",
+                "eolo_dron_legacy",
                 root,
                 custom_tag="Release especial/AFM@07",
             )
 
         self.assertEqual(dest.name, "latest")
         latest_files = {
-            "EoloDron_latest_firmware.bin",
-            "EoloDron_latest_bootloader.bin",
-            "EoloDron_latest_partitions.bin",
+            "EoloDronLegacy_latest_firmware.bin",
+            "EoloDronLegacy_latest_bootloader.bin",
+            "EoloDronLegacy_latest_partitions.bin",
             "build_info.json",
             "flash_firmware.sh",
             "flash_firmware.bat",
@@ -72,7 +72,7 @@ class FirmwareBackupTests(unittest.TestCase):
             self.assertIn("sha256", artifact)
             self.assertTrue((dest / artifact["file"]).is_file())
         script = (dest / "flash_firmware.sh").read_text(encoding="utf-8")
-        self.assertIn('$SCRIPT_DIR/EoloDron_latest_firmware.bin', script)
+        self.assertIn('$SCRIPT_DIR/EoloDronLegacy_latest_firmware.bin', script)
         self.assertEqual(metadata["source_snapshot"], "Release_especial_AFM_07_" + metadata["timestamp"][:10] + "_" + metadata["timestamp"][11:19].replace(":", "-"))
 
     def test_daily_revision_uses_retained_metadata(self):
@@ -87,14 +87,14 @@ class FirmwareBackupTests(unittest.TestCase):
 
     def test_rotation_keeps_nine_compressed_histories_without_touching_legacy(self):
         root = self.sandbox()
-        target = root / "firmware_backups" / "devices" / "eolo_dron"
+        target = root / "firmware_backups" / "devices" / "eolo_dron_legacy"
         for index in range(1, 11):
             stamp = f"2026-08-25_12-00-{index:02d}"
             snapshot = target / f"build_r{index}_{stamp}"
             snapshot.mkdir(parents=True)
             (snapshot / "firmware.bin").write_bytes(f"firmware-{index}".encode())
             metadata = {
-                "target": "eolo_dron", "label": "EoloDron", "timestamp": f"2026-08-25T12:00:{index:02d}",
+                "target": "eolo_dron_legacy", "label": "EoloDron", "timestamp": f"2026-08-25T12:00:{index:02d}",
                 "version_tag": f"build_r{index}", "files": {"firmware": {"file": "firmware.bin"}}
             }
             (snapshot / "build_info.json").write_text(json.dumps(metadata), encoding="utf-8")
@@ -114,17 +114,17 @@ class FirmwareBackupTests(unittest.TestCase):
 
     def test_history_starts_only_after_policy_is_enabled(self):
         root = self.sandbox()
-        target = root / "firmware_backups" / "devices" / "eolo_dron" / "latest"
+        target = root / "firmware_backups" / "devices" / "eolo_dron_legacy" / "latest"
         target.mkdir(parents=True)
         (target / "build_info.json").write_text(json.dumps({
-            "target": "eolo_dron", "label": "EoloDron", "timestamp": "2026-08-25T10:00:00",
+            "target": "eolo_dron_legacy", "label": "EoloDron", "timestamp": "2026-08-25T10:00:00",
             "version_tag": "legacy", "source_snapshot": "legacy_2026-08-25_10-00-00",
         }), encoding="utf-8")
         build_dir = self.make_build(root)
         with mock.patch.object(fb, "get_git_info", return_value={"commit": "abc1234", "branch": "main", "dirty": False, "tag": ""}):
-            fb.create_backup(build_dir, "eolo_dron", root, custom_tag="primero")
+            fb.create_backup(build_dir, "eolo_dron_legacy", root, custom_tag="primero")
             self.assertFalse((target.parent / "history").exists())
-            fb.create_backup(build_dir, "eolo_dron", root, custom_tag="segundo")
+            fb.create_backup(build_dir, "eolo_dron_legacy", root, custom_tag="segundo")
         archives = list((target.parent / "history").glob("*.tar.xz"))
         self.assertEqual(len(archives), 1)
         self.assertEqual(fb._metadata_from_archive(archives[0])["version_tag"], "primero")
@@ -140,8 +140,8 @@ class FirmwareBackupTests(unittest.TestCase):
             "eolo_express",
             "eolo_express_legacy",
             "eolo_standard",
-            "eolo_dron",
-            "eolo_dron_low_power",
+            "eolo_dron_legacy",
+            "eolo_dron_legacy_low_power",
         ]
         with mock.patch.object(fb.shutil, "which", return_value="/usr/bin/pio"), mock.patch.object(
             fb.subprocess, "call", side_effect=record
@@ -159,7 +159,7 @@ class FirmwareBackupTests(unittest.TestCase):
         ):
             with self.subTest(old_name=old_name):
                 root = self.sandbox()
-                target = root / "firmware_backups" / "devices" / "eolo_dron"
+                target = root / "firmware_backups" / "devices" / "eolo_dron_legacy"
                 source = target / old_name
                 source.mkdir(parents=True)
                 base = "EoloDron_2026-08-25_12-34-56_original"
@@ -173,7 +173,7 @@ class FirmwareBackupTests(unittest.TestCase):
                 for filename in files.values():
                     (source / filename).write_bytes(filename.encode())
                 metadata = {
-                    "target": "eolo_dron",
+                    "target": "eolo_dron_legacy",
                     "label": "EoloDron",
                     "category": "devices",
                     "version_tag": "original",

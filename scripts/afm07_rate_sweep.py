@@ -281,7 +281,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", type=Path,
                         default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--env", default="eolo_dron_low_power")
+    parser.add_argument("--env", default="eolo_dron_legacy_low_power")
     parser.add_argument("--base-url", default="http://192.168.4.1",
                         help="URL LAN/AP del dispositivo; no se cambia la red del host")
     parser.add_argument("--intervals", nargs="+", type=int, default=list(DEFAULT_INTERVALS),

@@ -109,8 +109,8 @@
         "eolo_express",
         "eolo_express_legacy",
         "eolo_standard",
-        "eolo_dron",
-        "eolo_dron_low_power"
+        "eolo_dron_legacy",
+        "eolo_dron_legacy_low_power"
       ]
     },
     {
@@ -128,7 +128,7 @@
       "id": "snapTarget",
       "type": "pickString",
       "description": "Selecciona el target a congelar en snapshot:",
-      "options": ["eolo_express", "eolo_dron", "eolo_standard", "eolo_express_legacy"]
+      "options": ["eolo_express", "eolo_dron_legacy", "eolo_standard", "eolo_express_legacy"]
     },
     {
       "id": "snapName",

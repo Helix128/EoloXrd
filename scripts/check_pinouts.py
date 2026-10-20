@@ -14,6 +14,11 @@ TARGETS = {
         "demo": "EOLO_MODEL_DRON",
         "doc": ROOT / "pinouts/eolo-dron.md",
     },
+    "dron_legacy": {
+        "macro": "EOLO_TARGET_DRON_LEGACY",
+        "demo": "EOLO_MODEL_DRON_LEGACY",
+        "doc": ROOT / "pinouts/eolo-dron-legacy.md",
+    },
     "standard": {
         "macro": "EOLO_TARGET_STANDARD",
         "demo": "EOLO_MODEL_STANDARD",
@@ -37,7 +42,7 @@ DOC_DEFINES = {
     "NEOPIXEL_PIN", "NTC_PIN", "BATTERY_ADC_PIN", "RS485_RX_PIN", "RS485_TX_PIN",
     "RS485_DE_RE_PIN", "MOTOR_PWM_PIN_0", "MOTOR_PWM_PIN_1", "MOTOR_FG_PIN",
     "MOTOR_POWER_PIN", "PT_RX", "PT_TX", "PPH_PWR_PIN", "MODEM_PWR_PIN",
-    "MODEM_RX_PIN", "MODEM_TX_PIN",
+    "MODEM_RX_PIN", "MODEM_TX_PIN", "ENCODER_SDA_PIN", "ENCODER_SCL_PIN",
 }
 
 # A physical discrepancy must never be silenced by changing a document to
