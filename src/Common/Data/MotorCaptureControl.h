@@ -417,7 +417,11 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
             LOG_OUT(output.smartStatus.fastFlow, 2);
             LOG_OUT(" L/min PWM ");
             LOG_OUT(output.virtualPwm);
-            LOG_OUT(" centro=");
+            LOG_OUT(" (salida real ");
+            LOG_OUT(motor.getMotorPwm(0));
+            LOG_OUT(", edad flujo ");
+            LOG_OUT(flowData.ageMs);
+            LOG_OUT(" ms) centro=");
             LOG_OUT(output.smartStatus.centerPwm);
             LOG_OUT(" trim=");
             LOG_OUT(output.smartStatus.trimPwm);

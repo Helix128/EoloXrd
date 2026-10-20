@@ -198,17 +198,21 @@ public:
     if (EoloConfig::motorRampStep <= 0)
       return;
 
+    // La pendiente es motorRampStep por motorRampIntervalMs aunque el loop se
+    // retrase (p. ej. escritura en SD): se aplican todos los pasos vencidos.
     unsigned long now = millis();
-    if (now - lastRampMs < EoloConfig::motorRampIntervalMs)
+    const unsigned long ticks = (now - lastRampMs) / EoloConfig::motorRampIntervalMs;
+    if (ticks == 0)
       return;
-    lastRampMs = now;
+    lastRampMs += ticks * EoloConfig::motorRampIntervalMs;
+    const long step = (long)EoloConfig::motorRampStep * (long)ticks;
 
     for (int i = 0; i < motorCount; i++)
     {
       if (pwmValues[i] >= targetPwmValues[i])
         continue;
 
-      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], EoloConfig::motorRampStep);
+      int next = nextRampedPwm(pwmValues[i], targetPwmValues[i], (int)min(step, (long)MAX_PWM));
       writeMotorPwm(i, next);
     }
   }
