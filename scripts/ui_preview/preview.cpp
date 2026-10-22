@@ -2,6 +2,7 @@
 // usando el codigo real de Renderer/GUI/escenas contra un Context simulado.
 // Uso: preview <directorio_salida>   (build.py lo compila y convierte a PNG)
 #include "prelude.h"
+#include <assert.h>
 
 #include <Eolo/Types/FlowData.h>
 #include <Eolo/Types/BME280Data.h>
@@ -219,9 +220,51 @@ static void headerShot(const char *name, void (*tweak)(UiSnapshot &))
     delete ctx;
 }
 
+// Prueba de navegacion real: el encoder alcanza todas las paginas y salta
+// ambas paginas PM cuando Plantower no esta habilitado en la sesion.
+static void checkCapturePages()
+{
+    Context ctx;
+    fillDefaults(ctx);
+    CapturaScene scene;
+    scene.enter(ctx);
+#ifdef FEATURE_ANEMOMETER
+    constexpr int count = 9;
+#else
+    constexpr int count = 8;
+#endif
+    for (bool pmEnabled : {true, false})
+    {
+        ctx.snapshot.airQuality.enabled = pmEnabled;
+        for (int direction : {1, -1})
+        {
+            scene.cycleFooter = 0;
+            bool seen[count] = {};
+            const int visible = count - (pmEnabled ? 0 : 2);
+            for (int i = 0; i < visible; ++i)
+            {
+                assert(!seen[scene.cycleFooter]);
+                assert(CapturaScene::footerPageAvailable(ctx, scene.cycleFooter));
+                seen[scene.cycleFooter] = true;
+                ctx.components.input.delta = direction;
+                scene.update(ctx);
+            }
+            assert(scene.cycleFooter == 0);
+            for (int page = 0; page < count; ++page)
+                assert(seen[page] == CapturaScene::footerPageAvailable(ctx, page));
+        }
+    }
+
+    ctx.u8g2.setFont(FONT_VALUE);
+    assert(ctx.u8g2.getStrWidth("23:59") <= Layout::Header::Time.w);
+    ctx.u8g2.setFont(FONT_LABEL);
+    assert(ctx.u8g2.getStrWidth("EOLO") <= Layout::Header::Brand.w);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1) outDir = argv[1];
+    checkCapturePages();
 
     headerShot("header_ok", nullptr);
     headerShot("header_sd_writing", [](UiSnapshot &s) { s.status.sdStatus = SD_WRITING; });
@@ -236,6 +279,12 @@ int main(int argc, char **argv)
     headerShot("header_dc", [](UiSnapshot &s) { s.power.poweredByDc = true; });
 
     shot<LogoScene>("logo_boot");
+    shot<LogoScene>("logo_services", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::StartingServices; });
+    shot<LogoScene>("logo_sd", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::InitSD; });
+    shot<LogoScene>("logo_i2c", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::WaitingI2C; });
+    shot<LogoScene>("logo_ready", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::Ready; c.bootInitComplete = true; });
+    shot<LogoScene>("logo_sd_missing", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::Ready; c.sd = SD_MISSING; });
+    shot<LogoScene>("logo_sd_error", 0, 1, [](Context &c) { c.bootPhase = Context::BootPhase::Ready; c.sd = SD_ERROR; });
     shot<InicioScene>("inicio");
     shot<InicioScene>("inicio_scroll", 4);
     shot<AcercaDeScene>("acerca_de");
@@ -247,8 +296,21 @@ int main(int argc, char **argv)
     shot<RTCAdjustMenuScene>("rtc_menu");
     shot<RTCAdjustMenuScene>("rtc_sync", 0, 1, [](Context &c) { c.rtcStatus = RTCNetworkSyncStatus::Running; });
     shot<WaitScene>("espera", 0, 1, [](Context &c) { c.session.startUnix = c.components.rtc.now().unixtime() + 754; });
+    shot<WaitScene>("espera_sin_flujo", 0, 1, [](Context &c) { c.session.startUnix = c.getUnixTime() + 1; c.components.flowSensor.ok = false; });
+    shot<WaitScene>("espera_larga", 0, 1, [](Context &c) { c.session.startUnix = c.getUnixTime() + 3600000UL; });
     shot<CapturaScene>("captura_p0");
     shot<CapturaScene>("captura_p1", 1, 2);
+    shot<CapturaScene>("captura_pm", 2, 2);
+    shot<CapturaScene>("captura_pm10", 3, 2);
+    shot<CapturaScene>("captura_objetivo", 4, 2);
+    shot<CapturaScene>("captura_transcurrido", 5, 2);
+    shot<CapturaScene>("captura_restante", 6, 2);
+    shot<CapturaScene>("captura_horarios", 7, 2);
+#ifdef FEATURE_ANEMOMETER
+    shot<CapturaScene>("captura_viento", 8, 2);
+#endif
+    shot<CapturaScene>("captura_pm_alto", 2, 2, [](Context &c) { c.snapshot.airQuality.pm1 = 9999; c.snapshot.airQuality.pm25 = 9999; });
+    shot<CapturaScene>("captura_sin_pm", 2, 2, [](Context &c) { c.snapshot.airQuality.enabled = false; });
     shot<CapturaBombasScene>("probar_bombas");
     shot<FinScene>("fin");
     shot<FinScene>("fin_falla_bomba", 0, 1, [](Context &c) { c.endReason = CaptureEndReason::PumpFailureZeroFlow; });
@@ -258,6 +320,13 @@ int main(int argc, char **argv)
     shot<ComponentTestMenuScene>("test_menu");
     shot<ComponentSensorsScene>("test_sensores_flujo");
     shot<ComponentSensorsScene>("test_sensores_bme", 1);
+    shot<ComponentSensorsScene>("test_sensores_ultimo", 99);
+#ifdef FEATURE_PLANTOWER
+    shot<ComponentSensorsScene>("test_sensores_pm", 2);
+#endif
+#ifdef FEATURE_ANEMOMETER
+    shot<ComponentSensorsScene>("test_sensores_viento", 3);
+#endif
     shot<ComponentMotorsScene>("test_motores");
     return 0;
 }

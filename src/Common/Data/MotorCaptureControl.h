@@ -21,6 +21,7 @@ class MotorCaptureControl
     float pidTestTargetFlow = EoloConfig::droneTargetFlowLpm;
     bool pidConfigLogged = false;
     uint16_t _lastLoggedKickCount = 0;
+    bool _lastUnreachable = false;
 #endif
     uint32_t lastMotorOverheatLogMs = 0;
     static constexpr uint32_t kNtcInvalidConfirmMs = 100UL;
@@ -327,6 +328,14 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
         }
         motor.setPwmImmediate(0);
         return;
+    }
+
+    // Log consigna inalcanzable (una vez por cambio de estado)
+    if (output.smartStatus.unreachable != _lastUnreachable)
+    {
+        _lastUnreachable = output.smartStatus.unreachable;
+        LOG_OUT_LN(_lastUnreachable ? "flow_unreachable: PWM en maximo, consigna no alcanzable"
+                                    : "flow_unreachable: despejado");
     }
 
     // Log arranque/re-kick (una vez por evento)

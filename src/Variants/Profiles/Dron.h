@@ -77,6 +77,21 @@ constexpr FlowPidConfig makeFlowPidConfig()
     config.feedForward = {kFlowFeedForward,
                           static_cast<uint8_t>(sizeof(kFlowFeedForward) / sizeof(kFlowFeedForward[0]))};
     config.rampCountsPerSecond = kMotorRampStep * 1000.0f / static_cast<float>(kMotorRampIntervalMs);
+    // Una sola bomba: el PWM virtual no supera 2047 (sin enrollamiento oculto).
+    config.motorCount = 1;
+    // Medido en banco (AFM07 cada 360 ms, sigma <= 0,007 L/min, resolución
+    // 0,01): la zona muerta de 0,08 dejaba -3,9 % a 1 L/min. El CUSUM
+    // recupera una pérdida de ganancia de -15 % en 4-6 s (antes: -12 %
+    // sostenido).
+    config.deadband = 0.012f;
+    config.deadbandRel = 0.005f;
+    config.driftThreshold = 0.01f;
+    config.freezeIntegral = true;
+    config.cusumK = 0.006f;
+    config.cusumH = 0.12f;
+    config.cusumJumpMax = 300;
+    config.cusumJumpFrac = 0.55f;
+    config.cusumHoldMs = 2000UL;
     return config;
 }
 

@@ -151,7 +151,9 @@ public:
             pidIn.flowFresh = true;
             pidIn.flowStale = false;
             pidIn.flowAgeMs = in.flowAgeMs;
-            pidIn.maxPwm = in.maxPwm * 2;
+            // Una sola bomba: el PWM virtual no puede pasar del máximo físico;
+            // de lo contrario el exceso se descarta y el lazo se enrolla.
+            pidIn.maxPwm = in.maxPwm * (config.motorCount >= 2 ? 2 : 1);
             out.controller = _controller.update(pidIn, config);
             out.fault = out.controller.fault;
             out.smartStatus = out.controller.smartStatus;

@@ -134,7 +134,8 @@ public:
 
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
-        Renderer::centeredText(ctx.u8g2, title, Layout::CenterX, Layout::KvFirstY, FONT_TITLE);
+        ctx.u8g2.setFont(FONT_TITLE);
+        ctx.u8g2.drawStr(Layout::MarginX, Layout::KvFirstY, title);
 
         Renderer::KeyValue rows[4];
         int n = 0;
@@ -146,7 +147,7 @@ public:
 
         char counter[8];
         snprintf(counter, sizeof(counter), "%d/%d", page + 1, pages);
-        ctx.u8g2.setFont(FONT_SMALL);
+        ctx.u8g2.setFont(FONT_VALUE);
         ctx.u8g2.drawStr(Layout::ScreenW - Layout::MarginX - ctx.u8g2.getStrWidth(counter), Layout::KvFirstY, counter);
         ctx.u8g2.sendBuffer();
     }

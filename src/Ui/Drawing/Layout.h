@@ -67,9 +67,9 @@ namespace Layout
     {
         struct Slot { int x; int y; int w; int h; };
 
-        constexpr Slot Time = {2, 2, 25, 9};       // x=2..26
-        constexpr Slot Sd = {30, 2, 10, 9};        // x=30..39
-        constexpr Slot Brand = {45, 2, 20, 9};     // x=45..64
+        constexpr Slot Time = {2, 1, 29, 11};      // x=2..30
+        constexpr Slot Sd = {34, 2, 10, 9};        // x=34..43
+        constexpr Slot Brand = {47, 1, 28, 11};    // x=47..74
         constexpr Slot Modem = {78, 2, 16, 9};     // x=78..93
         constexpr Slot Dc = {97, 2, 8, 9};         // x=97..104
         constexpr Slot Battery0 = {108, 2, 9, 9};  // x=108..116

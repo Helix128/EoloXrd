@@ -31,15 +31,15 @@ private:
         switch (phase)
         {
         case Context::BootPhase::InitSD:
-            return "Revisando SD...";
+            return "Revisando SD";
         case Context::BootPhase::WaitingI2C:
-            return "Estabilizando I2C...";
+            return "Estabilizando I2C";
         case Context::BootPhase::Ready:
             return "Listo";
         case Context::BootPhase::StartingServices:
         case Context::BootPhase::Idle:
         default:
-            return "Preparando equipo...";
+            return "Preparando equipo";
         }
     }
 
@@ -48,10 +48,10 @@ private:
         // cmas es un bitmap 128x64. El isotipo completo ocupa x=6..58,
         // y=7..54 (las tres formas y el signo +); no hay que tomar solo la
         // primera franja vertical porque eso deja el logo recortado.
-        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 3, 0, 28, 25);
+        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 13, 4, 27, 25);
 
-        ctx.u8g2.setFont(FONT_LABEL);
-        ctx.u8g2.drawStr(39, 16, "EOLO");
+        ctx.u8g2.setFont(FONT_DISPLAY);
+        ctx.u8g2.drawStr(49, 25, "EOLO");
     }
 
     void drawDetail(Context &ctx, Context::BootPhase phase)
@@ -99,7 +99,28 @@ private:
             break;
         }
 
-        Renderer::centeredText(ctx.u8g2, detail, Layout::CenterX, 54, FONT_VALUE);
+        Renderer::centeredText(ctx.u8g2, detail, Layout::CenterX, 55, FONT_VALUE);
+    }
+
+    void drawBootStages(Context &ctx, Context::BootPhase phase)
+    {
+        // Tres etapas reales, no un porcentaje estimado: servicios, SD, I2C.
+        const uint8_t stage = phase == Context::BootPhase::Ready ? 3 :
+                              phase == Context::BootPhase::WaitingI2C ? 2 :
+                              phase == Context::BootPhase::InitSD ? 1 : 0;
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            const int x = 4 + i * 41;
+            ctx.u8g2.drawHLine(x, 61, 38);
+            if (i < stage)
+                ctx.u8g2.drawBox(x, 60, 38, 3);
+            else if (i == stage)
+            {
+                const int offset = (millis() / 80UL) % 60UL;
+                const int travel = offset <= 30 ? offset : 60 - offset;
+                ctx.u8g2.drawBox(x + travel, 60, 8, 3);
+            }
+        }
     }
 
     void drawBootScreen(Context &ctx)
@@ -107,13 +128,14 @@ private:
         ctx.u8g2.clearBuffer();
 
         const Context::BootPhase phase = ctx.bootPhase.load();
-        ctx.u8g2.drawHLine(4, 26, 120); 
-        Renderer::centeredText(ctx.u8g2, bootPhaseText(phase), Layout::CenterX, 39, FONT_LABEL);
+        const bool sdWarning = phase == Context::BootPhase::Ready &&
+                               (ctx.sdStatus() == SD_MISSING || ctx.sdStatus() == SD_ERROR);
+        Renderer::centeredText(ctx.u8g2, sdWarning ? "Revisar SD" : bootPhaseText(phase),
+                               Layout::CenterX, 43, FONT_LABEL);
         drawDetail(ctx, phase);
         ctx.u8g2.setBitmapMode(1);
         drawLogo(ctx);
-        if (phase != Context::BootPhase::Ready)
-            Renderer::spinner(ctx.u8g2, 116, 11, (uint8_t)((millis() / 120UL) & 7U));
+        drawBootStages(ctx, phase);
         ctx.u8g2.sendBuffer();
         ctx.acknowledgeBootPhaseRendered();
     }
