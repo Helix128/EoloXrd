@@ -13,3 +13,5 @@ __pycache__/
 firmware_backups/
 .build_tag
 artifacts/
+# Salida de scripts/ui_preview (PNG de pantallas y ejecutables)
+/build/

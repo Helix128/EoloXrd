@@ -73,6 +73,8 @@ public:
     }
 
 private:
+    // Tarjeta SD 10x9: silueta con esquina cortada. Contactos = lista, caja = escribiendo,
+    // "!" = error, X = sin tarjeta.
     static void drawSdIcon(Context &ctx, int x, int y, int status)
     {
         constexpr int w = 10;
@@ -85,95 +87,97 @@ private:
         ctx.u8g2.drawLine(x + w - 1, y + bevel, x + w - bevel - 1, y);
         ctx.u8g2.drawHLine(x, y, w - bevel - 1);
 
-        if (status == SD_ERROR || status == SD_MISSING)
+        if (status == SD_MISSING)
         {
-            ctx.u8g2.drawLine(x + 3, y + 2, x + 7, y + 6);
-            ctx.u8g2.drawLine(x + 7, y + 2, x + 3, y + 6);
+            ctx.u8g2.drawLine(x + 3, y + 2, x + 6, y + 6);
+            ctx.u8g2.drawLine(x + 6, y + 2, x + 3, y + 6);
+        }
+        else if (status == SD_ERROR)
+        {
+            ctx.u8g2.drawVLine(x + 4, y + 2, 3);
+            ctx.u8g2.drawPixel(x + 4, y + 6);
         }
         else if (status == SD_WRITING)
         {
-            ctx.u8g2.drawBox(x + 2, y + 2, w - 4, h - 4);
+            ctx.u8g2.drawBox(x + 2, y + 3, w - 5, 4);
         }
         else
         {
-            ctx.u8g2.setFont(u8g2_font_tiny5_tf);
-            ctx.u8g2.drawStr(x + 1, y + 7, "SD");
+            ctx.u8g2.drawVLine(x + 2, y + 1, 3);
+            ctx.u8g2.drawVLine(x + 4, y + 1, 3);
+            ctx.u8g2.drawVLine(x + 6, y + 1, 3);
         }
     }
 
-    // Antena, estado de actividad y hasta cuatro barras en 16x9 px.
+    // Senal celular 16x9: cuatro barras crecientes (llenas = nivel, rayitas = vacias),
+    // cuadro = actividad, X = error, tachado = modem apagado.
     static void drawModemSignalIcon(Context &ctx, int x, int y, bool powered,
                                     bool active, bool error, bool known, uint8_t bars)
     {
         constexpr uint8_t maxBars = 4;
         if (bars > maxBars) bars = maxBars;
-
-        ctx.u8g2.drawVLine(x, y + 4, 5);
-        ctx.u8g2.drawLine(x, y + 4, x + 3, y + 1);
-        ctx.u8g2.drawLine(x, y + 4, x + 3, y + 7);
-
-        if (!powered)
-        {
-            ctx.u8g2.drawLine(x, y + 8, x + 15, y);
-            ctx.u8g2.drawPixel(x + 1, y + 8);
-            return;
-        }
-
-        if (active)
-            ctx.u8g2.drawBox(x + 1, y + 3, 3, 3);
-        else
-            ctx.u8g2.drawFrame(x + 1, y + 3, 3, 3);
-
-        if (error)
-        {
-            ctx.u8g2.drawLine(x + 8, y + 2, x + 12, y + 6);
-            ctx.u8g2.drawLine(x + 12, y + 2, x + 8, y + 6);
-            return;
-        }
+        const bool showLevel = powered && !error && known;
 
         for (uint8_t i = 0; i < maxBars; ++i)
         {
             const int h = 2 + i * 2;
-            const int bx = x + 5 + i * 3;
-            const int by = y + 8 - h;
-            if (known && i < bars)
-                ctx.u8g2.drawBox(bx, by, 2, h);
+            const int bx = x + i * 3;
+            if (showLevel && i < bars)
+                ctx.u8g2.drawBox(bx, y + 8 - h + 1, 2, h);
             else
-                ctx.u8g2.drawFrame(bx, by, 2, h);
+                ctx.u8g2.drawHLine(bx, y + 8, 2);
+        }
+
+        if (!powered)
+        {
+            ctx.u8g2.drawLine(x, y + 8, x + 10, y);
+        }
+        else if (error)
+        {
+            ctx.u8g2.drawLine(x + 12, y + 2, x + 15, y + 5);
+            ctx.u8g2.drawLine(x + 15, y + 2, x + 12, y + 5);
+        }
+        else if (active)
+        {
+            ctx.u8g2.drawBox(x + 13, y + 3, 3, 3);
         }
     }
 
-    // El frame ocupa 8x9 y el terminal completa el slot de 9x9.
+    // Bateria horizontal 9x9 (cuerpo 8x5 + terminal): se llena de izquierda a derecha.
+    // Sin dato = cuerpo vacio con guion.
     static void drawBatteryIcon(Context &ctx, int x, int y, int pct, bool active)
     {
-        constexpr int frameW = 8;
-        constexpr int h = 9;
+        constexpr int bodyW = 8;
+        constexpr int bodyH = 5;
+        const int bodyY = y + 2;
         const bool unknown = pct < 0;
 
-        ctx.u8g2.drawFrame(x, y, frameW, h);
-        ctx.u8g2.drawBox(x + frameW, y + 3, 1, 3);
+        ctx.u8g2.drawFrame(x, bodyY, bodyW, bodyH);
+        ctx.u8g2.drawVLine(x + bodyW, bodyY + 1, 3);
 
         if (unknown)
         {
-            ctx.u8g2.drawLine(x + 1, y + 1, x + frameW - 2, y + h - 2);
-            ctx.u8g2.drawLine(x + frameW - 2, y + 1, x + 1, y + h - 2);
+            ctx.u8g2.drawHLine(x + 2, bodyY + 2, 4);
         }
         else
         {
             if (pct > 100) pct = 100;
-            const int fillH = map(pct, 0, 100, 0, h - 2);
-            if (fillH > 0)
-                ctx.u8g2.drawBox(x + 1, y + h - 1 - fillH, frameW - 2, fillH);
+            int fillW = (pct * (bodyW - 2) + 50) / 100;
+            if (pct > 0 && fillW < 1) fillW = 1;
+            if (fillW > 0)
+                ctx.u8g2.drawBox(x + 1, bodyY + 1, fillW, bodyH - 2);
         }
 
         if (active)
-            ctx.u8g2.drawHLine(x, Layout::Header::ActiveSourceY, frameW);
+            ctx.u8g2.drawHLine(x, Layout::Header::ActiveSourceY, bodyW);
     }
 
+    // Rayo (alimentacion externa) en 6x9.
     static void drawDcText(Context &ctx, int x, int y)
     {
-        ctx.u8g2.setFont(u8g2_font_tiny5_tf);
-        ctx.u8g2.drawStr(x, y + 7, "DC");
+        ctx.u8g2.drawLine(x + 5, y, x + 1, y + 5);
+        ctx.u8g2.drawHLine(x + 1, y + 5, 5);
+        ctx.u8g2.drawLine(x + 5, y + 5, x + 2, y + 8);
         ctx.u8g2.drawHLine(x, Layout::Header::ActiveSourceY, 8);
     }
 };

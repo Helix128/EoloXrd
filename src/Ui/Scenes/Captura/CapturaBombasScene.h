@@ -28,8 +28,7 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        int pwm1 = ctx.components.motor.pwmValues[0];
-        int pwm2 = ctx.components.motor.pwmValues[1];
+        Renderer::centeredText(ctx.u8g2, "Probar bombas", Layout::CenterX, Layout::KvFirstY, FONT_TITLE);
 
         FlowData flowData;
         if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
@@ -37,20 +36,27 @@ public:
             flowData.flow = -1.0;
         }
 
-        char pwm1Str[6];
-        snprintf(pwm1Str, sizeof(pwm1Str), "%d", pwm1);
-        char pwm2Str[6];
-        snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
+        constexpr int Motors = MotorManager::motorCount;
+        char powerStr[8];
+        snprintf(powerStr, sizeof(powerStr), "%d%%", targetPct);
+        char labels[Motors][10];
+        char pwmStr[Motors][8];
         char flowStr[16];
-        snprintf(flowStr, sizeof(flowStr), "%.2f " UNIT_FLOW, flowData.flow);
+        if (flowData.flow < 0) snprintf(flowStr, sizeof(flowStr), "--");
+        else snprintf(flowStr, sizeof(flowStr), "%.2f " UNIT_FLOW, flowData.flow);
 
-        const Renderer::KeyValue rows[] = {
-            {"Motor 1:", pwm1Str},
-            {"Motor 2:", pwm2Str},
-            {"Flujo:", flowStr},
-        };
-        Renderer::keyValueRows(ctx.u8g2, rows, 3);
-
+        Renderer::KeyValue rows[Motors + 2];
+        int n = 0;
+        rows[n++] = {"Potencia", powerStr};
+        for (int i = 0; i < Motors; i++)
+        {
+            if (Motors == 1) snprintf(labels[i], sizeof(labels[i]), "Motor");
+            else snprintf(labels[i], sizeof(labels[i]), "Motor %d", i + 1);
+            snprintf(pwmStr[i], sizeof(pwmStr[i]), "%d", ctx.components.motor.pwmValues[i]);
+            rows[n++] = {labels[i], pwmStr[i]};
+        }
+        rows[n++] = {"Flujo", flowStr};
+        Renderer::keyValueRows(ctx.u8g2, rows, n, 1);
         ctx.u8g2.sendBuffer();
 
         targetPct += ctx.components.input.getEncoderDelta() * 1;

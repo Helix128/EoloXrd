@@ -354,7 +354,7 @@ public:
                 }
             }
             ctx.u8g2.clearBuffer(); GUI::displayHeader(ctx);
-            Renderer::yesNoChoice(ctx.u8g2, "Calibracion pausada", !pauseCancelSelected, nullptr, "Continuar", "Cancelar");
+            Renderer::yesNoChoice(ctx.u8g2, "Calibraci\xF3n pausada", !pauseCancelSelected, nullptr, "Continuar", "Cancelar");
             ctx.u8g2.sendBuffer();
             return;
         }

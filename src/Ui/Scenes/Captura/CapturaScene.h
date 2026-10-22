@@ -85,10 +85,11 @@ public:
 
         char lminStr[10];
         char volStr[10];
-        snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
+        if (lmin < 0) snprintf(lminStr, sizeof(lminStr), "--");
+        else snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
         snprintf(volStr, sizeof(volStr), "%.3f", volume*0.001);
 
-        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, UNIT_FLOW, "Vol. captura", volStr, UNIT_VOLUME, nullptr, nullptr, nullptr, Layout::HeroLabelY, Layout::HeroValueY);
+        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, UNIT_FLOW, "Vol. captura", volStr, UNIT_VOLUME, nullptr, nullptr, nullptr, Layout::HeroLabelY, Layout::HeroValueY, FONT_DISPLAY);
     }
 
     int cycleFooter = 0;
@@ -121,7 +122,7 @@ public:
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
             snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
 
-            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, UNIT_TEMP, "Hum", humStr, UNIT_PCT, "Presion", presStr, UNIT_PRESSURE);
+            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, UNIT_TEMP, "Hum", humStr, UNIT_PCT, "Presi\xF3n", presStr, UNIT_PRESSURE);
             break;
         }
         case 1: // pm1 pm2.5 pm10
@@ -160,7 +161,8 @@ public:
         case 4: // tiempo restante
         {
             char remainingStr[12];
-            formatHms(remainingStr, sizeof(remainingStr), ctx.session.duration - ctx.session.elapsedTime);
+            formatHms(remainingStr, sizeof(remainingStr),
+                      ctx.session.duration > ctx.session.elapsedTime ? ctx.session.duration - ctx.session.elapsedTime : 0);
             Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Tiempo restante", remainingStr, nullptr,
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
@@ -179,7 +181,7 @@ public:
         {
             if (!snapshot.wind.valid)
             {
-                Renderer::metricRow(ctx.u8g2, "Velocidad", "--", "", "Direccion", "--", "");
+                Renderer::metricRow(ctx.u8g2, "Velocidad", "--", "", "Direcci\xF3n", "--", "");
                 break;
             }
 
@@ -187,11 +189,23 @@ public:
             char directionStr[5];
             snprintf(speedStr, sizeof(speedStr), "%.1f", snapshot.wind.speed);
             snprintf(directionStr, sizeof(directionStr), "%d", snapshot.wind.direction);
-            Renderer::metricRow(ctx.u8g2, "Velocidad", speedStr, UNIT_WIND, "Direccion", directionStr, UNIT_DEG);
+            Renderer::metricRow(ctx.u8g2, "Velocidad", speedStr, UNIT_WIND, "Direcci\xF3n", directionStr, UNIT_DEG);
             break;
         }
 #endif
         }
+
+        int shown = 0;
+        int current = 0;
+        for (int page = 0; page < FooterPageCount; page++)
+        {
+            if (!footerPageAvailable(ctx, page))
+                continue;
+            if (page == cycleFooter)
+                current = shown;
+            shown++;
+        }
+        Renderer::pageDots(ctx.u8g2, shown, current, Layout::BodyBottom - 1);
     }
 };
 #endif

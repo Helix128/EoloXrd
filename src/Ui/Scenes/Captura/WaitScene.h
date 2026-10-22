@@ -54,10 +54,10 @@ public:
         }
 
         char flowStr[10];
-        snprintf(flowStr, sizeof(flowStr), "%.1f", flowData.flow);
+        if (flowData.flow < 0) snprintf(flowStr, sizeof(flowStr), "--");
+        else snprintf(flowStr, sizeof(flowStr), "%.1f", flowData.flow);
         Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Flujo actual", flowStr, UNIT_FLOW,
-                             Layout::HeroLabelY, Layout::HeroValueY);
-        Renderer::separatorLine(ctx.u8g2, Layout::SeparatorY);
+                             Layout::HeroLabelY, Layout::HeroValueY, FONT_VALUE, FONT_DISPLAY);
 
         char timeStr[8];
         DateTime startTime(ctx.session.startUnix);

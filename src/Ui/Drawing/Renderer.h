@@ -35,7 +35,7 @@ public:
                            const char *unit,
                            int labelY,
                            int valueY,
-                           const uint8_t *labelFont = FONT_SMALL,
+                           const uint8_t *labelFont = FONT_VALUE,
                            const uint8_t *valueFont = FONT_LABEL)
     {
         display.setFont(labelFont);
@@ -74,39 +74,57 @@ public:
     {
         if (label3)
         {
-            metricCell(display, 0, Layout::ThirdColumnW, label1, value1, unit1, labelY, valueY, FONT_SMALL, valueFont);
-            metricCell(display, Layout::ThirdColumnW, Layout::ThirdColumnW, label2, value2, unit2, labelY, valueY, FONT_SMALL, valueFont);
-            metricCell(display, 2 * Layout::ThirdColumnW, Layout::ScreenW - 2 * Layout::ThirdColumnW, label3, value3, unit3, labelY, valueY, FONT_SMALL, valueFont);
+            metricCell(display, 0, Layout::ThirdColumnW, label1, value1, unit1, labelY, valueY, FONT_VALUE, valueFont);
+            metricCell(display, Layout::ThirdColumnW, Layout::ThirdColumnW, label2, value2, unit2, labelY, valueY, FONT_VALUE, valueFont);
+            metricCell(display, 2 * Layout::ThirdColumnW, Layout::ScreenW - 2 * Layout::ThirdColumnW, label3, value3, unit3, labelY, valueY, FONT_VALUE, valueFont);
         }
         else
         {
-            metricCell(display, 0, Layout::HalfColumnW, label1, value1, unit1, labelY, valueY, FONT_SMALL, valueFont);
-            metricCell(display, Layout::HalfColumnW, Layout::HalfColumnW, label2, value2, unit2, labelY, valueY, FONT_SMALL, valueFont);
+            metricCell(display, 0, Layout::HalfColumnW, label1, value1, unit1, labelY, valueY, FONT_VALUE, valueFont);
+            metricCell(display, Layout::HalfColumnW, Layout::HalfColumnW, label2, value2, unit2, labelY, valueY, FONT_VALUE, valueFont);
+        }
+
+        // Divisores verticales finos entre columnas.
+        const int top = labelY - 6;
+        const int height = valueY + 2 - top;
+        if (label3)
+        {
+            display.drawVLine(Layout::ThirdColumnW, top, height);
+            display.drawVLine(2 * Layout::ThirdColumnW, top, height);
+        }
+        else
+        {
+            display.drawVLine(Layout::HalfColumnW, top, height);
         }
     }
 
+    // Flechas laterales animadas que indican que el valor se ajusta con el encoder.
+    static void adjustChevrons(EOLO_DISPLAY_MODEL &display, int leftX, int rightX, int midY, int animationStep,
+                               int spacing = 8, int tip = 3)
+    {
+        const int cycle = (animationStep / 4) % 3;
+        const int half = 4;
+        display.drawTriangle(leftX - spacing - cycle, midY - half, leftX - spacing - cycle, midY + half,
+                             leftX - tip - cycle, midY);
+        display.drawTriangle(rightX + spacing + cycle, midY - half, rightX + spacing + cycle, midY + half,
+                             rightX + tip + cycle, midY);
+    }
+
+    // Titulo pequeno en negrita y valor grande con flechas.
     static void valueSelector(EOLO_DISPLAY_MODEL &display,
                               const char *title,
                               const char *value,
                               int animationStep)
     {
-        centeredText(display, title, Layout::CenterX, Layout::SelectorTitleY, FONT_HERO);
-        display.setFont(FONT_MENU);
+        centeredText(display, title, Layout::CenterX, Layout::SelectorTitleY, FONT_LABEL);
+        display.setFont(FONT_DISPLAY);
         int valueWidth = display.getStrWidth(value);
         int valueX = (Layout::ScreenW - valueWidth) / 2;
         display.drawStr(valueX, Layout::SelectorValueY, value);
-
-        int cycle = (animationStep / 4) % 3;
-        const int midY = 44;
-        const int topY = 40;
-        const int bottomY = 48;
-        const int spacing = 8;
-        const int offset = 3;
-        display.drawTriangle(valueX - spacing - cycle, topY, valueX - spacing - cycle, bottomY, valueX - offset - cycle, midY);
-        display.drawTriangle(valueX + valueWidth + spacing + cycle, topY, valueX + valueWidth + spacing + cycle, bottomY, valueX + valueWidth + offset + cycle, midY);
+        adjustChevrons(display, valueX, valueX + valueWidth, Layout::SelectorValueY - 5, animationStep);
     }
 
-    // Selector de hora: titulo, HH:MM con flechas animadas, dia relativo y,
+    // Selector de hora: titulo, HH:MM grande con flechas, dia relativo y,
     // si durationMinutes >= 0, la duracion de la captura.
     static void timeSelector(EOLO_DISPLAY_MODEL &display,
                              const char *title,
@@ -116,40 +134,33 @@ public:
                              long durationMinutes,
                              int animationStep)
     {
-        centeredText(display, title, Layout::CenterX, Layout::SelectorTitleY, FONT_HERO);
+        centeredText(display, title, Layout::CenterX, Layout::HeroLabelY, FONT_LABEL);
 
+        const int timeY = 43;
         char timeText[8];
         snprintf(timeText, sizeof(timeText), "%02d:%02d", hour, minute);
-        display.setFont(FONT_VALUE);
+        display.setFont(FONT_DISPLAY);
         int timeWidth = display.getStrWidth(timeText);
         int timeX = (Layout::ScreenW - timeWidth) / 2;
-        display.drawStr(timeX, 43, timeText);
+        display.drawStr(timeX, timeY, timeText);
+        adjustChevrons(display, timeX, timeX + timeWidth, timeY - 5, animationStep, 14, 7);
 
         char dayText[16];
         if (dayOffset == 0)
             snprintf(dayText, sizeof(dayText), "hoy");
         else if (dayOffset == 1)
-            snprintf(dayText, sizeof(dayText), "en 1 dia");
+            snprintf(dayText, sizeof(dayText), "en 1 d\xED" "a");
         else
-            snprintf(dayText, sizeof(dayText), "en %i dias", dayOffset);
-        centeredText(display, dayText, Layout::CenterX, 52, FONT_VALUE);
+            snprintf(dayText, sizeof(dayText), "en %i d\xED" "as", dayOffset);
+        centeredText(display, dayText, Layout::CenterX, 54, FONT_VALUE);
 
         if (durationMinutes >= 0)
         {
             char durationText[24];
-            snprintf(durationText, sizeof(durationText), "Duracion: %ldh %ldm",
+            snprintf(durationText, sizeof(durationText), "Duraci\xF3n: %ldh %ldm",
                      durationMinutes / 60, durationMinutes % 60);
-            centeredText(display, durationText, Layout::CenterX, 62, FONT_VALUE);
+            centeredText(display, durationText, Layout::CenterX, 62, FONT_SMALL);
         }
-
-        int cycle = (animationStep / 4) % 3;
-        const int midY = 44;
-        const int topY = 40;
-        const int bottomY = 48;
-        const int spacing = 14;
-        const int offset = 7;
-        display.drawTriangle(timeX - spacing - cycle, topY, timeX - spacing - cycle, bottomY, timeX - offset - cycle, midY);
-        display.drawTriangle(timeX + timeWidth + spacing + cycle, topY, timeX + timeWidth + spacing + cycle, bottomY, timeX + timeWidth + offset + cycle, midY);
     }
 
     // Reduce una region de un bitmap 1bpp (XBM, ancho srcStride px) a destW x destH.
@@ -197,20 +208,37 @@ public:
         }
     }
 
+    // Barra cuadrada: marco de 1 px, 1 px de aire y relleno solido.
     static void progressBar(EOLO_DISPLAY_MODEL &display, int x, int y, int width, int height, int pct)
     {
         pct = constrain(pct, 0, 100);
-        display.drawRFrame(x, y, width, height, 3);
-        int fillW = (pct * (width - 2)) / 100;
+        display.drawFrame(x, y, width, height);
+        int fillW = (pct * (width - 4)) / 100;
         if (fillW > 0)
-        {
-            display.drawBox(x + 1, y + 1, fillW, height - 2);
-        }
+            display.drawBox(x + 2, y + 2, fillW, height - 4);
     }
 
     static void separatorLine(EOLO_DISPLAY_MODEL &display, int y)
     {
         display.drawHLine(0, y, Layout::ScreenW);
+    }
+
+    // Indicador de pagina: un punto por pagina y uno alargado para la activa.
+    static void pageDots(EOLO_DISPLAY_MODEL &display, int count, int index, int y)
+    {
+        if (count <= 1)
+            return;
+        const int dot = 2;
+        const int gap = 3;
+        const int activeW = 6;
+        int total = (count - 1) * (dot + gap) + activeW;
+        int x = (Layout::ScreenW - total) / 2;
+        for (int i = 0; i < count; i++)
+        {
+            int w = (i == index) ? activeW : dot;
+            display.drawBox(x, y, w, dot);
+            x += w + gap;
+        }
     }
 
     // Lista de menu: ventana de 3 filas, texto centrado, fila activa invertida.
@@ -226,6 +254,8 @@ public:
             offset = constrain(selectIndex - 1, 0, count - Layout::MenuRows);
         }
 
+        const bool scrolls = count > Layout::MenuRows;
+        const int boxW = scrolls ? Layout::MenuBoxW : Layout::ScreenW - 2 * Layout::MenuBoxX;
         int visible = min(count - offset, Layout::MenuRows);
         for (int e = 0; e < visible; e++)
         {
@@ -234,7 +264,7 @@ public:
             bool highlight = (selectIndex == i);
             if (highlight)
             {
-                display.drawBox(Layout::MenuBoxX, baseline - 12, Layout::MenuBoxW, Layout::MenuPitch);
+                display.drawBox(Layout::MenuBoxX, baseline - 12, boxW, Layout::MenuPitch);
                 display.setDrawColor(0);
                 display.setFont(FONT_MENU_SEL);
             }
@@ -244,29 +274,34 @@ public:
                 display.setFont(FONT_MENU);
             }
             int width = display.getStrWidth(labels[i]);
-            display.drawStr(Layout::CenterX - width / 2, baseline, labels[i]);
+            display.drawStr(Layout::MenuBoxX + (boxW - width) / 2, baseline, labels[i]);
             display.setDrawColor(1);
         }
 
-        int animOffset = ((millis() / 200) % 2) * 2;
-        if (offset > 0)
-        {
-            display.drawTriangle(119, 18 + animOffset, 127, 18 + animOffset, 123, 14 + animOffset);
-        }
-        if (offset + Layout::MenuRows < count)
-        {
-            display.drawTriangle(119, 60 - animOffset, 127, 60 - animOffset, 123, 63 - animOffset);
-        }
+        if (!scrolls)
+            return;
 
-        const int trackTop = 18;
-        const int trackHeight = Layout::BodyBottom + 1 - trackTop;
-        int knobHeight = max(trackHeight / count, 4);
+        // Flechas de "hay mas" arriba/abajo (con vaiven) y barra de scroll punteada
+        // entre ellas, todo en el margen derecho.
+        const int arrowX = Layout::ScreenW - 5;
+        const int bob = ((millis() / 200) % 2);
+        if (offset > 0)
+            display.drawTriangle(arrowX - 2, 18 + bob, arrowX + 2, 18 + bob, arrowX, 14 + bob);
+        if (offset + Layout::MenuRows < count)
+            display.drawTriangle(arrowX - 2, 59 - bob, arrowX + 2, 59 - bob, arrowX, 63 - bob);
+
+        const int trackX = arrowX;
+        const int trackTop = 22;
+        const int trackHeight = 36;
+        for (int y = trackTop; y < trackTop + trackHeight; y += 2)
+            display.drawPixel(trackX, y);
+        int knobHeight = max(trackHeight / count, 5);
         int knobY = trackTop;
         if (count > 1)
         {
             knobY = trackTop + ((trackHeight - knobHeight) * selectIndex) / (count - 1);
         }
-        display.drawVLine(0, knobY, knobHeight);
+        display.drawBox(trackX - 1, knobY, 3, knobHeight);
     }
 
     // Variante para arrays de structs con miembro `label` (p.ej. MenuOptionAction).
@@ -303,7 +338,7 @@ public:
 
     // Eleccion Si/No (o dos etiquetas): titulo, dos cajas 48x15 (la activa invertida) y pista.
     static void yesNoChoice(EOLO_DISPLAY_MODEL &display, const char *title, bool yesSelected, const char *hint,
-                            const char *yesLabel = "Si", const char *noLabel = "No")
+                            const char *yesLabel = "S\xED", const char *noLabel = "No")
     {
         centeredText(display, title, Layout::CenterX, 28, FONT_MENU_SEL);
 
@@ -348,7 +383,7 @@ public:
                          const char *label2, const char *value2)
     {
         const int space = 10;
-        const int labelY = 46;
+        const int labelY = 47;
         const int valueY = Layout::FooterValueY;
         display.setFont(FONT_HERO);
         int w1 = display.getStrWidth(value1);
