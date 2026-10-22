@@ -36,7 +36,7 @@ namespace Layout
 
     // Lista clave/valor: paso 9, hasta 5 baselines.
     constexpr int KvPitch = 9;
-    constexpr int KvFirstY = 22;
+    constexpr int KvFirstY = 24;
     constexpr int KvMaxRows = 5;
     constexpr int KvLabelRightX = 63;  // etiqueta alineada a la derecha
     constexpr int KvValueX = 66;       // valor alineado a la izquierda

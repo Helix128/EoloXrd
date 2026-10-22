@@ -38,7 +38,7 @@ public:
             SceneManager::setScene("wait",ctx);
         }
 
-        Renderer::yesNoChoice(ctx.u8g2, "Usar sensor PM", enablePM, "+ consumo de energia");
+        Renderer::yesNoChoice(ctx.u8g2, "Usar sensor PM", enablePM, "+ consumo de energ\xED" "a");
         ctx.u8g2.sendBuffer();
     }
 };
