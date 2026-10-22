@@ -10,6 +10,7 @@ __pycache__/
 .antigravitycli/
 .cave
 .cave/worktrees
+.claude/worktrees/
 firmware_backups/
 .build_tag
 artifacts/
