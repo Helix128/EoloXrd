@@ -6,6 +6,7 @@
 #include "../../Common/Data/Context.h"
 #include "../Drawing/Logos.h"
 #include "../Drawing/SceneManager.h"
+#include "../Drawing/Renderer.h"
 #include "../../Common/Board/I2CBus.h"
 
 class LogoScene : public IScene
@@ -42,72 +43,14 @@ private:
         }
     }
 
-    void drawSpinner(Context &ctx, int cx, int cy)
-    {
-        static const int8_t points[8][2] = {
-            {0, -5}, {4, -4}, {6, 0}, {4, 4},
-            {0, 5}, {-4, 4}, {-6, 0}, {-4, -4}
-        };
-        uint8_t head = (uint8_t)((millis() / 120UL) & 7U);
-        for (uint8_t i = 0; i < 5; ++i)
-        {
-            uint8_t index = (uint8_t)((head + 8U - i) & 7U);
-            int x = cx + points[index][0];
-            int y = cy + points[index][1];
-            if (i < 2)
-                ctx.u8g2.drawBox(x - 1, y - 1, 3, 3);
-            else
-                ctx.u8g2.drawPixel(x, y);
-        }
-    }
-
-    void drawCentered(Context &ctx, const char *text, int baseline, const uint8_t *font)
-    {
-        ctx.u8g2.setFont(font);
-        int width = ctx.u8g2.getStrWidth(text);
-        ctx.u8g2.drawStr((128 - width) / 2, baseline, text);
-    }
-
-    bool bitmapPixel(const unsigned char *bitmap, int width, int x, int y)
-    {
-        const int bytesPerRow = (width + 7) / 8;
-        uint8_t value = pgm_read_byte(bitmap + y * bytesPerRow + x / 8);
-        return (value & (1U << (x & 7))) != 0;
-    }
-
     void drawLogo(Context &ctx)
     {
         // cmas es un bitmap 128x64. El isotipo completo ocupa x=6..58,
         // y=7..54 (las tres formas y el signo +); no hay que tomar solo la
         // primera franja vertical porque eso deja el logo recortado.
-        static constexpr int SourceX = 6;
-        static constexpr int SourceY = 7;
-        static constexpr int SourceWidth = 53;
-        static constexpr int SourceHeight = 48;
-        static constexpr int DestX = 3;
-        static constexpr int DestY = 0;
-        static constexpr int DestWidth = 28;
-        static constexpr int DestHeight = 25;
+        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 3, 0, 28, 25);
 
-        for (int dy = 0; dy < DestHeight; ++dy)
-        {
-            int sourceY = SourceY + (dy * (SourceHeight - 1)) / (DestHeight - 1);
-            for (int dx = 0; dx < DestWidth; ++dx)
-            {
-                int sourceX = SourceX + (dx * (SourceWidth - 1)) / (DestWidth - 1);
-                // OR de los cuatro píxeles vecinos evita perder trazos finos
-                // al reducir el bitmap y conserva también sus bordes.
-                bool on = bitmapPixel(cmas, 128, sourceX, sourceY) ||
-                          bitmapPixel(cmas, 128, min(sourceX + 1, SourceX + SourceWidth - 1), sourceY) ||
-                          bitmapPixel(cmas, 128, sourceX, min(sourceY + 1, SourceY + SourceHeight - 1)) ||
-                          bitmapPixel(cmas, 128, min(sourceX + 1, SourceX + SourceWidth - 1),
-                                      min(sourceY + 1, SourceY + SourceHeight - 1));
-                if (on)
-                    ctx.u8g2.drawPixel(DestX + dx, DestY + dy);
-            }
-        }
-
-        ctx.u8g2.setFont(FONT_BOLD_S);
+        ctx.u8g2.setFont(FONT_LABEL);
         ctx.u8g2.drawStr(39, 16, "EOLO");
     }
 
@@ -156,7 +99,7 @@ private:
             break;
         }
 
-        drawCentered(ctx, detail, 54, FONT_REGULAR_S);
+        Renderer::centeredText(ctx.u8g2, detail, Layout::CenterX, 54, FONT_VALUE);
     }
 
     void drawBootScreen(Context &ctx)
@@ -165,12 +108,12 @@ private:
 
         const Context::BootPhase phase = ctx.bootPhase.load();
         ctx.u8g2.drawHLine(4, 26, 120); 
-        drawCentered(ctx, bootPhaseText(phase), 39, FONT_BOLD_S);
+        Renderer::centeredText(ctx.u8g2, bootPhaseText(phase), Layout::CenterX, 39, FONT_LABEL);
         drawDetail(ctx, phase);
         ctx.u8g2.setBitmapMode(1);
         drawLogo(ctx);
         if (phase != Context::BootPhase::Ready)
-            drawSpinner(ctx, 116, 11);
+            Renderer::spinner(ctx.u8g2, 116, 11, (uint8_t)((millis() / 120UL) & 7U));
         ctx.u8g2.sendBuffer();
         ctx.acknowledgeBootPhaseRendered();
     }

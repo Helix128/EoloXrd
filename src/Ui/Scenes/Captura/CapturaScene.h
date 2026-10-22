@@ -7,6 +7,7 @@
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/Renderer.h"
+#include "../../Drawing/Units.h"
 #include "../../../Variants/Legacy.h"
 
 // Escena de logo/splash al iniciar la app
@@ -87,7 +88,7 @@ public:
         snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
         snprintf(volStr, sizeof(volStr), "%.3f", volume*0.001);
 
-        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, "L/min", "Vol. captura", volStr, "m3", nullptr, nullptr, nullptr, 24, 38);
+        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, UNIT_FLOW, "Vol. captura", volStr, UNIT_VOLUME, nullptr, nullptr, nullptr, Layout::HeroLabelY, Layout::HeroValueY);
     }
 
     int cycleFooter = 0;
@@ -101,7 +102,7 @@ public:
 
     void footer(Context &ctx)
     {
-        Renderer::separatorLine(ctx.u8g2, 40);
+        Renderer::separatorLine(ctx.u8g2, Layout::SeparatorY);
         const UiSnapshot &snapshot = ctx.getUiSnapshot();
 
         switch (cycleFooter)
@@ -120,7 +121,7 @@ public:
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
             snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
 
-            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, "C", "Hum", humStr, "%", "Presion", presStr, "hPa");
+            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, UNIT_TEMP, "Hum", humStr, UNIT_PCT, "Presion", presStr, UNIT_PRESSURE);
             break;
         }
         case 1: // pm1 pm2.5 pm10
@@ -137,99 +138,40 @@ public:
             snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
             snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
             snprintf(pm10Str, sizeof(pm10Str), "%.0f", pm10);
-            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, "ugm2", "PM2.5", pm25Str, "ugm2", "PM10", pm10Str, "ugm2");
+            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, UNIT_PM, "PM2.5", pm25Str, UNIT_PM, "PM10", pm10Str, UNIT_PM);
             break;
         }
-        case 2:
-        { // flujo configurado
-
-            float targetFlow = snapshot.flow.targetFlow;
+        case 2: // flujo configurado
+        {
             char targetFlowStr[10];
-            snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", targetFlow);
-            ctx.u8g2.setFont(FONT_BOLD_S);
-            int labelWidth = ctx.u8g2.getStrWidth("Flujo configurado");
-            int labelX = 64 - labelWidth / 2;
-            ctx.u8g2.drawStr(labelX, 50, "Flujo configurado");
-            ctx.u8g2.setFont(FONT_REGULAR_S);
-            int valueWidth = ctx.u8g2.getStrWidth(targetFlowStr);
-            int unitWidth = ctx.u8g2.getStrWidth("L/min");
-            int totalWidth = valueWidth + unitWidth + 1;
-            int valueX = 64 - totalWidth / 2;
-            ctx.u8g2.drawStr(valueX, 60, targetFlowStr);
-            ctx.u8g2.drawStr(valueX + valueWidth + 1, 60, "L/min");
+            snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", snapshot.flow.targetFlow);
+            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Flujo configurado", targetFlowStr, UNIT_FLOW,
+                                 Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 3:
-        { // tiempo transcurrido
-            unsigned long elapsed = ctx.session.elapsedTime;
-            unsigned long hours = elapsed / 3600;
-            unsigned long minutes = (elapsed % 3600) / 60;
-            unsigned long seconds = elapsed % 60;
-
-            char timeStr[9];
-            snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
-            ctx.u8g2.setFont(FONT_BOLD_S);
-            int labelWidth = ctx.u8g2.getStrWidth("Tiempo transcurrido");
-            int centerX = 64;
-            int labelX = centerX - labelWidth / 2;
-            ctx.u8g2.drawStr(labelX, 50, "Tiempo transcurrido");
-            ctx.u8g2.setFont(FONT_REGULAR_S);
-            int valueWidth = ctx.u8g2.getStrWidth(timeStr);
-            int valueX = centerX - valueWidth / 2;
-            ctx.u8g2.drawStr(valueX, 60, timeStr);
-            break;
-        }
-        case 4:
+        case 3: // tiempo transcurrido
         {
-            // tiempo restante
-            unsigned long duration = ctx.session.duration;
-            unsigned long remaining = duration - (ctx.session.elapsedTime);
-            unsigned long hours = remaining / 3600;
-            unsigned long minutes = (remaining % 3600) / 60;
-            unsigned long seconds = remaining % 60;
-            char remainingStr[9];
-            snprintf(remainingStr, sizeof(remainingStr), "%02lu:%02lu:%02lu", hours, minutes, seconds);
-            ctx.u8g2.setFont(FONT_BOLD_S);
-            int labelWidth = ctx.u8g2.getStrWidth("Tiempo restante");
-            int centerX = 64;
-            int labelX = centerX - labelWidth / 2;
-            ctx.u8g2.drawStr(labelX, 50, "Tiempo restante");
-            ctx.u8g2.setFont(FONT_REGULAR_S);
-            int valueWidth = ctx.u8g2.getStrWidth(remainingStr);
-            int valueX = centerX - valueWidth / 2;
-            ctx.u8g2.drawStr(valueX, 60, remainingStr);
+            char timeStr[12];
+            formatHms(timeStr, sizeof(timeStr), ctx.session.elapsedTime);
+            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Tiempo transcurrido", timeStr, nullptr,
+                                 Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 5:
+        case 4: // tiempo restante
         {
-            // tiempos de inicio y fin
+            char remainingStr[12];
+            formatHms(remainingStr, sizeof(remainingStr), ctx.session.duration - ctx.session.elapsedTime);
+            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Tiempo restante", remainingStr, nullptr,
+                                 Layout::FooterLabelY, Layout::FooterValueY);
+            break;
+        }
+        case 5: // tiempos de inicio y fin
+        {
             DateTime start(ctx.session.startUnix);
             DateTime end = start + ctx.session.duration;
-
             String startStr = start.timestamp(DateTime::TIMESTAMP_TIME);
             String endStr = end.timestamp(DateTime::TIMESTAMP_TIME);
-            ctx.u8g2.setFont(FONT_BOLD_S);
-
-            int startWidth = ctx.u8g2.getStrWidth(startStr.c_str());
-            int endWidth = ctx.u8g2.getStrWidth(endStr.c_str());
-
-            int labelStartWidth = ctx.u8g2.getStrWidth("Inicio");
-            int labelEndWidth = ctx.u8g2.getStrWidth("Fin");
-
-            int leftCenter = 32;
-            int startX = leftCenter - startWidth / 2;
-            int labelStartX = leftCenter - labelStartWidth / 2;
-
-            int rightCenter = 96;
-            int endX = rightCenter - endWidth / 2;
-            int labelEndX = rightCenter - labelEndWidth / 2;
-
-            ctx.u8g2.drawStr(labelStartX, 50, "Inicio");
-            ctx.u8g2.drawStr(labelEndX, 50, "Fin");
-
-            ctx.u8g2.setFont(FONT_REGULAR_S);
-            ctx.u8g2.drawStr(startX, 60, startStr.c_str());
-            ctx.u8g2.drawStr(endX, 60, endStr.c_str());
+            Renderer::metricRow(ctx.u8g2, "Inicio", startStr.c_str(), nullptr, "Fin", endStr.c_str(), nullptr);
             break;
         }
 #ifdef FEATURE_ANEMOMETER
@@ -245,7 +187,7 @@ public:
             char directionStr[5];
             snprintf(speedStr, sizeof(speedStr), "%.1f", snapshot.wind.speed);
             snprintf(directionStr, sizeof(directionStr), "%d", snapshot.wind.direction);
-            Renderer::metricRow(ctx.u8g2, "Velocidad", speedStr, "m/s", "Direccion", directionStr, "deg");
+            Renderer::metricRow(ctx.u8g2, "Velocidad", speedStr, UNIT_WIND, "Direccion", directionStr, UNIT_DEG);
             break;
         }
 #endif

@@ -20,7 +20,6 @@
 #include "../Scenes/Captura/FinScene.h"
 #include "../Scenes/Captura/MenuFinScene.h"
 #include "../Scenes/Captura/CapturaBombasScene.h"
-#include "../Scenes/Captura/PlantowerFinScene.h"
 
 namespace SceneName
 {
@@ -34,7 +33,6 @@ namespace SceneName
     constexpr const char *RTCAdjust = RTCAdjustMenuScene::Name;
     constexpr const char *Plantower = PlantowerScene::Name;
     constexpr const char *Wait = WaitScene::Name;
-    constexpr const char *PlantowerFin = PlantowerFinScene::Name;
     constexpr const char *Captura = CapturaScene::Name;
     constexpr const char *CapturaMenu = MenuCapturaScene::Name;
     constexpr const char *CapturaFlujo = CapturaFlujoScene::Name;
@@ -59,7 +57,6 @@ inline void registerAllScenes()
     static RTCAdjustMenuScene s_rtc_adjust;
     static PlantowerScene s_plantower;
     static WaitScene s_wait;
-    static PlantowerFinScene s_plantower_fin;
     static CapturaScene s_captura;
     static MenuCapturaScene s_captura_menu;
     static CapturaFlujoScene s_captura_flujo;
@@ -82,7 +79,6 @@ inline void registerAllScenes()
         makeScene(s_rtc_adjust),
         makeScene(s_plantower),
         makeScene(s_wait),
-        makeScene(s_plantower_fin),
         makeScene(s_captura),
         makeScene(s_captura_menu),
         makeScene(s_captura_flujo),

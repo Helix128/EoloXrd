@@ -69,7 +69,7 @@ public:
         ctx.u8g2.drawLine(0, Layout::HeaderBottom, Layout::ScreenW - 1,
                            Layout::HeaderBottom);
         // Conserva la fuente que esperaban las escenas despues del header.
-        ctx.u8g2.setFont(FONT_REGULAR_S);
+        ctx.u8g2.setFont(FONT_VALUE);
     }
 
 private:

@@ -6,6 +6,8 @@
 #include "../../../Common/Data/Context.h"
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
+#include "../../Drawing/Renderer.h"
+#include "../../Drawing/Units.h"
 #include "../../../Variants/Legacy.h"
 
 class WaitScene : public IScene
@@ -41,15 +43,6 @@ public:
             return;
         }
         
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        //ctx.u8g2.drawStr(10, 25, "Esperando");
-        int labelWidth = ctx.u8g2.getStrWidth("Flujo actual");
-        int labelX = (128 - labelWidth) / 2;
-        ctx.u8g2.drawStr(labelX, 23, "Flujo actual");
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        char flowStr[10];
-
         if(millis() - lastRead >= READ_INTERVAL){
             lastRead = millis();
         }
@@ -59,62 +52,22 @@ public:
         {
             flowData.flow = -1.0;
         }
-        float flow = flowData.flow;
 
+        char flowStr[10];
+        snprintf(flowStr, sizeof(flowStr), "%.1f", flowData.flow);
+        Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Flujo actual", flowStr, UNIT_FLOW,
+                             Layout::HeroLabelY, Layout::HeroValueY);
+        Renderer::separatorLine(ctx.u8g2, Layout::SeparatorY);
 
-        snprintf(flowStr, sizeof(flowStr), "%.1f", flow);
-        int valueWidth = ctx.u8g2.getStrWidth(flowStr);
-        int unitWidth = ctx.u8g2.getStrWidth("L/min");
-        int totalWidth = valueWidth + unitWidth + 1;
-        int valueX = (128 - totalWidth) / 2;
-        ctx.u8g2.drawStr(valueX, 34, flowStr);
-        ctx.u8g2.drawStr(valueX + valueWidth + 1, 34, "L/min");
-        ctx.u8g2.drawHLine(0, 35, 128);
-
-        char timeStr[20];
+        char timeStr[8];
         DateTime startTime(ctx.session.startUnix);
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d",
-            startTime.hour(),
-            startTime.minute()
-        );
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", startTime.hour(), startTime.minute());
 
-        // Mostrar tiempo faltante
-        int secondsLeft = ctx.session.startUnix - nowUnix;
-        int hoursLeft = secondsLeft / 3600;
-        int minutesLeft = (secondsLeft % 3600) / 60;
-        int secondsLeftRemainder = secondsLeft % 60;
-        
-        char timeLeftStr[20];
-        snprintf(timeLeftStr, sizeof(timeLeftStr), "%02d:%02d:%02d",
-            hoursLeft,
-            minutesLeft,
-            secondsLeftRemainder
-        );
-        // Calcular anchos para centrado
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        int width_start = ctx.u8g2.getStrWidth(timeStr);
-        int width_remain = ctx.u8g2.getStrWidth(timeLeftStr);
-        int space = 10;
-        int total_width = width_start + width_remain + space;
-        int start_x = (128 - total_width) / 2;
-        int left_time_x = start_x;
-        int right_time_x = start_x + width_start + space;
+        long secondsLeft = (long)ctx.session.startUnix - (long)nowUnix;
+        char timeLeftStr[12];
+        formatHms(timeLeftStr, sizeof(timeLeftStr), secondsLeft > 0 ? secondsLeft : 0);
 
-        // Calcular posición de etiquetas
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        int width_label_start = ctx.u8g2.getStrWidth("Inicio");
-        int width_label_remain = ctx.u8g2.getStrWidth("Restante");
-        int left_label_x = left_time_x + (width_start - width_label_start) / 2;
-        int right_label_x = right_time_x + (width_remain - width_label_remain) / 2;
-
-        // Draw labels and times
-        ctx.u8g2.drawStr(left_label_x, 46, "Inicio");
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        ctx.u8g2.drawStr(left_time_x, 60, timeStr);
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        ctx.u8g2.drawStr(right_label_x, 46, "Restante");
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        ctx.u8g2.drawStr(right_time_x, 60, timeLeftStr);
+        Renderer::heroPair(ctx.u8g2, "Inicio", timeStr, "Restante", timeLeftStr);
 
         ctx.u8g2.sendBuffer();
     }

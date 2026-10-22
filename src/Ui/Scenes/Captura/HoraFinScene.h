@@ -6,6 +6,7 @@
 #include "../../../Common/Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
+#include "../../Drawing/Renderer.h"
 
 class TimeEndScene : public IScene
 {
@@ -126,66 +127,17 @@ public:
             }
         }
 
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        const char* title = isEndTime ? "Hora (fin)" : "Hora (inicio)";
-        int titleWidth = ctx.u8g2.getStrWidth(title);
-        int titleX = (128 - titleWidth) / 2;
-        ctx.u8g2.drawStr(titleX, 30, title);
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        char timeBuffer[6];
-        sprintf(timeBuffer, "%02d:%02d", targetHour, targetMinute);
-        int timeWidth = ctx.u8g2.getStrWidth(timeBuffer);
-        int timeX = (128 - timeWidth) / 2;
-        ctx.u8g2.drawStr(timeX, 43, timeBuffer);
-
-        char dayText[15];
-        if (targetDay == 0)
-        {
-            strcpy(dayText, "hoy");
-        }
-        else if (targetDay == 1)
-        {
-            strcpy(dayText, "en 1 dia");
-        }
-        else
-        {
-            sprintf(dayText, "en %i dias", targetDay);
-        }
-        int dayWidth = ctx.u8g2.getStrWidth(dayText);
-        int dayX = (128 - dayWidth) / 2;
-        ctx.u8g2.drawStr(dayX, 52, dayText);
-
+        static int animCounter = 0;
+        animCounter++;
+        long durationMinutes = -1;
         if (isEndTime)
         {
             DateTime now = ctx.components.rtc.now();
             DateTime targetTime(now.year(), now.month(), now.day() + targetDay, targetHour, targetMinute, 0);
-            long duration = targetTime.unixtime() - ctx.session.startUnix;
-            
-            int durationHours = duration / 3600;
-            int durationMinutes = (duration % 3600) / 60;
-            
-            char durationBuffer[20];
-            sprintf(durationBuffer, "Duracion: %dh %dm", durationHours, durationMinutes);
-            int durationWidth = ctx.u8g2.getStrWidth(durationBuffer);
-            int durationX = (128 - durationWidth) / 2;
-            ctx.u8g2.drawStr(durationX, 62, durationBuffer);
+            durationMinutes = (long)(targetTime.unixtime() - ctx.session.startUnix) / 60;
         }
-
-        static int animCounter = 0;
-        animCounter++;
-        int cycle = (animCounter/4)%3;
-
-        const int TRIANGLE_Y_MID = 44;
-        const int TRIANGLE_HEIGHT = 8;
-        const int TRIANGLE_Y_TOP = TRIANGLE_Y_MID - TRIANGLE_HEIGHT / 2;
-        const int TRIANGLE_Y_BOTTOM = TRIANGLE_Y_MID + TRIANGLE_HEIGHT / 2;
-        const int TRIANGLE_WIDTH = 5;
-        const int TRIANGLE_SPACING = 14;
-        const int TRIANGLE_OFFSET = 7;
-
-        ctx.u8g2.drawTriangle(timeX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_TOP, timeX - TRIANGLE_SPACING - cycle, TRIANGLE_Y_BOTTOM, timeX - TRIANGLE_OFFSET - cycle, TRIANGLE_Y_MID);
-        ctx.u8g2.drawTriangle(timeX + timeWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_TOP, timeX + timeWidth + TRIANGLE_SPACING + cycle, TRIANGLE_Y_BOTTOM, timeX + timeWidth + TRIANGLE_OFFSET + cycle, TRIANGLE_Y_MID);
+        Renderer::timeSelector(ctx.u8g2, isEndTime ? "Hora (fin)" : "Hora (inicio)",
+                               targetHour, targetMinute, targetDay, durationMinutes, animCounter);
         
         ctx.u8g2.sendBuffer();
     }
