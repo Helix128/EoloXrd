@@ -6,6 +6,7 @@
 #include "../../Common/Data/Context.h"
 #include "../Drawing/GUI.h"
 #include "../Drawing/SceneManager.h"
+#include "../Drawing/Renderer.h"
 
 struct MenuOptionAction {
     const char* label;
@@ -60,55 +61,7 @@ public:
         
         preDraw(ctx);
 
-        if (_optionCount > 0) {
-            // Calcular ventana de 3 elementos
-            int offset = 0;
-            if (_optionCount > 3) {
-                offset = _selectIndex - 1;
-                if (offset < 0) offset = 0;
-                if (offset > _optionCount - 3) offset = _optionCount - 3;
-            }
-
-            for (int i = offset; i < offset + min(_optionCount - offset, 3); i++) {
-                int e = i - offset;
-                bool highlight = (_selectIndex == i);
-                
-                if (highlight) {
-                    ctx.u8g2.drawBox(2, 32 + e * 14 - 14, 131, 14);
-                    ctx.u8g2.setDrawColor(0);
-                    ctx.u8g2.setFont(FONT_BOLD);
-                } else {
-                    ctx.u8g2.setDrawColor(1);
-                    ctx.u8g2.setFont(FONT_REGULAR);
-                }
-
-                int textWidth = ctx.u8g2.getStrWidth(_options[i].label);
-                int x = (128 / 2) - (textWidth / 2);
-                ctx.u8g2.drawStr(x, 30 + e * 14, _options[i].label);
-                ctx.u8g2.setDrawColor(1);
-            }
-
-            // Triángulos de scroll
-            unsigned long currentTime = millis();
-            int animOffset = ((currentTime / 200) % 2) * 2;
-            if (offset > 0) {
-                ctx.u8g2.drawTriangle(120, 18 + animOffset, 128, 18 + animOffset, 124, 14 + animOffset);
-            }
-            if (offset + 3 < _optionCount) {
-                ctx.u8g2.drawTriangle(120, 60 - animOffset, 128, 60 - animOffset, 124, 64 - animOffset);
-            }
-
-            // Barra lateral
-            int trackTop = 18;
-            int trackHeight = 48;
-            int knobHeight = trackHeight / _optionCount;
-            if (knobHeight < 4) knobHeight = 4;
-            int knobY = trackTop;
-            if (_optionCount > 1) {
-                knobY = trackTop + ((trackHeight - knobHeight) * _selectIndex) / (_optionCount - 1);
-            }
-            ctx.u8g2.drawVLine(0, knobY, knobHeight);
-        }
+        Renderer::menuListOf(ctx.u8g2, _options, _optionCount, _selectIndex);
 
         postDraw(ctx);
         ctx.u8g2.sendBuffer();

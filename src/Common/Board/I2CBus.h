@@ -77,9 +77,9 @@ private:
     uint32_t _completedCommands = 0;
 
     static constexpr uint32_t TRANSACTION_TIMEOUT_MS = EoloConfig::i2cTransactionTimeoutMs;
-    // Con OLED por I2C el frame (1 KB, ~90 ms a 100 kHz) ocupa el bus; el
-    // worker espera un frame completo en vez de degradar la lectura.
-    static constexpr uint32_t LOCK_TIMEOUT_MS = EOLO_DISPLAY_SPI ? 20 : 120;
+    // Con OLED por I2C el bus se toma por transferencia (I2CDisplayTransport,
+    // ~3 ms a 100 kHz), por lo que nadie lo retiene más que eso.
+    static constexpr uint32_t LOCK_TIMEOUT_MS = 20;
 
     static Result resultFromTransmissionError(uint8_t error, uint32_t elapsedMs) {
         if (error == 0)

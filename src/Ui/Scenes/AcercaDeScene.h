@@ -6,6 +6,8 @@
 #include "../../Common/Data/Context.h"
 #include "../Drawing/SceneManager.h"
 #include "../Drawing/GUI.h"
+#include "../Drawing/Logos.h"
+#include "../Drawing/Renderer.h"
 
 class AcercaDeScene : public IScene
 {
@@ -27,23 +29,22 @@ public:
         }
 
         ctx.u8g2.clearBuffer();
+        ctx.u8g2.setBitmapMode(1);
 
-        // Logo "C+" en la parte izquierda
-        ctx.u8g2.setFont(u8g2_font_helvB24_tf);
-        ctx.u8g2.drawStr(10, 42, "C+");
+        // Isotipo C+ a la izquierda
+        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 4, 18, 44, 40);
 
-        // Línea divisoria vertical
-        ctx.u8g2.drawVLine(54, 10, 44);
+        // Linea divisoria vertical
+        ctx.u8g2.drawVLine(60, 14, 48);
 
-        // Texto informativo a la derecha
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        ctx.u8g2.drawStr(62, 20, "Firmware");
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        ctx.u8g2.drawStr(62, 32, "desarrollado por:");
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        ctx.u8g2.drawStr(62, 45, "Diego Muñoz");
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        ctx.u8g2.drawStr(62, 55, "| Helix128");
+        // Texto informativo a la derecha (Latin-1: \xF1 = n con tilde)
+        const Renderer::KeyValue rows[] = {
+            {"", "Firmware"},
+            {"", "desarrollado por:"},
+            {"", "Diego Mu\xF1oz"},
+            {"", "| Helix128"},
+        };
+        Renderer::keyValueRows(ctx.u8g2, rows, 4);
 
         ctx.u8g2.sendBuffer();
     }

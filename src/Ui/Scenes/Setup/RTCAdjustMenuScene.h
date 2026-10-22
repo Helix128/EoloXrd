@@ -6,6 +6,7 @@
 #include "../../../Common/Data/Context.h"
 #include "../../Drawing/GUI.h"
 #include "../../Drawing/SceneManager.h"
+#include "../../Drawing/Renderer.h"
 
 class RTCAdjustMenuScene : public IScene
 {
@@ -128,7 +129,7 @@ private:
             else
             {
                 const char *labels[3] = {"Cambiar hora", "Sincronizar", "Regresar"};
-                drawMenu(ctx, "Ajustar reloj", labels, 3);
+                drawMenu(ctx, labels, 3);
             }
         }
         else if (state == ManualTime)
@@ -137,106 +138,43 @@ private:
         ctx.u8g2.sendBuffer();
     }
 
-    void drawMenu(Context &ctx, const char *title, const char *const labels[], int count)
+    // Resultado de la ultima sincronizacion, visible 3 s; nullptr si no hay.
+    const char *statusMessage(Context &ctx)
     {
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        centerText(ctx, title, 24);
+        Context::RTCNetworkSyncStatus status = ctx.getRTCNetworkSyncStatus();
+        if (millis() - statusShownAtMs >= 3000)
+            return nullptr;
+        if (status == Context::RTCNetworkSyncStatus::Success)
+            return "RTC sincronizado";
+        if (status == Context::RTCNetworkSyncStatus::Failed)
+            return "Fallo sincroniz.";
+        return nullptr;
+    }
 
-        for (int i = 0; i < count; i++)
-        {
-            bool highlight = selected == i;
-            int y = 31 + i * 10;
-            if (highlight)
-            {
-                ctx.u8g2.drawBox(2, y - 8, 124, 10);
-                ctx.u8g2.setDrawColor(0);
-                ctx.u8g2.setFont(FONT_BOLD_S);
-            }
-            else
-            {
-                ctx.u8g2.setDrawColor(1);
-                ctx.u8g2.setFont(FONT_REGULAR_S);
-            }
-            centerText(ctx, labels[i], y);
-            ctx.u8g2.setDrawColor(1);
-        }
-
-        drawStatusLine(ctx);
+    void drawMenu(Context &ctx, const char *const labels[], int count)
+    {
+        const char *message = statusMessage(ctx);
+        if (message)
+            Renderer::centeredText(ctx.u8g2, message, Layout::CenterX, Layout::SelectorTitleY, FONT_MENU_SEL);
+        else
+            Renderer::menuList(ctx.u8g2, labels, count, selected);
     }
 
     void drawManual(Context &ctx)
     {
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        centerText(ctx, "Cambiar hora", 23);
+        Renderer::centeredText(ctx.u8g2, "Cambiar hora", Layout::CenterX, Layout::HeroLabelY, FONT_LABEL);
 
         char buffer[8];
         snprintf(buffer, sizeof(buffer), "%02d:%02d", hour, minute);
-        ctx.u8g2.setFont(FONT_BOLD_L);
-        centerText(ctx, buffer, 44);
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        centerText(ctx, field == 0 ? "Hora" : "Minuto", 61);
-    }
-
-    void drawStatusLine(Context &ctx)
-    {
-        Context::RTCNetworkSyncStatus status = ctx.getRTCNetworkSyncStatus();
-
-        char buffer[22];
-        if (status == Context::RTCNetworkSyncStatus::Success &&
-            millis() - statusShownAtMs < 3000)
-        {
-            snprintf(buffer, sizeof(buffer), "RTC sincronizado");
-        }
-        else if (status == Context::RTCNetworkSyncStatus::Failed &&
-                 millis() - statusShownAtMs < 3000)
-        {
-            snprintf(buffer, sizeof(buffer), "Fallo sincroniz.");
-        }
-        else
-        {
-            snprintf(buffer, sizeof(buffer), "Bat RTC: %s", ctx.components.rtc.getBackupBatteryStatusText());
-        }
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        centerText(ctx, buffer, 63);
+        Renderer::centeredText(ctx.u8g2, buffer, Layout::CenterX, Layout::SelectorValueY, FONT_HERO);
+        Renderer::centeredText(ctx.u8g2, field == 0 ? "Hora" : "Minuto", Layout::CenterX, Layout::FooterValueY, FONT_VALUE);
     }
 
     void drawSyncWaiting(Context &ctx)
     {
-        ctx.u8g2.setFont(FONT_BOLD_S);
-        centerText(ctx, "Ajustar reloj", 24);
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        centerText(ctx, "Sincronizando RTC", 37);
-
-        drawSnakeSpinner(ctx, 64, 50);
-    }
-
-    void drawSnakeSpinner(Context &ctx, int cx, int cy)
-    {
-        static const int8_t points[8][2] = {
-            {0, -6}, {4, -4}, {6, 0}, {4, 4},
-            {0, 6}, {-4, 4}, {-6, 0}, {-4, -4}
-        };
-
-        uint8_t head = spinnerFrame % 8;
-        for (uint8_t i = 0; i < 5; ++i)
-        {
-            uint8_t idx = (head + 8 - i) % 8;
-            uint8_t size = i < 2 ? 2 : 1;
-            int x = cx + points[idx][0];
-            int y = cy + points[idx][1];
-            if (size == 2)
-                ctx.u8g2.drawBox(x - 1, y - 1, 3, 3);
-            else
-                ctx.u8g2.drawPixel(x, y);
-        }
-    }
-
-    void centerText(Context &ctx, const char *text, int y)
-    {
-        int width = ctx.u8g2.getStrWidth(text);
-        ctx.u8g2.drawStr((128 - width) / 2, y, text);
+        Renderer::centeredText(ctx.u8g2, "Ajustar reloj", Layout::CenterX, Layout::HeroLabelY, FONT_LABEL);
+        Renderer::centeredText(ctx.u8g2, "Sincronizando RTC", Layout::CenterX, Layout::HeroValueY, FONT_VALUE);
+        Renderer::spinner(ctx.u8g2, Layout::CenterX, Layout::FooterLabelY, spinnerFrame % 8);
     }
 
 };

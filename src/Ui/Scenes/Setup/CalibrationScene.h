@@ -354,8 +354,7 @@ public:
                 }
             }
             ctx.u8g2.clearBuffer(); GUI::displayHeader(ctx);
-            Renderer::centeredText(ctx.u8g2, "Calibracion pausada", 64, 25, FONT_BOLD_S);
-            Renderer::centeredText(ctx.u8g2, pauseCancelSelected ? "Cancelar" : "Continuar", 64, 45, FONT_REGULAR);
+            Renderer::yesNoChoice(ctx.u8g2, "Calibracion pausada", !pauseCancelSelected, nullptr, "Continuar", "Cancelar");
             ctx.u8g2.sendBuffer();
             return;
         }
@@ -363,16 +362,16 @@ public:
         Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
-        ctx.u8g2.setFont(FONT_BOLD_S);
+        ctx.u8g2.setFont(FONT_LABEL);
         const char *title = "Calibrando";
         int dotCount = (millis() / 500) % 3 + 1;
         char titleBuf[32];
         strcpy(titleBuf, title);
         for (int i = 0; i < dotCount; i++)
             strcat(titleBuf, ".");
-        Renderer::centeredText(ctx.u8g2, titleBuf, 64, 20, FONT_BOLD_S);
+        Renderer::centeredText(ctx.u8g2, titleBuf, Layout::CenterX, Layout::KvFirstY - 2, FONT_LABEL);
 
-        ctx.u8g2.setFont(FONT_REGULAR_S);
+        ctx.u8g2.setFont(FONT_VALUE);
         const char *phaseLabel;
         if (state <= DISCOVERY_SAMPLE)
             phaseLabel = "Descubrimiento";
@@ -381,12 +380,12 @@ public:
         else
             phaseLabel = "Rampa motor fuerte";
 
-        Renderer::centeredText(ctx.u8g2, phaseLabel, 64, 30, FONT_REGULAR_S);
+        Renderer::centeredText(ctx.u8g2, phaseLabel, Layout::CenterX, Layout::SelectorTitleY, FONT_VALUE);
 
         // Progress bar
         int progress = constrain((int)getOverallProgress(), 0, 100);
         int barW = 100, barH = 12;
-        int barX = (128 - barW) / 2, barY = 34;
+        int barX = (Layout::ScreenW - barW) / 2, barY = 34;
         Renderer::progressBar(ctx.u8g2, barX, barY, barW, barH, progress);
 
         // Progress text + ETA
@@ -399,11 +398,7 @@ public:
         char etaText[24];
         sprintf(etaText, "~%lu:%02lu", remainSec / 60, remainSec % 60);
 
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        int pW = ctx.u8g2.getStrWidth(progressText);
-        int eW = ctx.u8g2.getStrWidth(etaText);
-        ctx.u8g2.drawStr((128 / 2) - pW - 4, barY + barH + 12, progressText);
-        ctx.u8g2.drawStr((128 / 2) + 4, barY + barH + 12, etaText);
+        Renderer::metricRow(ctx.u8g2, "Avance", progressText, nullptr, "Restante", etaText, nullptr);
 
         Renderer::endFrame(ctx.u8g2);
 

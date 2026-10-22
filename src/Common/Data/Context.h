@@ -13,6 +13,9 @@
 #include "UploadService.h"
 #include "../../Variants/Legacy.h"
 #include "../Board/I2CBus.h"
+#if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
+#include "../Board/I2CDisplayTransport.h"
+#endif
 #include "../Board/SPIBus.h"
 #include "../Board/RS485Bus.h"
 #ifndef FEATURE_HEADLESS
@@ -303,6 +306,7 @@ public:
         u8g2.setBusClock(EoloConfig::displaySpiClockHz);
 #elif !EOLO_DISPLAY_SPI
         u8g2.setBusClock(EoloConfig::i2cClockHz);
+        I2CDisplayTransport::install(u8g2.getU8x8());
 #endif
         u8g2.clearBuffer();
         u8g2.setBitmapMode(1);

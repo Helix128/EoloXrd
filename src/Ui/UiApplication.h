@@ -123,11 +123,6 @@ public:
             // SD se omite este frame para que el loop siga atendiendo sensores,
             // entradas y tareas de fondo en vez de quedar bloqueado en el mutex.
             SPIBus::Guard displayGuard(pdMS_TO_TICKS(1));
-#else
-            // El OLED va por el bus I2C principal: cada frame lo toma como un
-            // sensor más. Si el worker lo tiene, se omite el frame.
-            I2CBus::Guard displayGuard(1);
-#endif
             if (displayGuard.acquired())
             {
                 SceneManager::update(_context, externalDirty);
@@ -139,6 +134,11 @@ public:
                 // de la escena.
                 _context.markUiDirty();
             }
+#else
+            // El OLED va por el bus I2C principal. Dibujar no usa el bus;
+            // I2CDisplayTransport lo toma por transferencia al enviar el frame.
+            SceneManager::update(_context, externalDirty);
+#endif
         }
 
         // Una escena nueva no hereda giros hechos mientras otra pantalla

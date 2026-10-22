@@ -6,6 +6,8 @@
 #include "../../../Common/Data/Context.h"
 #include "../../Drawing/SceneManager.h"
 #include "../../Drawing/GUI.h"
+#include "../../Drawing/Renderer.h"
+#include "../../Drawing/Units.h"
 
 class CapturaBombasScene : public IScene
 {
@@ -26,32 +28,28 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        ctx.u8g2.setFont(FONT_BOLD);
-        ctx.u8g2.drawStr(10, 28, "Motor 1:");
-        ctx.u8g2.drawStr(10, 42, "Motor 2:");
-        ctx.u8g2.drawStr(10, 56, "Flujo:");
-
         int pwm1 = ctx.components.motor.pwmValues[0];
         int pwm2 = ctx.components.motor.pwmValues[1];
 
         FlowData flowData;
         if (!ctx.components.flowSensor.getData(flowData) || !flowData.valid)
         {
-            flowData.flow = -1.0;   
+            flowData.flow = -1.0;
         }
-        float flow = flowData.flow;
 
         char pwm1Str[6];
         snprintf(pwm1Str, sizeof(pwm1Str), "%d", pwm1);
         char pwm2Str[6];
         snprintf(pwm2Str, sizeof(pwm2Str), "%d", pwm2);
+        char flowStr[16];
+        snprintf(flowStr, sizeof(flowStr), "%.2f " UNIT_FLOW, flowData.flow);
 
-        String flowStr = String(flow, 2) + " L/m";
-
-        ctx.u8g2.setFont(FONT_REGULAR_S);
-        ctx.u8g2.drawStr(80, 28, pwm1Str);
-        ctx.u8g2.drawStr(80, 42, pwm2Str);
-        ctx.u8g2.drawStr(80, 56, flowStr.c_str());
+        const Renderer::KeyValue rows[] = {
+            {"Motor 1:", pwm1Str},
+            {"Motor 2:", pwm2Str},
+            {"Flujo:", flowStr},
+        };
+        Renderer::keyValueRows(ctx.u8g2, rows, 3);
 
         ctx.u8g2.sendBuffer();
 

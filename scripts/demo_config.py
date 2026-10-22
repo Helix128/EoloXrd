@@ -94,6 +94,9 @@ DEMO_CONFIG = {
     # Diagnóstico de la microSD: niveles de MISO, CMD0/CMD8 manuales y montaje
     # a varias frecuencias.
     "DronSdDiag": {"models": ["dron"], "lib_deps": []},
+    # Diagnóstico del bus I2C principal: pull-ups, scan, errores por dispositivo
+    # con y sin OLED, mutex, reloj, bomba y escrituras a la SD.
+    "DronI2CDiag": {"models": ["dron"], "lib_deps": ["olikraus/U8g2@^2.36.14"]},
     "DIPSwitchDiag": {"models": ["dron_legacy"], "lib_deps": []},
 }
 
