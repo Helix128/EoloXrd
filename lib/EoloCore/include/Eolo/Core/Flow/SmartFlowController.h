@@ -26,6 +26,20 @@ struct SmartFlowTune
     // Curva PWM→flujo para aproximación directa; vacía = búsqueda por rampa.
     FlowFeedForwardTable feedForward;
     float rampCountsPerSecond = 0.0f; // Rampa física del motor (0 = desconocida)
+    // Zona muerta relativa a la consigna: la efectiva es
+    // max(deadband, deadbandRel * consigna). 0 = sólo absoluta.
+    float deadbandRel = 0.0f;
+    // Error efectivo mínimo para contar deriva y recentrar.
+    float driftThreshold = 0.05f;
+    // true: dentro de la zona muerta el integral se congela (no decae).
+    bool freezeIntegral = false;
+    // Detector CUSUM de error sostenido en CENTER_LOCKED. cusumK = holgura
+    // (L/min), cusumH = umbral (L/min acumulados). cusumH <= 0 lo desactiva.
+    float cusumK = 0.0f;
+    float cusumH = 0.0f;
+    int cusumJumpMax = 0;           // Salto máximo de centro por alarma (cuentas)
+    float cusumJumpFrac = 1.0f;     // Fracción del salto estimado (0,3..1); evita sobrecorrección
+    uint32_t cusumHoldMs = 0;       // Espera tras un salto (0 = 2000 ms)
     // Backward-compatibility aliases
     int maxStep = 16;
     int maxFeedForwardStep = 10;
@@ -73,6 +87,12 @@ struct SmartFlowStatus
     bool modelValid = false;
     bool lowerClamp = false;
     bool upperSaturation = false;
+    // Consigna fuera del alcance: PWM en el máximo efectivo con error positivo
+    // sostenido.
+    bool unreachable = false;
+    float cusumPos = 0.0f;
+    float cusumNeg = 0.0f;
+    uint16_t cusumAlarms = 0;
 };
 
 class SmartFlowController
@@ -110,6 +130,17 @@ class SmartFlowController
     uint8_t approachSecants = 0;
     uint32_t approachStartMs = 0;
     uint32_t approachRampMs = 0;
+
+    float cusumPos = 0.0f;
+    float cusumNeg = 0.0f;
+    uint16_t cusumSamples = 0;
+    uint16_t cusumAlarms = 0;
+    uint32_t cusumHoldUntilMs = 0;
+    uint32_t saturatedSinceMs = 0;
+    float jumpFrac = 1.0f;
+    int lastJumpSign = 0;
+    bool unreachable = false;
+    static constexpr uint32_t kUnreachableConfirmMs = 3000;
 
     // Fracción del salto inicial: queda por debajo del objetivo porque la
     // bomba no puede frenar rápido. 0,87 ≈ 1/1,15: una tabla con ganancia
@@ -153,10 +184,50 @@ class SmartFlowController
         return target;
     }
 
+    void resetCusum()
+    {
+        cusumPos = 0.0f;
+        cusumNeg = 0.0f;
+        cusumSamples = 0;
+    }
+
+    void resetJumpDamping()
+    {
+        jumpFrac = clampFloat(tune.cusumJumpFrac, 0.3f, 1.0f);
+        lastJumpSign = 0;
+    }
+
+    void resetCusumState()
+    {
+        resetCusum();
+        cusumHoldUntilMs = 0;
+    }
+
+    // Cuentas PWM por L/min alrededor del punto de operación. Usa la pendiente
+    // de la tabla corregida por la razón de ganancia observada; sin tabla,
+    // aproxima la planta como proporcional (centro / flujo).
+    float countsPerLpm(float flow, int pwm) const
+    {
+        const FlowFeedForwardTable &ff = tune.feedForward;
+        if (ff.available())
+        {
+            const float ratio = gainRatioAt(flow, pwm);
+            const float f0 = flow / ratio;
+            const int p0 = ff.pwmForFlow(f0 - 0.25f);
+            const int p1 = ff.pwmForFlow(f0 + 0.25f);
+            if (p1 > p0)
+                return static_cast<float>(p1 - p0) / (0.5f * ratio);
+        }
+        if (flow > 0.1f && pwm > 0)
+            return static_cast<float>(pwm) / flow;
+        return 0.0f;
+    }
+
 public:
     void setTune(const SmartFlowTune &newTune)
     {
         tune = newTune;
+        resetJumpDamping();
     }
 
     const SmartFlowTune &getTune() const
@@ -181,6 +252,10 @@ public:
         driftStartMs = 0;
         isBreakout = false;
         breakoutStartMs = 0;
+        resetCusumState();
+        resetJumpDamping();
+        saturatedSinceMs = 0;
+        unreachable = false;
     }
 
     void seedCenter(int pwm)
@@ -222,6 +297,10 @@ public:
         isBreakout = false;
         breakoutStartMs = 0;
         previousTargetFlow = -1.0f;
+        resetCusumState();
+        resetJumpDamping();
+        saturatedSinceMs = 0;
+        unreachable = false;
         if (!preserveModel || !centerFound)
         {
             approachArmed = true;
@@ -459,6 +538,7 @@ public:
                 driftStartMs = 0;
                 isBreakout = false;
                 breakoutStartMs = 0;
+                resetCusumState();
                 nextPwm = centerPwm;
             }
             else
@@ -506,14 +586,73 @@ public:
             if (centerFound)
             {
                 // Manejo de zona muerta: dentro de deadband, error efectivo es 0
+                float deadband = tune.deadband;
+                if (tune.deadbandRel > 0.0f && tune.deadbandRel * targetFlow > deadband)
+                    deadband = tune.deadbandRel * targetFlow;
                 float effectiveError = 0.0f;
-                if (fabsf(errorFast) > tune.deadband)
+                if (fabsf(errorFast) > deadband)
                 {
-                    effectiveError = (errorFast > 0.0f) ? (errorFast - tune.deadband) : (errorFast + tune.deadband);
+                    effectiveError = (errorFast > 0.0f) ? (errorFast - deadband) : (errorFast + deadband);
+                }
+
+                // CUSUM sobre el error crudo: detecta un desplazamiento
+                // sostenido del punto de operación (filtro, batería, desgaste)
+                // que el trim acotado no alcanza a compensar. La alarma absorbe
+                // el trim en el centro y suma un salto acotado estimado con la
+                // pendiente de la planta.
+                if (tune.cusumH > 0.0f && cusumHoldUntilMs != 0 &&
+                    static_cast<int32_t>(nowMs - cusumHoldUntilMs) < 0)
+                {
+                    // Tras un salto: esperar tiempo muerto + respuesta de la
+                    // planta antes de volver a acumular.
+                    resetCusum();
+                }
+                else if (tune.cusumH > 0.0f && (rawFlow < 0.2f || rawFlow < 0.1f * targetFlow))
+                {
+                    // Flujo casi nulo (línea tapada): pausar; un salto aquí
+                    // llevaría la bomba al PWM máximo sin efecto.
+                    resetCusum();
+                }
+                else if (tune.cusumH > 0.0f)
+                {
+                    cusumHoldUntilMs = 0;
+                    const float e = targetFlow - rawFlow;
+                    cusumPos = fmaxf(0.0f, cusumPos + e - tune.cusumK);
+                    cusumNeg = fmaxf(0.0f, cusumNeg - e - tune.cusumK);
+                    if (cusumSamples < UINT16_MAX) cusumSamples++;
+                    const bool alarmPos = cusumPos > tune.cusumH;
+                    const bool alarmNeg = cusumNeg > tune.cusumH;
+                    if (alarmPos || alarmNeg)
+                    {
+                        // Error medio desde el último reinicio (>= k por definición).
+                        const float meanErr = (alarmPos ? 1.0f : -1.0f) *
+                            (tune.cusumK + (alarmPos ? cusumPos : cusumNeg) / static_cast<float>(cusumSamples));
+                        const float slope = countsPerLpm(fastFlow, centerPwm + static_cast<int>(currentTrim));
+                        // Anti-rebote: si el signo se invierte entre saltos
+                        // consecutivos, reducir la fracción aplicada.
+                        const int jumpSign = alarmPos ? 1 : -1;
+                        if (lastJumpSign != 0 && jumpSign != lastJumpSign)
+                            jumpFrac = fmaxf(0.3f, jumpFrac * 0.7f);
+                        lastJumpSign = jumpSign;
+                        int jump = static_cast<int>(lroundf(slope * meanErr * jumpFrac));
+                        const int jumpMax = tune.cusumJumpMax > 0 ? tune.cusumJumpMax : 200;
+                        jump = clampInt(jump, -jumpMax, jumpMax);
+                        centerPwm = clampInt(centerPwm + static_cast<int>(currentTrim) + jump, 0, maxPwm);
+                        currentTrim = 0.0f;
+                        integral = 0.0f;
+                        isDrifting = false;
+                        driftStartMs = 0;
+                        if (cusumAlarms < UINT16_MAX) cusumAlarms++;
+                        mode = SMART_FLOW_RECENTER;
+                        resetCusum();
+                        const uint32_t hold = (tune.cusumHoldMs > 0 ? tune.cusumHoldMs : 2000UL) +
+                                              rampMsFor(jump);
+                        cusumHoldUntilMs = (nowMs + hold) ? (nowMs + hold) : 1;
+                    }
                 }
 
                 // Detección de deriva sostenida para auto-recentrado suave
-                if (tune.recenterDelayMs > 0 && fabsf(effectiveError) > 0.05f)
+                if (tune.recenterDelayMs > 0 && fabsf(effectiveError) > tune.driftThreshold)
                 {
                     if (!isDrifting)
                     {
@@ -545,7 +684,7 @@ public:
                     integral += sens * effectiveError * dtSeconds;
                     integral = clampFloat(integral, -tune.integralLimit, tune.integralLimit);
                 }
-                else
+                else if (!tune.freezeIntegral)
                 {
                     // En zona muerta, reducir suavemente el acumulador integral
                     integral *= 0.95f;
@@ -571,6 +710,18 @@ public:
         }
 
         previousPwm = currentPwm;
+
+        // Consigna inalcanzable: mando en el máximo efectivo y aún por debajo.
+        if (nextPwm >= maxPwm && errorFast > tune.deadband)
+        {
+            if (saturatedSinceMs == 0) saturatedSinceMs = nowMs ? nowMs : 1;
+            else if (nowMs - saturatedSinceMs >= kUnreachableConfirmMs) unreachable = true;
+        }
+        else
+        {
+            saturatedSinceMs = 0;
+            unreachable = false;
+        }
 
         // Actualizar datos de estado
         status.pwm = nextPwm;
@@ -599,6 +750,10 @@ public:
         status.upperSaturation = (nextPwm >= maxPwm);
         status.minFlowPwm = (centerFound && centerPwm > 0) ? centerPwm : -1;
         status.maxUsefulPwm = maxPwm;
+        status.unreachable = unreachable;
+        status.cusumPos = cusumPos;
+        status.cusumNeg = cusumNeg;
+        status.cusumAlarms = cusumAlarms;
 
         return status;
     }

@@ -15,9 +15,9 @@ class CapturaScene : public IScene
 {
 private:
 #ifdef FEATURE_ANEMOMETER
-    static constexpr int FooterPageCount = 7;
+    static constexpr int FooterPageCount = 9;
 #else
-    static constexpr int FooterPageCount = 6;
+    static constexpr int FooterPageCount = 8;
 #endif
 
 public:
@@ -89,7 +89,10 @@ public:
         else snprintf(lminStr, sizeof(lminStr), "%.2f", lmin);
         snprintf(volStr, sizeof(volStr), "%.3f", volume*0.001);
 
-        Renderer::metricRow(ctx.u8g2, "Flujo", lminStr, UNIT_FLOW, "Vol. captura", volStr, UNIT_VOLUME, nullptr, nullptr, nullptr, Layout::HeroLabelY, Layout::HeroValueY, FONT_DISPLAY);
+        // Unidades en las etiquetas: los valores conservan su tamano protagonista.
+        Renderer::metricRow(ctx.u8g2, "Flujo " UNIT_FLOW, lminStr, nullptr,
+                            "Vol. " UNIT_VOLUME, volStr, nullptr, nullptr, nullptr, nullptr,
+                            Layout::HeroLabelY, Layout::HeroValueY, FONT_DISPLAY);
     }
 
     int cycleFooter = 0;
@@ -98,7 +101,7 @@ public:
     // la página quedaba en blanco.
     static bool footerPageAvailable(Context &ctx, int page)
     {
-        return page != 1 || ctx.getUiSnapshot().airQuality.enabled;
+        return (page != 2 && page != 3) || ctx.getUiSnapshot().airQuality.enabled;
     }
 
     void footer(Context &ctx)
@@ -108,41 +111,50 @@ public:
 
         switch (cycleFooter)
         {
-        case 0: // temp hum presion
+        case 0: // temperatura y humedad
         {
             float temp = snapshot.environment.temperature;
             float hum = snapshot.environment.humidity;
-            float presAtm = snapshot.environment.pressure;
 
 
             char tempStr[6];
             char humStr[5];
-            char presStr[5];
             snprintf(tempStr, sizeof(tempStr), "%.2f", temp);
             snprintf(humStr, sizeof(humStr), "%.1f", hum);
-            snprintf(presStr, sizeof(presStr), "%.0f", presAtm);
-
-            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, UNIT_TEMP, "Hum", humStr, UNIT_PCT, "Presi\xF3n", presStr, UNIT_PRESSURE);
+            Renderer::metricRow(ctx.u8g2, "Temp", tempStr, UNIT_TEMP, "Humedad", humStr, UNIT_PCT);
             break;
         }
-        case 1: // pm1 pm2.5 pm10
+        case 1:
+        {
+            char pressure[8];
+            snprintf(pressure, sizeof(pressure), "%.0f", snapshot.environment.pressure);
+            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Presi\xF3n", pressure, UNIT_PRESSURE,
+                                 Layout::FooterLabelY, Layout::FooterValueY);
+            break;
+        }
+        case 2: // PM1.0 y PM2.5: dos columnas con unidades legibles
         {
             float pm1 = snapshot.airQuality.valid ? snapshot.airQuality.pm1 : 0.0f;
             float pm25 = snapshot.airQuality.valid ? snapshot.airQuality.pm25 : 0.0f;
-            float pm10 = snapshot.airQuality.valid ? snapshot.airQuality.pm10 : 0.0f;
 
 
             char pm1Str[5];
             char pm25Str[5];
-            char pm10Str[5];
 
             snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
             snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
-            snprintf(pm10Str, sizeof(pm10Str), "%.0f", pm10);
-            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, UNIT_PM, "PM2.5", pm25Str, UNIT_PM, "PM10", pm10Str, UNIT_PM);
+            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, UNIT_PM, "PM2.5", pm25Str, UNIT_PM);
             break;
         }
-        case 2: // flujo configurado
+        case 3:
+        {
+            char pm10Str[8];
+            snprintf(pm10Str, sizeof(pm10Str), "%.0f", snapshot.airQuality.valid ? snapshot.airQuality.pm10 : 0.0f);
+            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "PM10", pm10Str, UNIT_PM,
+                                 Layout::FooterLabelY, Layout::FooterValueY);
+            break;
+        }
+        case 4: // flujo configurado
         {
             char targetFlowStr[10];
             snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", snapshot.flow.targetFlow);
@@ -150,7 +162,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 3: // tiempo transcurrido
+        case 5: // tiempo transcurrido
         {
             char timeStr[12];
             formatHms(timeStr, sizeof(timeStr), ctx.session.elapsedTime);
@@ -158,7 +170,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 4: // tiempo restante
+        case 6: // tiempo restante
         {
             char remainingStr[12];
             formatHms(remainingStr, sizeof(remainingStr),
@@ -167,7 +179,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 5: // tiempos de inicio y fin
+        case 7: // tiempos de inicio y fin
         {
             DateTime start(ctx.session.startUnix);
             DateTime end = start + ctx.session.duration;
@@ -177,7 +189,7 @@ public:
             break;
         }
 #ifdef FEATURE_ANEMOMETER
-        case 6:
+        case 8:
         {
             if (!snapshot.wind.valid)
             {

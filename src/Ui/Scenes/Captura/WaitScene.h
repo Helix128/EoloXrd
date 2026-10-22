@@ -17,14 +17,6 @@ public:
 
     uint16_t frameIntervalMs() const override { return 250; }
 
-    int lastRead = 0;
-    const int READ_INTERVAL = 1000;
-    void enter(Context &ctx) override
-    {   
-         ;
-        lastRead = millis();
-    }
-
     void update(Context &ctx) override
     {
         ctx.u8g2.clearBuffer();
@@ -39,12 +31,7 @@ public:
         if(nowUnix >= ctx.session.startUnix){
              
             SceneManager::setScene("captura",ctx);
-            ctx.u8g2.sendBuffer();
             return;
-        }
-        
-        if(millis() - lastRead >= READ_INTERVAL){
-            lastRead = millis();
         }
 
         FlowData flowData;
@@ -56,18 +43,30 @@ public:
         char flowStr[10];
         if (flowData.flow < 0) snprintf(flowStr, sizeof(flowStr), "--");
         else snprintf(flowStr, sizeof(flowStr), "%.1f", flowData.flow);
-        Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "Flujo actual", flowStr, UNIT_FLOW,
-                             Layout::HeroLabelY, Layout::HeroValueY, FONT_VALUE, FONT_DISPLAY);
-
         char timeStr[8];
         DateTime startTime(ctx.session.startUnix);
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", startTime.hour(), startTime.minute());
 
-        long secondsLeft = (long)ctx.session.startUnix - (long)nowUnix;
-        char timeLeftStr[12];
-        formatHms(timeLeftStr, sizeof(timeLeftStr), secondsLeft > 0 ? secondsLeft : 0);
+        const unsigned long secondsLeft = ctx.session.startUnix - nowUnix;
+        char timeLeftStr[16];
+        formatHms(timeLeftStr, sizeof(timeLeftStr), secondsLeft);
 
-        Renderer::heroPair(ctx.u8g2, "Inicio", timeStr, "Restante", timeLeftStr);
+        Renderer::centeredText(ctx.u8g2, "Inicio en", Layout::CenterX, 24, FONT_LABEL);
+        // Esperas largas conservan todas las cifras sin salir del OLED.
+        ctx.u8g2.setFont(FONT_DISPLAY);
+        const uint8_t *timeFont = ctx.u8g2.getStrWidth(timeLeftStr) <= Layout::ScreenW - 8
+                                     ? FONT_DISPLAY : FONT_HERO;
+        Renderer::centeredText(ctx.u8g2, timeLeftStr, Layout::CenterX, 40, timeFont);
+
+        ctx.u8g2.setFont(FONT_VALUE);
+        char startStr[16];
+        snprintf(startStr, sizeof(startStr), "Inicio %s", timeStr);
+        ctx.u8g2.drawStr(4, 51, startStr);
+        char flowDetail[24];
+        snprintf(flowDetail, sizeof(flowDetail), "%s " UNIT_FLOW, flowStr);
+        ctx.u8g2.drawStr(Layout::ScreenW - 4 - ctx.u8g2.getStrWidth(flowDetail), 51, flowDetail);
+        ctx.u8g2.drawHLine(4, 54, 120);
+        Renderer::centeredText(ctx.u8g2, "Pulsar: volver", Layout::CenterX, 63, FONT_VALUE);
 
         ctx.u8g2.sendBuffer();
     }

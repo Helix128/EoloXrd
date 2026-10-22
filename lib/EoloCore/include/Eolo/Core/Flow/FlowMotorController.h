@@ -55,6 +55,19 @@ struct FlowPidConfig
     // Velocidad de la rampa física del motor, para esperar a que el PWM real
     // alcance el mando antes de evaluar la aproximación.
     float rampCountsPerSecond = 0.0f;
+    // Bombas físicas que recibe el PWM virtual (0..maxPwm*motorCount).
+    // 2 conserva el adaptador histórico de dos bombas en serie.
+    uint8_t motorCount = 2;
+    // Ver SmartFlowTune: zona muerta relativa, umbral de deriva, integral
+    // congelado y detector CUSUM (cusumH = 0 lo desactiva).
+    float deadbandRel = 0.0f;
+    float driftThreshold = 0.05f;
+    bool freezeIntegral = false;
+    float cusumK = 0.0f;
+    float cusumH = 0.0f;
+    int cusumJumpMax = 0;
+    float cusumJumpFrac = 1.0f; // Fracción del salto estimado que se aplica (0,3..1)
+    uint32_t cusumHoldMs = 0;
 };
 
 struct FlowPidStatus
@@ -221,6 +234,18 @@ public:
             return false;
         if (isnan(config.rampCountsPerSecond) || config.rampCountsPerSecond < 0.0f)
             return false;
+        if (config.motorCount < 1 || config.motorCount > 2)
+            return false;
+        if (isnan(config.deadbandRel) || config.deadbandRel < 0.0f || config.deadbandRel > 0.5f)
+            return false;
+        if (isnan(config.driftThreshold) || config.driftThreshold < 0.0f || config.driftThreshold > FlowPidLimits::DEADBAND_MAX)
+            return false;
+        if (isnan(config.cusumK) || isnan(config.cusumH) || config.cusumK < 0.0f || config.cusumH < 0.0f)
+            return false;
+        if (config.cusumJumpMax < 0 || config.cusumJumpMax > maxPwm)
+            return false;
+        if (isnan(config.cusumJumpFrac) || config.cusumJumpFrac < 0.3f || config.cusumJumpFrac > 1.0f)
+            return false;
         return true;
     }
 
@@ -245,6 +270,14 @@ public:
         tune.recenterDelayMs = config.recenterDelayMs >= 500 ? config.recenterDelayMs : 4000;
         tune.feedForward = config.feedForward;
         tune.rampCountsPerSecond = config.rampCountsPerSecond;
+        tune.deadbandRel = config.deadbandRel;
+        tune.driftThreshold = config.driftThreshold;
+        tune.freezeIntegral = config.freezeIntegral;
+        tune.cusumK = config.cusumK;
+        tune.cusumH = config.cusumH;
+        tune.cusumJumpMax = config.cusumJumpMax;
+        tune.cusumJumpFrac = config.cusumJumpFrac;
+        tune.cusumHoldMs = config.cusumHoldMs;
         return tune;
     }
 

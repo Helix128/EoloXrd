@@ -22,18 +22,17 @@ public:
         char timeStr[9];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", nowHr, nowMin);
 
-        // La hora usa 5x7; la marca usa una fuente 4x6 compacta con métricas reales.
-        ctx.u8g2.setFont(u8g2_font_5x7_tf);
+        ctx.u8g2.setFont(FONT_VALUE);
         ctx.u8g2.drawStr(Layout::Header::Time.x,
-                          Layout::Header::Time.y + 7, timeStr);
+                          Layout::Header::Time.y + 9, timeStr);
         drawSdIcon(ctx, Layout::Header::Sd.x, Layout::Header::Sd.y,
                    snapshot.status.sdStatus);
-        ctx.u8g2.setFont(u8g2_font_4x6_tf);
+        ctx.u8g2.setFont(FONT_LABEL);
         constexpr const char *brand = "EOLO";
         const int brandWidth = ctx.u8g2.getStrWidth(brand);
         const int brandX = Layout::Header::Brand.x +
                            (Layout::Header::Brand.w - brandWidth) / 2;
-        ctx.u8g2.drawStr(brandX+4, Layout::Header::Brand.y + 8, brand);
+        ctx.u8g2.drawStr(brandX, Layout::Header::Brand.y + 9, brand);
 
 #ifdef FEATURE_DUAL_BATTERY
         const bool isDC = snapshot.power.poweredByDc;

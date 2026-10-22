@@ -7,6 +7,8 @@ Esta carpeta contiene los manuales de operacion para los modelos EOLO vigentes. 
 La arquitectura de software y el roadmap de modularización se mantienen en
 [architecture.md](architecture.md) y [eolo-modular-roadmap.md](eolo-modular-roadmap.md).
 
+El análisis del control de flujo del Dron (PID) está en [optimizacion-pid-flujo-dron.md](optimizacion-pid-flujo-dron.md).
+
 ## Elegir manual
 
 | Modelo | Manual | Pinout técnico | Caracteristicas principales |

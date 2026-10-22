@@ -44,7 +44,7 @@ public:
 
         display.setFont(valueFont);
         int valueWidth = display.getStrWidth(value);
-        display.setFont(FONT_SMALL);
+        display.setFont(FONT_VALUE);
         int unitWidth = (unit && unit[0]) ? display.getStrWidth(unit) : 0;
         int totalWidth = valueWidth + (unitWidth > 0 ? unitWidth + 1 : 0);
         int valueX = x + (width - totalWidth) / 2;
@@ -53,7 +53,7 @@ public:
         display.drawStr(valueX, valueY, value);
         if (unitWidth > 0)
         {
-            display.setFont(FONT_SMALL);
+            display.setFont(FONT_VALUE);
             display.drawStr(valueX + valueWidth + 1, valueY, unit);
         }
     }
@@ -136,7 +136,7 @@ public:
     {
         centeredText(display, title, Layout::CenterX, Layout::HeroLabelY, FONT_LABEL);
 
-        const int timeY = 43;
+        const int timeY = 40;
         char timeText[8];
         snprintf(timeText, sizeof(timeText), "%02d:%02d", hour, minute);
         display.setFont(FONT_DISPLAY);
@@ -152,14 +152,14 @@ public:
             snprintf(dayText, sizeof(dayText), "en 1 d\xED" "a");
         else
             snprintf(dayText, sizeof(dayText), "en %i d\xED" "as", dayOffset);
-        centeredText(display, dayText, Layout::CenterX, 54, FONT_VALUE);
+        centeredText(display, dayText, Layout::CenterX, 51, FONT_VALUE);
 
         if (durationMinutes >= 0)
         {
             char durationText[24];
             snprintf(durationText, sizeof(durationText), "Duraci\xF3n: %ldh %ldm",
                      durationMinutes / 60, durationMinutes % 60);
-            centeredText(display, durationText, Layout::CenterX, 62, FONT_SMALL);
+            centeredText(display, durationText, Layout::CenterX, 62, FONT_VALUE);
         }
     }
 

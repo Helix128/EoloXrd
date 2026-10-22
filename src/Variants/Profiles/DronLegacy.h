@@ -69,6 +69,8 @@ constexpr FlowPidConfig makeFlowPidConfig()
     // Un AFM inválido/obsoleto no puede mantener una bomba activa más de la
     // ventana de seguridad del perfil Dron.
     config.sensorFaultStopMs = 1500UL;
+    // Una sola bomba física (MOTOR_PWM_PIN_COUNT = 1).
+    config.motorCount = 1;
     config.zeroFlowConfirmSamples = 5;
     return config;
 }

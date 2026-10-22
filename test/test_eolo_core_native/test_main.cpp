@@ -1663,6 +1663,183 @@ static void test_rs485_stats_exceptions_and_timing()
     TEST_ASSERT_FALSE(RS485SlaveStats::isDeadlineMiss(480, 500));
 }
 
+// Configuración del prototipo medida en hardware (Dron V2, una bomba).
+static FlowPidConfig dron_v2_proto_config()
+{
+    FlowPidConfig c = dron_v2_flow_config(true);
+    c.motorCount = 1;
+    c.deadband = 0.012f;
+    c.deadbandRel = 0.005f;
+    c.driftThreshold = 0.01f;
+    c.freezeIntegral = true;
+    c.cusumK = 0.006f;
+    c.cusumH = 0.12f;
+    c.cusumJumpMax = 300;
+    c.cusumJumpFrac = 0.55f;
+    c.cusumHoldMs = 2000;
+    return c;
+}
+
+struct FlowStepTrace
+{
+    float lastFlow = 0.0f;
+    int maxVirtualPwm = 0;
+    bool unreachable = false;
+    uint16_t cusumAlarms = 0;
+    float minFlow = 1e9f;
+    float maxFlow = -1e9f;
+};
+
+static FlowStepTrace run_flow_steps(DualMotorFlowController &controller, PumpPlantSim &plant,
+                                    const FlowPidConfig &config, float target,
+                                    uint32_t startMs, uint32_t durationMs, uint32_t &sampleId)
+{
+    FlowStepTrace trace;
+    for (uint32_t t = startMs; t < startMs + durationMs; t += 10)
+    {
+        plant.step();
+        if ((t % 360) != 0) continue; // cadencia AFM07 medida en hardware
+        DualMotorFlowInput input;
+        input.nowMs = t;
+        input.targetFlow = target;
+        input.measuredFlow = plant.reading();
+        input.flowValid = true;
+        input.flowFresh = true;
+        input.sampleId = ++sampleId;
+        input.maxPwm = 2047;
+        const DualMotorFlowOutput out = controller.update(input, config);
+        plant.command = out.motor0Pwm;
+        trace.minFlow = fminf(trace.minFlow, plant.flow);
+        trace.maxFlow = fmaxf(trace.maxFlow, plant.flow);
+        if (out.virtualPwm > trace.maxVirtualPwm) trace.maxVirtualPwm = out.virtualPwm;
+        trace.unreachable = out.smartStatus.unreachable;
+        trace.cusumAlarms = out.smartStatus.cusumAlarms;
+    }
+    trace.lastFlow = plant.flow;
+    return trace;
+}
+
+static void test_flow_cusum_recovers_from_pump_gain_loss()
+{
+    // Hardware: con -15 % de ganancia el lazo histórico quedó en -12 % tras
+    // 69 s; el CUSUM debe devolver el flujo a ±1 % en pocos segundos.
+    const FlowPidConfig config = dron_v2_proto_config();
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    plant.gainScale = 1.04f;
+    uint32_t sampleId = 0;
+    run_flow_steps(controller, plant, config, 5.0f, 0, 20000, sampleId);
+    plant.gainScale = 1.04f * 0.85f;
+    FlowStepTrace after = run_flow_steps(controller, plant, config, 5.0f, 20000, 15000, sampleId);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 5.0f, after.lastFlow);
+    TEST_ASSERT_TRUE(after.cusumAlarms >= 1);
+
+    // Recuperación también en la dirección opuesta (filtro retirado).
+    plant.gainScale = 1.04f;
+    after = run_flow_steps(controller, plant, config, 5.0f, 35000, 15000, sampleId);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 5.0f, after.lastFlow);
+}
+
+static void test_flow_cusum_disabled_keeps_legacy_behavior()
+{
+    const FlowPidConfig config = dron_v2_flow_config(true);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, config.cusumH);
+    TEST_ASSERT_EQUAL_UINT8(2, config.motorCount);
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    uint32_t sampleId = 0;
+    run_flow_steps(controller, plant, config, 5.0f, 0, 20000, sampleId);
+    plant.gainScale = 0.85f;
+    const FlowStepTrace after = run_flow_steps(controller, plant, config, 5.0f, 20000, 15000, sampleId);
+    TEST_ASSERT_EQUAL_UINT16(0, after.cusumAlarms);
+    // Documenta la limitación medida: el trim acotado no compensa la pérdida.
+    TEST_ASSERT_TRUE(after.lastFlow < 4.8f);
+}
+
+static void test_flow_relative_deadband_corrects_small_offset()
+{
+    // La tabla subestima la ganancia ~4 % (medido): el enclave a 1 L/min
+    // quedaba en 0,96 con zona muerta 0,08. El prototipo debe cerrar a ±2 %.
+    DualMotorFlowController legacy, proto;
+    PumpPlantSim plantLegacy, plantProto;
+    plantLegacy.gainScale = plantProto.gainScale = 1.06f;
+    uint32_t idA = 0, idB = 0;
+    run_flow_steps(legacy, plantLegacy, dron_v2_flow_config(true), 1.0f, 0, 30000, idA);
+    const FlowStepTrace p = run_flow_steps(proto, plantProto, dron_v2_proto_config(), 1.0f, 0, 30000, idB);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 1.0f, p.lastFlow);
+    TEST_ASSERT_TRUE(fabsf(p.lastFlow - 1.0f) <= fabsf(plantLegacy.flow - 1.0f) + 0.005f);
+}
+
+static void test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable()
+{
+    // 8 L/min supera el máximo de la bomba (6,7 L/min medidos a 2047).
+    DualMotorFlowController single, dual;
+    PumpPlantSim plantA, plantB;
+    uint32_t idA = 0, idB = 0;
+    const FlowStepTrace a = run_flow_steps(single, plantA, dron_v2_proto_config(), 8.0f, 0, 30000, idA);
+    TEST_ASSERT_TRUE(a.maxVirtualPwm <= 2047);
+    TEST_ASSERT_TRUE(a.unreachable);
+
+    // Dos bombas conserva el rango virtual 0..4094 histórico.
+    const FlowStepTrace b = run_flow_steps(dual, plantB, dron_v2_flow_config(true), 8.0f, 0, 30000, idB);
+    TEST_ASSERT_TRUE(b.maxVirtualPwm > 2047);
+
+    FlowPidConfig bad = dron_v2_proto_config();
+    bad.motorCount = 0;
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
+}
+
+static void test_flow_cusum_jump_damping_converges_without_limit_cycle()
+{
+    // Hardware: con el salto completo el lazo oscilaba +-2 % (periodo 5 s).
+    // Con cusumJumpFrac el flujo debe asentar sin ciclo límite tras escalones
+    // de ganancia en ambos sentidos.
+    const FlowPidConfig config = dron_v2_proto_config();
+    TEST_ASSERT_EQUAL_FLOAT(0.55f, config.cusumJumpFrac);
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    plant.gainScale = 1.04f;
+    uint32_t sampleId = 0;
+    run_flow_steps(controller, plant, config, 5.0f, 0, 20000, sampleId);
+    uint32_t t = 20000;
+    const float steps[] = {0.80f, 1.04f, 0.88f};
+    for (float gain : steps)
+    {
+        plant.gainScale = gain;
+        run_flow_steps(controller, plant, config, 5.0f, t, 30000, sampleId); // asentar
+        t += 30000;
+        const FlowStepTrace obs = run_flow_steps(controller, plant, config, 5.0f, t, 20000, sampleId);
+        t += 20000;
+        TEST_ASSERT_FLOAT_WITHIN(0.05f, 5.0f, obs.minFlow);
+        TEST_ASSERT_FLOAT_WITHIN(0.05f, 5.0f, obs.maxFlow);
+    }
+    // Rango de validación de la fracción.
+    FlowPidConfig bad = config;
+    bad.cusumJumpFrac = 0.1f;
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
+}
+
+static void test_flow_cusum_pauses_when_flow_near_zero()
+{
+    // Línea tapada: flujo ~0 no debe disparar saltos de centro hacia el PWM
+    // máximo.
+    const FlowPidConfig config = dron_v2_proto_config();
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    plant.gainScale = 1.04f;
+    uint32_t sampleId = 0;
+    run_flow_steps(controller, plant, config, 5.0f, 0, 20000, sampleId);
+    run_flow_steps(controller, plant, config, 5.0f, 20000, 5000, sampleId);
+    plant.gainScale = 0.01f; // caudal residual < 0,2 L/min
+    // El transitorio de caída (flujo aún > 0,2) puede disparar alarmas; una vez
+    // en flujo casi nulo no debe haber ninguna más.
+    const FlowStepTrace settling = run_flow_steps(controller, plant, config, 5.0f, 25000, 4000, sampleId);
+    TEST_ASSERT_TRUE(settling.lastFlow < 0.2f);
+    const FlowStepTrace blocked = run_flow_steps(controller, plant, config, 5.0f, 29000, 20000, sampleId);
+    TEST_ASSERT_TRUE(blocked.lastFlow < 0.2f);
+    TEST_ASSERT_EQUAL_UINT16(settling.cusumAlarms, blocked.cusumAlarms);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -1727,5 +1904,11 @@ int main(int, char **)
     RUN_TEST(test_feed_forward_is_faster_than_ramp_seek_and_keeps_zero_flow_guard);
     RUN_TEST(test_flow_motor_controller_no_kick_on_running_target_change);
     RUN_TEST(test_dual_motor_multi_stage_seamless_pwm);
+    RUN_TEST(test_flow_cusum_recovers_from_pump_gain_loss);
+    RUN_TEST(test_flow_cusum_disabled_keeps_legacy_behavior);
+    RUN_TEST(test_flow_relative_deadband_corrects_small_offset);
+    RUN_TEST(test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable);
+    RUN_TEST(test_flow_cusum_jump_damping_converges_without_limit_cycle);
+    RUN_TEST(test_flow_cusum_pauses_when_flow_near_zero);
     return UNITY_END();
 }
