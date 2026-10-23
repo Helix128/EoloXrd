@@ -69,7 +69,7 @@ Pendiente por tramo, calculada a partir de estos puntos: 0,0040 L/min por cuenta
 - `driftThreshold`: error efectivo mínimo para contar deriva. Antes estaba fijo en 0,05.
 - `freezeIntegral`: dentro de la zona muerta el integral se congela en vez de decaer 5 % por ciclo.
 
-### 3.3 Detector CUSUM
+### 3.3 Detector CUSUM (ley anterior, solo activa si smoothLaw está apagada)
 
 El CUSUM acumula el error crudo (consigna menos flujo) descontando una holgura `cusumK`. Cuando la suma supera `cusumH`, hay alarma:
 
@@ -82,6 +82,78 @@ Amortiguamiento: si el signo de un salto es opuesto al del salto anterior, la fr
 Pausa: si el flujo es menor a 0,2 L/min o menor al 10 % de la consigna, el CUSUM no acumula ni dispara. Evita llevar la bomba a PWM máximo con la línea tapada.
 
 Apagado por defecto (`cusumH = 0`). Sólo Dron lo activa.
+
+### 3.4 Ley suave (smoothLaw), controlador actual en Dron
+
+Motivo: el usuario no quería saltos de PWM visibles en la bomba. Las prioridades, en orden, fueron centrar rápido, detectar alejamiento permanente del flujo y corregir con más frecuencia, pero con pasos suaves. El CUSUM cumplía lo último a costa de saltos de centro, por eso se reemplazó en Dron. Está controlada por el flag `smoothLaw`, que sólo existe en Dron. Las demás variantes no cambian.
+
+Diseño (`SmartFlowController::updateSmooth`):
+
+- Arranque y cambio de consigna: primero un paso de feedforward desde la tabla, al 92 % del objetivo (`smoothStartFraction`), escalado por el ratio de ganancia aprendido. Después hay una pausa de 1500 ms (`smoothHoldMs`) y luego una rampa sin integrar.
+- Ley: PI incremental. Los términos se expresan en unidades de flujo divididas por la pendiente local de la tabla, multiplicadas por el ratio de ganancia observado. Así la ganancia de lazo es constante en todos los setpoints.
+- El término P actúa sobre el cambio medido del flujo, no sobre el error. Ignora cambios menores o iguales a 0,012 L/min.
+- Antes del lock, I y P se escalan. La integral usa 1,30 en vez de 0,70 (`smoothKiStart`).
+- Salida: PWM interno con fracciones. La salida a la bomba sólo cambia cuando el valor interno se aleja al menos 1 cuenta del último enviado (histéresis de 1 cuenta).
+- Slew: 30 cuentas por muestra con lock; 100 cuentas por muestra antes del lock.
+- Error persistente: la integral corrige de forma continua todo error mayor a 0,006 L/min. No hay saltos de centro ni pasos secantes.
+- Se mantienen: techo de 2047 × `motorCount` con flag `unreachable`; guardia de flujo casi cero (el PWM no sube si el flujo está por debajo de 0,2 L/min o del 10 % del objetivo); latch de flujo cero.
+
+Hallazgo: con pausa de 800 ms, el P bajaba unas 100 cuentas mientras el flujo aún subía, y eso causaba oscilación de ±3 % al arrancar. Por eso la pausa es de 1500 ms.
+
+Constantes en `Dron.h`:
+
+| Constante | Valor |
+|---|---|
+| `smoothKi` | 0,70 |
+| `smoothKiStart` | 1,30 |
+| `smoothKp` | 0,40 |
+| `smoothSlew` | 30 cuentas |
+| `smoothSlewStart` | 100 cuentas |
+| `smoothStartFraction` | 0,92 |
+| `smoothHoldMs` | 1500 ms |
+| `deadband` | 0,006 L/min |
+| `deadbandRel` | 0 |
+
+### Mediciones de la ley suave
+
+Mediciones en placa (Eolo Dron V2, sin filtro). Asentamiento ±1 % con mediana de 3 muestras, contado desde el comando de inicio.
+
+| Caso | Ley anterior | Ley suave |
+|---|---|---|
+| Asentamiento a 1 L/min | 11,5 s | 4,1 s |
+| Asentamiento a 3 L/min | 3,8 s | 3,3 s |
+| Asentamiento a 5 L/min | 7,3 s | 4,5 s |
+| Asentamiento a 4 L/min | 7,5 s | 1,9 s |
+| Ganancia -15 % a 4 L/min, vuelta a ±1 % | 12,1 s | 5,5 s (sobrepaso +0,5 %) |
+| Ganancia +10 %, vuelta a ±1 % | 13,8 s | 5,4 s |
+| Salto máximo de PWM por muestra tras perturbación (dos casos) | 115 y 89 | 30 y 30 |
+| Saltos CUSUM | 9 + 16 | 0 |
+| Error medio bloqueado | -0,5 % a +0,47 % | <= 0,11 % |
+| Pico de arranque | 0 a +0,7 % | +0,2 a +2,0 % |
+
+Estable a 3 L/min: flujo entre 2,99 y 3,01 L/min, PWM entre 917 y 922, paso máximo de 1 a 2 cuentas.
+
+Simulación (planta construida con las mediciones, usando las clases C++ reales):
+
+- Lock ±1 % en tres consignas: 3,6 / 5,7 / 5,0 s con la ley suave, frente a 9,7 / 4,7 / 7,5 s con la anterior.
+- Recuperación tras -15 %: 4,5 s en media, frente a 14,7 s.
+- Obstrucción lenta de -25 % en 60 s: error peor de -0,9 %, frente a -2,6 %.
+
+Curva en lazo abierto medida: 1000 -> 3,30; 1400 -> 4,77; 1800 -> 6,06; 2047 -> 6,83 L/min. La tabla `kFlowFeedForward` queda entre 3 y 6 % baja. Respuesta: 63 % en 1,05 a 1,3 s; 95 % en 1,4 a 1,7 s.
+
+### Limitaciones de la ley suave
+
+- El firmware final, con pausa de 1500 ms, no se flasheó con ese valor en producción durante las pruebas. La placa usó 800 ms, con 1500 ms fijado por serial.
+- No se probó cambio de setpoint en placa.
+- Las perturbaciones de ganancia fueron por software: escalan el PWM, así que a PWM bajo cortan más del 15 %.
+- No se probó con filtro, que ya no está en el equipo.
+- La tabla FF no se actualizó.
+- A 4 L/min el PWM sigue el ruido: ±4 cuentas, con variación total de 95 cuentas. La ley anterior tiene 0, porque se congela en su zona muerta y queda en -0,2 a -0,5 %. Si se quiere menos movimiento, bajar `smoothKp` a unos 0,3 o subir la zona muerta de 0,012 (sin probar).
+- A 1 L/min el flag `locked` (±2 % durante 3 muestras) llega más tarde: 4,8 s frente a 2,9 s. Pero el flujo entra a ±1 % mucho antes.
+
+Pruebas: 72 tests nativos, de los cuales 5 son nuevos (`test_flow_smooth_law_*`), 0 fallas.
+
+Cómo reflashear: `pio run -e eolo_dron -t upload`.
 
 ## 4. Constantes en Dron.h
 

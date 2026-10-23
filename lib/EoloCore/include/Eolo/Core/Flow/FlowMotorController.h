@@ -68,6 +68,16 @@ struct FlowPidConfig
     int cusumJumpMax = 0;
     float cusumJumpFrac = 1.0f; // Fracción del salto estimado que se aplica (0,3..1)
     uint32_t cusumHoldMs = 0;
+    // Ley continua (ver SmartFlowTune::smoothLaw). false conserva la ley de
+    // centro + trim; requiere feedForward.
+    bool smoothLaw = false;
+    float smoothKi = 0.70f;
+    float smoothKp = 0.30f;
+    int smoothSlew = 40;
+    int smoothSlewStart = 100;
+    float smoothStartFraction = 0.95f;
+    uint32_t smoothHoldMs = 1100;
+    float smoothKiStart = 0.70f;
 };
 
 struct FlowPidStatus
@@ -246,6 +256,21 @@ public:
             return false;
         if (isnan(config.cusumJumpFrac) || config.cusumJumpFrac < 0.3f || config.cusumJumpFrac > 1.0f)
             return false;
+        if (config.smoothLaw && !config.feedForward.available())
+            return false;
+        if (isnan(config.smoothKi) || config.smoothKi < 0.0f || config.smoothKi > 5.0f)
+            return false;
+        if (isnan(config.smoothKp) || config.smoothKp < 0.0f || config.smoothKp > 5.0f)
+            return false;
+        if (config.smoothSlew < 1 || config.smoothSlew > maxPwm ||
+            config.smoothSlewStart < 1 || config.smoothSlewStart > maxPwm)
+            return false;
+        if (isnan(config.smoothStartFraction) || config.smoothStartFraction < 0.5f || config.smoothStartFraction > 1.0f)
+            return false;
+        if (config.smoothHoldMs > 10000UL)
+            return false;
+        if (isnan(config.smoothKiStart) || config.smoothKiStart < 0.0f || config.smoothKiStart > 5.0f)
+            return false;
         return true;
     }
 
@@ -278,6 +303,14 @@ public:
         tune.cusumJumpMax = config.cusumJumpMax;
         tune.cusumJumpFrac = config.cusumJumpFrac;
         tune.cusumHoldMs = config.cusumHoldMs;
+        tune.smoothLaw = config.smoothLaw;
+        tune.smoothKi = config.smoothKi;
+        tune.smoothKp = config.smoothKp;
+        tune.smoothSlew = config.smoothSlew;
+        tune.smoothSlewStart = config.smoothSlewStart;
+        tune.smoothStartFraction = config.smoothStartFraction;
+        tune.smoothHoldMs = config.smoothHoldMs;
+        tune.smoothKiStart = config.smoothKiStart;
         return tune;
     }
 
