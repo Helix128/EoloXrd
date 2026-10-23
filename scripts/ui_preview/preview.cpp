@@ -229,9 +229,9 @@ static void checkCapturePages()
     CapturaScene scene;
     scene.enter(ctx);
 #ifdef FEATURE_ANEMOMETER
-    constexpr int count = 9;
-#else
     constexpr int count = 8;
+#else
+    constexpr int count = 7;
 #endif
     for (bool pmEnabled : {true, false})
     {
@@ -254,6 +254,13 @@ static void checkCapturePages()
                 assert(seen[page] == CapturaScene::footerPageAvailable(ctx, page));
         }
     }
+
+    ctx.u8g2.setFont(FONT_VALUE);
+    for (const char *label : {"Temp " UNIT_TEMP, "Hum " UNIT_PCT, "P " UNIT_PRESSURE})
+        assert(ctx.u8g2.getStrWidth(label) < Layout::ThirdColumnW);
+    ctx.u8g2.setFont(FONT_LABEL);
+    for (const char *value : {"-40.00", "85.00", "100.0", "1100"})
+        assert(ctx.u8g2.getStrWidth(value) < Layout::ThirdColumnW);
 
     ctx.u8g2.setFont(FONT_VALUE);
     assert(ctx.u8g2.getStrWidth("23:59") <= Layout::Header::Time.w);
@@ -299,18 +306,22 @@ int main(int argc, char **argv)
     shot<WaitScene>("espera_sin_flujo", 0, 1, [](Context &c) { c.session.startUnix = c.getUnixTime() + 1; c.components.flowSensor.ok = false; });
     shot<WaitScene>("espera_larga", 0, 1, [](Context &c) { c.session.startUnix = c.getUnixTime() + 3600000UL; });
     shot<CapturaScene>("captura_p0");
-    shot<CapturaScene>("captura_p1", 1, 2);
-    shot<CapturaScene>("captura_pm", 2, 2);
-    shot<CapturaScene>("captura_pm10", 3, 2);
-    shot<CapturaScene>("captura_objetivo", 4, 2);
-    shot<CapturaScene>("captura_transcurrido", 5, 2);
-    shot<CapturaScene>("captura_restante", 6, 2);
-    shot<CapturaScene>("captura_horarios", 7, 2);
+    shot<CapturaScene>("captura_bme_extremos", 0, 2, [](Context &c) {
+        c.snapshot.environment.temperature = -40.0f;
+        c.snapshot.environment.humidity = 100.0f;
+        c.snapshot.environment.pressure = 1100.0f;
+    });
+    shot<CapturaScene>("captura_pm", 1, 2);
+    shot<CapturaScene>("captura_pm10", 2, 2);
+    shot<CapturaScene>("captura_objetivo", 3, 2);
+    shot<CapturaScene>("captura_transcurrido", 4, 2);
+    shot<CapturaScene>("captura_restante", 5, 2);
+    shot<CapturaScene>("captura_horarios", 6, 2);
 #ifdef FEATURE_ANEMOMETER
-    shot<CapturaScene>("captura_viento", 8, 2);
+    shot<CapturaScene>("captura_viento", 7, 2);
 #endif
-    shot<CapturaScene>("captura_pm_alto", 2, 2, [](Context &c) { c.snapshot.airQuality.pm1 = 9999; c.snapshot.airQuality.pm25 = 9999; });
-    shot<CapturaScene>("captura_sin_pm", 2, 2, [](Context &c) { c.snapshot.airQuality.enabled = false; });
+    shot<CapturaScene>("captura_pm_alto", 1, 2, [](Context &c) { c.snapshot.airQuality.pm1 = 9999; c.snapshot.airQuality.pm25 = 9999; });
+    shot<CapturaScene>("captura_sin_pm", 1, 2, [](Context &c) { c.snapshot.airQuality.enabled = false; });
     shot<CapturaBombasScene>("probar_bombas");
     shot<FinScene>("fin");
     shot<FinScene>("fin_falla_bomba", 0, 1, [](Context &c) { c.endReason = CaptureEndReason::PumpFailureZeroFlow; });

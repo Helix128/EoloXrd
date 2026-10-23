@@ -1840,6 +1840,190 @@ static void test_flow_cusum_pauses_when_flow_near_zero()
     TEST_ASSERT_EQUAL_UINT16(settling.cusumAlarms, blocked.cusumAlarms);
 }
 
+// Ley continua del perfil Dron V2 (src/Variants/Profiles/Dron.h).
+static FlowPidConfig dron_v2_smooth_config()
+{
+    FlowPidConfig c = dron_v2_proto_config();
+    c.smoothLaw = true;
+    c.smoothKi = 0.70f;
+    c.smoothKp = 0.40f;
+    c.smoothKiStart = 1.30f;
+    c.smoothSlew = 30;
+    c.smoothSlewStart = 100;
+    c.smoothStartFraction = 0.92f;
+    c.smoothHoldMs = 1500;
+    c.deadband = 0.006f;
+    c.deadbandRel = 0.0f;
+    return c;
+}
+
+struct SmoothTrace
+{
+    int prevPwm = -1;
+    int maxDeltaPwm = 0;    // Máx. |ΔPWM| entre muestras consecutivas
+    int minPwm = 1 << 20;
+    int maxPwm = 0;
+    float minFlow = 1e9f;
+    float maxFlow = -1e9f;
+    float lastFlow = 0.0f;
+    bool locked = false;
+    bool unreachable = false;
+};
+
+static void run_smooth(DualMotorFlowController &controller, PumpPlantSim &plant, const FlowPidConfig &config,
+                       float target, uint32_t startMs, uint32_t durationMs, uint32_t &sampleId, SmoothTrace &trace)
+{
+    trace.minPwm = 1 << 20;
+    trace.maxPwm = 0;
+    trace.maxDeltaPwm = 0;
+    trace.minFlow = 1e9f;
+    trace.maxFlow = -1e9f;
+    for (uint32_t t = startMs; t < startMs + durationMs; t += 10)
+    {
+        plant.step();
+        if ((t % 360) != 0) continue;
+        DualMotorFlowInput input;
+        input.nowMs = t;
+        input.targetFlow = target;
+        input.measuredFlow = plant.reading();
+        input.flowValid = true;
+        input.flowFresh = true;
+        input.sampleId = ++sampleId;
+        input.maxPwm = 2047;
+        const DualMotorFlowOutput out = controller.update(input, config);
+        plant.command = out.motor0Pwm;
+        if (trace.prevPwm >= 0 && abs(out.virtualPwm - trace.prevPwm) > trace.maxDeltaPwm)
+            trace.maxDeltaPwm = abs(out.virtualPwm - trace.prevPwm);
+        trace.prevPwm = out.virtualPwm;
+        if (out.virtualPwm < trace.minPwm) trace.minPwm = out.virtualPwm;
+        if (out.virtualPwm > trace.maxPwm) trace.maxPwm = out.virtualPwm;
+        trace.minFlow = fminf(trace.minFlow, plant.flow);
+        trace.maxFlow = fmaxf(trace.maxFlow, plant.flow);
+        trace.locked = out.smartStatus.centerFound;
+        trace.unreachable = out.smartStatus.unreachable;
+    }
+    trace.lastFlow = plant.flow;
+}
+
+static void test_flow_smooth_law_recovers_gain_loss_without_jumps()
+{
+    // Hardware: el CUSUM corregía con saltos de centro (sobrecorrección
+    // ~1,5x con filtro real). La ley continua debe volver a ±1 % sin
+    // sobrepico apreciable y sin pasos de PWM mayores que smoothSlew.
+    const FlowPidConfig config = dron_v2_smooth_config();
+    TEST_ASSERT_TRUE(FlowMotorController::validateConfig(config, 2047));
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    plant.gainScale = 0.92f; // filtro: la tabla sobrestima la ganancia
+    uint32_t sampleId = 0;
+    SmoothTrace trace;
+    run_smooth(controller, plant, config, 4.0f, 0, 20000, sampleId, trace);
+    TEST_ASSERT_TRUE(trace.locked);
+    TEST_ASSERT_FLOAT_WITHIN(0.04f, 4.0f, trace.lastFlow);
+
+    const float gains[] = {0.92f * 0.85f, 0.92f};
+    uint32_t t = 20000;
+    for (float gain : gains)
+    {
+        plant.gainScale = gain;
+        run_smooth(controller, plant, config, 4.0f, t, 8000, sampleId, trace);
+        t += 8000;
+        TEST_ASSERT_TRUE(trace.maxDeltaPwm <= config.smoothSlew);
+        TEST_ASSERT_TRUE(trace.maxFlow <= 4.0f * 1.03f || gain > 0.9f); // sin sobrecorrección
+        TEST_ASSERT_TRUE(trace.minFlow >= 4.0f * 0.97f || gain < 0.9f);
+        TEST_ASSERT_FLOAT_WITHIN(0.04f, 4.0f, trace.lastFlow);
+        run_smooth(controller, plant, config, 4.0f, t, 10000, sampleId, trace);
+        t += 10000;
+        TEST_ASSERT_FLOAT_WITHIN(0.04f, 4.0f, trace.minFlow);
+        TEST_ASSERT_FLOAT_WITHIN(0.04f, 4.0f, trace.maxFlow);
+    }
+}
+
+static void test_flow_smooth_law_steady_has_no_limit_cycle()
+{
+    // 200 s a 3 L/min con ruido de medida: el PWM queda en una banda de pocas
+    // cuentas (ni saltos ni ciclo límite) y el error medio es < 1 %.
+    const FlowPidConfig config = dron_v2_smooth_config();
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    plant.gainScale = 0.90f;
+    plant.noiseLpm = 0.008f;
+    uint32_t sampleId = 0;
+    SmoothTrace trace;
+    run_smooth(controller, plant, config, 3.0f, 0, 20000, sampleId, trace);
+    run_smooth(controller, plant, config, 3.0f, 20000, 200000, sampleId, trace);
+    TEST_ASSERT_TRUE(trace.maxPwm - trace.minPwm <= 12);
+    TEST_ASSERT_TRUE(trace.maxDeltaPwm <= 4);
+    TEST_ASSERT_FLOAT_WITHIN(0.03f, 3.0f, trace.minFlow);
+    TEST_ASSERT_FLOAT_WITHIN(0.03f, 3.0f, trace.maxFlow);
+}
+
+static void test_flow_smooth_law_low_target_starts_without_overshoot()
+{
+    // 1 L/min: tabla optimista o pesimista ±8 %, sin sobrepico > 2 %.
+    const float gains[] = {0.92f, 1.08f};
+    for (float gain : gains)
+    {
+        const FlowPidConfig config = dron_v2_smooth_config();
+        DualMotorFlowController controller;
+        PumpPlantSim plant;
+        plant.gainScale = gain;
+        uint32_t sampleId = 0;
+        SmoothTrace trace;
+        run_smooth(controller, plant, config, 1.0f, 0, 25000, sampleId, trace);
+        TEST_ASSERT_TRUE(trace.maxFlow <= 1.02f);
+        TEST_ASSERT_TRUE(trace.locked);
+        TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, trace.lastFlow);
+    }
+}
+
+static void test_flow_smooth_law_holds_pwm_when_flow_near_zero()
+{
+    // Línea tapada: con flujo < 0,2 L/min el lazo no empuja el PWM hacia el
+    // máximo (el enclavamiento de flujo cero sigue a cargo de la bomba muerta).
+    const FlowPidConfig config = dron_v2_smooth_config();
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    uint32_t sampleId = 0;
+    SmoothTrace trace;
+    run_smooth(controller, plant, config, 5.0f, 0, 20000, sampleId, trace);
+    const int lockedPwm = trace.prevPwm;
+    plant.gainScale = 0.01f;
+    run_smooth(controller, plant, config, 5.0f, 20000, 4000, sampleId, trace);
+    const int dropMax = trace.maxPwm;
+    // La caída (flujo aún > 0,2) sólo mueve el PWM unas pocas muestras a
+    // ritmo smoothSlew.
+    TEST_ASSERT_TRUE(dropMax <= lockedPwm + 4 * config.smoothSlew);
+    run_smooth(controller, plant, config, 5.0f, 24000, 20000, sampleId, trace);
+    TEST_ASSERT_TRUE(trace.lastFlow < 0.2f);
+    // Los re-kicks por stall no cuentan: el PWM del lazo no sube más.
+    TEST_ASSERT_TRUE(trace.maxPwm <= dropMax);
+}
+
+static void test_flow_smooth_law_caps_single_motor_and_validates()
+{
+    const FlowPidConfig config = dron_v2_smooth_config();
+    DualMotorFlowController controller;
+    PumpPlantSim plant;
+    uint32_t sampleId = 0;
+    SmoothTrace trace;
+    run_smooth(controller, plant, config, 8.0f, 0, 30000, sampleId, trace);
+    TEST_ASSERT_TRUE(trace.maxPwm <= 2047);
+    TEST_ASSERT_TRUE(trace.unreachable);
+
+    // Bandera sólo en Dron: la configuración histórica no la activa.
+    TEST_ASSERT_FALSE(dron_v2_flow_config(true).smoothLaw);
+    FlowPidConfig bad = dron_v2_smooth_config();
+    bad.feedForward = FlowFeedForwardTable{};
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
+    bad = dron_v2_smooth_config();
+    bad.smoothSlew = 0;
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
+    bad = dron_v2_smooth_config();
+    bad.smoothStartFraction = 1.2f;
+    TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -1910,5 +2094,10 @@ int main(int, char **)
     RUN_TEST(test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable);
     RUN_TEST(test_flow_cusum_jump_damping_converges_without_limit_cycle);
     RUN_TEST(test_flow_cusum_pauses_when_flow_near_zero);
+    RUN_TEST(test_flow_smooth_law_recovers_gain_loss_without_jumps);
+    RUN_TEST(test_flow_smooth_law_steady_has_no_limit_cycle);
+    RUN_TEST(test_flow_smooth_law_low_target_starts_without_overshoot);
+    RUN_TEST(test_flow_smooth_law_holds_pwm_when_flow_near_zero);
+    RUN_TEST(test_flow_smooth_law_caps_single_motor_and_validates);
     return UNITY_END();
 }

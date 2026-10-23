@@ -40,6 +40,19 @@ struct SmartFlowTune
     int cusumJumpMax = 0;           // Salto máximo de centro por alarma (cuentas)
     float cusumJumpFrac = 1.0f;     // Fracción del salto estimado (0,3..1); evita sobrecorrección
     uint32_t cusumHoldMs = 0;       // Espera tras un salto (0 = 2000 ms)
+    // Ley continua (smoothLaw): PI incremental en dominio de flujo dividido
+    // por la pendiente local de la planta (tabla x razón de ganancia
+    // observada), así la ganancia del lazo no depende de la consigna. Sin
+    // saltos de centro ni secantes: el PWM cambia a lo sumo smoothSlew
+    // cuentas por muestra. Requiere tabla feedForward.
+    bool smoothLaw = false;
+    float smoothKi = 0.70f;         // 1/s: fracción del error corregida por segundo
+    float smoothKp = 0.30f;         // Proporcional sobre la medición (adimensional, forma incremental)
+    int smoothSlew = 40;            // Máx. |ΔPWM| por muestra tras el primer enclave
+    int smoothSlewStart = 100;      // Máx. |ΔPWM| por muestra antes del primer enclave
+    float smoothStartFraction = 0.95f; // Fracción de la consigna para el PWM inicial (tabla)
+    uint32_t smoothHoldMs = 1100;   // Pausa del lazo tras un paso de tabla (+ rampa): tiempo muerto + 2τ
+    float smoothKiStart = 0.70f;    // 1/s antes del enclave (arranque, cambio de consigna); kp se escala igual
     // Backward-compatibility aliases
     int maxStep = 16;
     int maxFeedForwardStep = 10;
@@ -141,6 +154,22 @@ class SmartFlowController
     int lastJumpSign = 0;
     bool unreachable = false;
     static constexpr uint32_t kUnreachableConfirmMs = 3000;
+
+    // Estado de la ley continua (smoothLaw).
+    bool smoothActive = false;      // PWM interno inicializado
+    float smoothPwm = 0.0f;         // PWM con fracción (evita ciclo límite por redondeo)
+    float smoothRatio = 1.0f;       // Razón flujo real / tabla (EMA en régimen)
+    float smoothPrevFlow = -1.0f;
+    float smoothPrevError = 0.0f;
+    uint32_t smoothHoldUntilMs = 0;
+    int smoothOut = 0;
+    bool smoothOutValid = false;
+    uint8_t smoothInBand = 0;
+    static constexpr float kSmoothLockBand = 0.02f;   // ±2 % para declarar enclave
+    static constexpr uint8_t kSmoothLockSamples = 3;
+    static constexpr float kSmoothRatioAlpha = 0.15f;
+    static constexpr float kSmoothQuasiSteady = 0.03f; // |Δflujo| / consigna por muestra
+    static constexpr float kSmoothDyDeadband = 0.025f; // L/min: oscilación de lectura de 2-3 pasos de resolución
 
     // Fracción del salto inicial: queda por debajo del objetivo porque la
     // bomba no puede frenar rápido. 0,87 ≈ 1/1,15: una tabla con ganancia
@@ -301,6 +330,19 @@ public:
         resetJumpDamping();
         saturatedSinceMs = 0;
         unreachable = false;
+        // Ley continua: con preserveModel (fin de kick, fallo de sensor) se
+        // retoma desde el mismo PWM interno; sin él, se reinicia desde la tabla.
+        smoothPrevFlow = -1.0f;
+        smoothPrevError = 0.0f;
+        smoothHoldUntilMs = 0;
+        if (!preserveModel)
+        {
+            smoothActive = false;
+            smoothPwm = 0.0f;
+            smoothRatio = 1.0f;
+            smoothInBand = 0;
+            smoothOutValid = false;
+        }
         if (!preserveModel || !centerFound)
         {
             approachArmed = true;
@@ -430,6 +472,181 @@ private:
         return false;
     }
 
+    // Pendiente local (L/min por cuenta) de la tabla en pwm, escalada por la
+    // razón de ganancia observada. Acotada para que un tramo plano de la
+    // tabla no produzca pasos enormes.
+    float smoothSlope(float pwm, int maxPwm) const
+    {
+        const FlowFeedForwardTable &ff = tune.feedForward;
+        const int lo = clampInt(static_cast<int>(pwm) - 60, ff.startPwm(), maxPwm);
+        const int hi = clampInt(static_cast<int>(pwm) + 60, ff.startPwm(), maxPwm);
+        float slope = 0.0f;
+        if (hi > lo)
+            slope = (ff.flowForPwm(hi) - ff.flowForPwm(lo)) / static_cast<float>(hi - lo);
+        slope *= smoothRatio;
+        return clampFloat(slope, 0.0015f, 0.02f);
+    }
+
+    void startSmoothHold(uint32_t nowMs, int deltaPwm)
+    {
+        const uint32_t hold = tune.smoothHoldMs + rampMsFor(deltaPwm > 0 ? deltaPwm : 0);
+        smoothHoldUntilMs = hold ? ((nowMs + hold) ? (nowMs + hold) : 1) : 0;
+    }
+
+    // Ley continua: PI incremental normalizado por la pendiente de la planta.
+    // El PWM interno conserva fracciones; la salida cambia a lo sumo
+    // smoothSlew cuentas por muestra. Los únicos pasos de tabla son el
+    // arranque y los cambios de consigna, seguidos de una pausa que deja
+    // responder a la planta antes de integrar.
+    SmartFlowStatus updateSmooth(SmartFlowStatus &status, uint32_t nowMs, int currentPwm, float targetFlow, float rawFlow,
+                                 float dtSeconds, int maxPwm, float errorFast, float errorSlow, float derivative)
+    {
+        const FlowFeedForwardTable &ff = tune.feedForward;
+        const int floorPwm = clampInt(ff.startPwm(), 0, maxPwm);
+        const bool targetChanged = previousTargetFlow >= 0.0f && fabsf(targetFlow - previousTargetFlow) > 0.001f;
+        float pTerm = 0.0f;
+        float iTerm = 0.0f;
+        int nextPwm;
+
+        if (!smoothActive || targetChanged)
+        {
+            const float ratio = clampFloat(smoothRatio, kMinGainRatio, kMaxGainRatio);
+            const float before = smoothPwm;
+            if (!smoothActive)
+            {
+                const float frac = clampFloat(tune.smoothStartFraction, 0.5f, 1.0f);
+                smoothPwm = static_cast<float>(ff.pwmForFlow(frac * targetFlow / ratio));
+            }
+            else
+            {
+                smoothPwm += static_cast<float>(ff.pwmForFlow(targetFlow / ratio) -
+                                                ff.pwmForFlow(previousTargetFlow / ratio));
+            }
+            smoothPwm = clampFloat(smoothPwm, static_cast<float>(floorPwm), static_cast<float>(maxPwm));
+            startSmoothHold(nowMs, static_cast<int>(smoothPwm - (smoothActive ? before : static_cast<float>(currentPwm))));
+            smoothActive = true;
+            smoothInBand = 0;
+            centerFound = false;
+            mode = SMART_FLOW_APPROACH;
+        }
+        else
+        {
+            const float dt = clampFloat(dtSeconds, 0.05f, 1.0f);
+            const float error = targetFlow - rawFlow;
+            const float dy = smoothPrevFlow >= 0.0f ? rawFlow - smoothPrevFlow : 0.0f;
+            const bool holding = smoothHoldUntilMs != 0 && static_cast<int32_t>(nowMs - smoothHoldUntilMs) < 0;
+            if (!holding) smoothHoldUntilMs = 0;
+            const bool lowFlow = rawFlow < 0.2f || rawFlow < 0.1f * targetFlow;
+
+            // Razón de ganancia real/tabla, sólo en régimen cuasi estacionario.
+            if (!holding && !lowFlow && fabsf(dy) < kSmoothQuasiSteady * targetFlow)
+            {
+                const float table = ff.flowForPwm(static_cast<int>(smoothPwm + 0.5f));
+                if (table > 0.05f)
+                {
+                    const float r = clampFloat(rawFlow / table, kMinGainRatio, kMaxGainRatio);
+                    smoothRatio += kSmoothRatioAlpha * (r - smoothRatio);
+                }
+            }
+
+            float deadband = tune.deadband;
+            if (tune.deadbandRel > 0.0f && tune.deadbandRel * targetFlow > deadband)
+                deadband = tune.deadbandRel * targetFlow;
+
+            float dFlow = 0.0f;
+            if (!holding)
+            {
+                // Antes del enclave (arranque, cambio de consigna) I y P se
+                // escalan juntos: la anticipación kp/ki (≈ τ de la planta)
+                // se conserva y el flujo que aún sube no se integra de más.
+                const float ki = centerFound ? tune.smoothKi : tune.smoothKiStart;
+                const float kp = tune.smoothKi > 0.0f ? tune.smoothKp * ki / tune.smoothKi : tune.smoothKp;
+                if (fabsf(error) > deadband)
+                    iTerm = ki * dt * error;
+                // Zona muerta suave sobre Δflujo: el ruido y la resolución
+                // (0,01 L/min) no mueven el PWM; un cambio real sí.
+                const float dyDead = fmaxf(0.0f, fabsf(dy) - kSmoothDyDeadband);
+                if (smoothPrevFlow >= 0.0f)
+                    pTerm = -kp * (dy > 0.0f ? dyDead : -dyDead);
+                dFlow = iTerm + pTerm;
+            }
+            // Línea tapada o bomba sin girar: no empujar el PWM hacia arriba.
+            if (lowFlow && dFlow > 0.0f) dFlow = 0.0f;
+
+            float dPwm = dFlow / smoothSlope(smoothPwm, maxPwm);
+            const int slewCfg = centerFound ? tune.smoothSlew : tune.smoothSlewStart;
+            const float slew = static_cast<float>(slewCfg > 0 ? slewCfg : 40);
+            dPwm = clampFloat(dPwm, -slew, slew);
+            smoothPwm = clampFloat(smoothPwm + dPwm, static_cast<float>(floorPwm), static_cast<float>(maxPwm));
+            // La histéresis de salida retiene hasta 2 cuentas: el paso real
+            // se mide contra la salida, no contra el PWM interno.
+            if (smoothOutValid)
+                smoothPwm = clampFloat(smoothPwm, static_cast<float>(smoothOut) - slew,
+                                       static_cast<float>(smoothOut) + slew);
+
+            if (fabsf(error) <= kSmoothLockBand * targetFlow)
+            {
+                if (smoothInBand < UINT8_MAX) smoothInBand++;
+            }
+            else
+            {
+                smoothInBand = 0;
+            }
+            if (!centerFound && smoothInBand >= kSmoothLockSamples)
+                centerFound = true;
+            mode = centerFound ? SMART_FLOW_CENTER_LOCKED : (holding ? SMART_FLOW_APPROACH : SMART_FLOW_SEEK_CENTER);
+        }
+
+        smoothPrevError = targetFlow - rawFlow;
+        smoothPrevFlow = rawFlow;
+        previousTargetFlow = targetFlow;
+        nextPwm = clampInt(static_cast<int>(lroundf(smoothPwm)), 0, maxPwm);
+        // Histéresis de 2 cuentas (≈0,006 L/min, bajo la resolución del
+        // sensor): el redondeo y el ruido no hacen parpadear la salida.
+        if (smoothOutValid && abs(nextPwm - smoothOut) <= 2 &&
+            fabsf(smoothPwm - static_cast<float>(smoothOut)) < 2.0f)
+            nextPwm = smoothOut;
+        smoothOut = nextPwm;
+        smoothOutValid = true;
+        centerPwm = nextPwm;
+
+        if (nextPwm >= maxPwm && errorFast > tune.deadband)
+        {
+            if (saturatedSinceMs == 0) saturatedSinceMs = nowMs ? nowMs : 1;
+            else if (nowMs - saturatedSinceMs >= kUnreachableConfirmMs) unreachable = true;
+        }
+        else
+        {
+            saturatedSinceMs = 0;
+            unreachable = false;
+        }
+
+        status.pwm = nextPwm;
+        status.centerPwm = nextPwm;
+        status.trimPwm = 0;
+        status.pwmFF = nextPwm;
+        status.pidCorrection = 0;
+        status.mode = mode;
+        status.centerFound = centerFound;
+        status.fastFlow = fastFlow;
+        status.slowFlow = slowFlow;
+        status.errorFast = errorFast;
+        status.errorSlow = errorSlow;
+        status.integral = smoothRatio;      // Razón de ganancia observada
+        status.derivativeFlow = derivative;
+        status.pTerm = pTerm;
+        status.iTerm = iTerm;
+        status.estimatedGain = smoothSlope(smoothPwm, maxPwm);
+        status.confidence = centerFound ? 1.0f : 0.2f;
+        status.modelValid = smoothActive;
+        status.lowerClamp = nextPwm <= floorPwm;
+        status.upperSaturation = nextPwm >= maxPwm;
+        status.minFlowPwm = nextPwm;
+        status.maxUsefulPwm = maxPwm;
+        status.unreachable = unreachable;
+        return status;
+    }
+
 public:
     SmartFlowStatus update(uint32_t nowMs, int currentPwm, float targetFlow, float rawFlow, float dtSeconds, int maxPwm)
     {
@@ -468,6 +685,10 @@ public:
             status.mode = SMART_FLOW_SEEK_CENTER;
             return status;
         }
+
+        if (tune.smoothLaw && tune.feedForward.available())
+            return updateSmooth(status, nowMs, currentPwm, targetFlow, rawFlow, dtSeconds, maxPwm,
+                                errorFast, errorSlow, derivative);
 
         // Cambio de consigna activo durante ejecución: forzar re-búsqueda suave de centro
         if (previousTargetFlow >= 0.0f && fabsf(targetFlow - previousTargetFlow) > 0.001f)

@@ -92,6 +92,26 @@ constexpr FlowPidConfig makeFlowPidConfig()
     config.cusumJumpMax = 300;
     config.cusumJumpFrac = 0.55f;
     config.cusumHoldMs = 2000UL;
+    // Ley continua: PI incremental normalizado por la pendiente de la tabla,
+    // sin saltos de centro (el CUSUM de arriba sólo aplica con smoothLaw =
+    // false). Simulado sin filtro con tiempo muerto 0,15-0,5 s y τ 0,25-0,7 s:
+    // -15 % de ganancia vuelve a ±1 % en 4-6 s con |ΔPWM| <= 30 por muestra.
+    config.smoothLaw = true;
+    config.smoothKi = 0.70f;
+    config.smoothKp = 0.40f;
+    config.smoothKiStart = 1.30f; // arranque/cambio de consigna más rápido sin sobrepico
+    config.smoothSlew = 30;
+    config.smoothSlewStart = 100;
+    config.smoothStartFraction = 0.92f;
+    // En placa, 800 ms terminaba la pausa con el flujo aún subiendo y el
+    // término P bajaba el PWM ~100 cuentas (ciclo de ±3 %); 1500 ms no.
+    config.smoothHoldMs = 1500UL;
+    // Zona muerta de la integral: ruido medido 0,004-0,013 L/min con
+    // resolución 0,01; 0,012 evita que el PWM persiga una lectura suelta y el
+    // error fijo máximo es 0,012 L/min. Sin parte relativa para no dejar
+    // error fijo a caudal alto.
+    config.deadband = 0.012f;
+    config.deadbandRel = 0.0f;
     return config;
 }
 

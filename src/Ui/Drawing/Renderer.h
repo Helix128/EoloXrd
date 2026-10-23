@@ -84,9 +84,12 @@ public:
             metricCell(display, Layout::HalfColumnW, Layout::HalfColumnW, label2, value2, unit2, labelY, valueY, FONT_VALUE, valueFont);
         }
 
-        // Divisores verticales finos entre columnas.
-        const int top = labelY - 6;
-        const int height = valueY + 2 - top;
+        // Divisores verticales finos entre columnas: 2 px de aire contra la linea
+        // del header, el separador horizontal y la fila de puntos del pie.
+        const bool hero = labelY < Layout::SeparatorY;
+        const int top = (hero ? Layout::HeaderBottom : Layout::SeparatorY) + 3;
+        const int bottom = hero ? Layout::SeparatorY - 3 : Layout::BodyBottom - 4;
+        const int height = bottom - top + 1;
         if (label3)
         {
             display.drawVLine(Layout::ThirdColumnW, top, height);
