@@ -1,8 +1,10 @@
 # Registro de cambios
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). El proyecto aún no usa números de versión.
+Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Las versiones siguen [SemVer](https://semver.org/lang/es/) y cada una se publica como release y en la [página de flasheo](https://helix128.github.io/EoloXrd/).
 
 ## [Sin publicar]
+
+## [1.0.0] - 2026-10-26
 
 ### Agregado
 
