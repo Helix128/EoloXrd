@@ -5,8 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <SD.h>
+#include <atomic>
 #include <Eolo/Types/ModemHttpContract.h>
 #include "ModemService.h"
+#include "../Common/Board/SPIBus.h"
 
 class SensorAPI
 {
@@ -18,16 +20,19 @@ class SensorAPI
     const char* varPrefix = "&idsVariables";
     const char* valuePrefix = "&valores";
 
-    volatile bool isBusy = false; // true only while the spool head is in flight
+    // El callback del modem corre en la tarea ModemService y el resto en el
+    // loop. Todo acceso al spool y a la SD se serializa con SPIBus::Guard.
+    std::atomic<bool> isBusy{false}; // true only while the spool head is in flight
     static constexpr uint16_t SpoolLimit = 8640;
     static constexpr const char* SpoolPath = "/eolo/telemetry.spool";
-    uint16_t spoolPendingCount = 0;
-    uint32_t spoolDroppedCount = 0;
+    std::atomic<uint16_t> spoolPendingCount{0};
+    std::atomic<uint32_t> spoolDroppedCount{0};
     bool spoolLoaded = false;
 
     static void onSendDone(const ModemJobResult& result, void* context) {
         SensorAPI* self = static_cast<SensorAPI*>(context);
         if (self != nullptr) {
+            SPIBus::Guard spiGuard;
             self->isBusy = false;
             if (result.status == ModemJobStatus::Succeeded && result.httpStatus >= 200 && result.httpStatus < 300)
                 self->popSpoolHead();
@@ -63,6 +68,7 @@ public:
 
     void begin() {
         if (modem != nullptr) modem->begin();
+        SPIBus::Guard spiGuard;
         loadSpool();
         pumpSpool();
     }
@@ -123,6 +129,7 @@ public:
         }
 
         currentId = 0;
+        SPIBus::Guard spiGuard;
         if (!appendSpool(urlBuffer)) {
             LOG_LN("SensorAPI: SD no disponible; muestra descartada");
             spoolDroppedCount++;
