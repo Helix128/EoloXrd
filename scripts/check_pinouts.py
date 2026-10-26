@@ -12,27 +12,27 @@ TARGETS = {
     "dron": {
         "macro": "EOLO_TARGET_DRON",
         "demo": "EOLO_MODEL_DRON",
-        "doc": ROOT / "pinouts/eolo-dron.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-dron.md",
     },
     "dron_legacy": {
         "macro": "EOLO_TARGET_DRON_LEGACY",
         "demo": "EOLO_MODEL_DRON_LEGACY",
-        "doc": ROOT / "pinouts/eolo-dron-legacy.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-dron-legacy.md",
     },
     "standard": {
         "macro": "EOLO_TARGET_STANDARD",
         "demo": "EOLO_MODEL_STANDARD",
-        "doc": ROOT / "pinouts/eolo-standard.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-standard.md",
     },
     "express": {
         "macro": "EOLO_TARGET_EXPRESS",
         "demo": "EOLO_MODEL_EXPRESS",
-        "doc": ROOT / "pinouts/eolo-express.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-express.md",
     },
     "express_legacy": {
         "macro": "EOLO_TARGET_EXPRESS_LEGACY",
         "demo": "EOLO_MODEL_EXPRESS_LEGACY",
-        "doc": ROOT / "pinouts/eolo-express-legacy.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy.md",
     },
 }
 

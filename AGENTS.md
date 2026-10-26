@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`src/main.cpp` starts the firmware; `src/Application/` selects the active application. Code is organized by product family: `src/Ui/` (display models: scenes, drawing, encoder input, `UiApplication`), `src/Headless/` (Dron: `DronApplication`, setup server, capture switches, debug commands), `src/Modem/` (Standard modem stack), `src/Variants/` (per-model profiles in `Profiles/`, pinouts in `Pinouts/`, `ActiveProfile.h`, `Pinout.h`, `Legacy.h`, validation) and `src/Common/` (shared `Board/`, `Data/`, `Sensors/`, `Effectors/`, `Utility/`). `Ui/` and `Headless/` must not include each other; `scripts/check_family_boundaries.py` enforces it. Shared portable code lives in `include/Eolo/` and `lib/EoloCore/`. PlatformIO tests are under `test/test_*/`; Python script tests are `test/test_*.py`. Use `demos/` for isolated hardware sketches, `scripts/` for development tools, `web-server/` for the setup UI, `pinouts/` for GPIO references, and `docs/` for architecture and manuals.
+`src/main.cpp` starts the firmware; `src/Application/` selects the active application. Code is organized by product family: `src/Ui/` (display models: scenes, drawing, encoder input, `UiApplication`), `src/Headless/` (Dron: `DronApplication`, setup server, capture switches, debug commands), `src/Modem/` (Standard modem stack), `src/Variants/` (per-model profiles in `Profiles/`, pinouts in `Pinouts/`, `ActiveProfile.h`, `Pinout.h`, `Legacy.h`, validation) and `src/Common/` (shared `Board/`, `Data/`, `Sensors/`, `Effectors/`, `Utility/`). `Ui/` and `Headless/` must not include each other; `scripts/check_family_boundaries.py` enforces it. Shared portable code lives in `include/Eolo/` and `lib/EoloCore/`. PlatformIO tests are under `test/test_*/`; Python script tests are `test/test_*.py`. Use `demos/` for isolated hardware sketches, `scripts/` for development tools, `web-server/` for the setup UI, `docs/hardware/pinouts/` for GPIO references, and `docs/` for architecture and manuals.
 
 ## Build, Test, and Development Commands
 
@@ -16,7 +16,7 @@
 
 ## Coding Style & Naming Conventions
 
-Firmware uses C++17 and four-space indentation. Follow the surrounding file's brace and include style. Use `PascalCase` for types, `camelCase` for methods and fields, and `UPPER_SNAKE_CASE` for build flags such as `EOLO_TARGET_DRON_LEGACY`. Keep variant-specific settings in `src/Variants/Profiles/` and pin assignments aligned with `src/Variants/Pinout.h` and `pinouts/`. No repository-wide formatter or linter is configured; keep changes focused and match existing conventions.
+Firmware uses C++17 and four-space indentation. Follow the surrounding file's brace and include style. Use `PascalCase` for types, `camelCase` for methods and fields, and `UPPER_SNAKE_CASE` for build flags such as `EOLO_TARGET_DRON_LEGACY`. Keep variant-specific settings in `src/Variants/Profiles/` and pin assignments aligned with `src/Variants/Pinout.h` and `docs/hardware/pinouts/`. No repository-wide formatter or linter is configured; keep changes focused and match existing conventions.
 
 ## Testing Guidelines
 
