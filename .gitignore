@@ -10,9 +10,12 @@ __pycache__/
 .antigravitycli/
 .cave
 .cave/worktrees
-.claude/worktrees/
+.claude/
 firmware_backups/
 .build_tag
 artifacts/
 # Salida de scripts/ui_preview (PNG de pantallas y ejecutables)
 /build/
+
+# Credenciales locales del setup headless
+src/Headless/HeadlessSecrets.h

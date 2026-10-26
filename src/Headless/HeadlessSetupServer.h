@@ -27,12 +27,18 @@
 #define HEADLESS_SETUP_AP_PASSWORD "eolo-dron"
 #endif
 
+// Credenciales de la red local opcionales. Copie HeadlessSecrets.example.h a
+// HeadlessSecrets.h (ignorado por git) o defínalas con -D en la compilación.
+#if __has_include("HeadlessSecrets.h")
+#include "HeadlessSecrets.h"
+#endif
+
 #ifndef HEADLESS_SETUP_STA_SSID
-#define HEADLESS_SETUP_STA_SSID "udd-recicla"
+#define HEADLESS_SETUP_STA_SSID ""
 #endif
 
 #ifndef HEADLESS_SETUP_STA_PASSWORD
-#define HEADLESS_SETUP_STA_PASSWORD "***REMOVED***"
+#define HEADLESS_SETUP_STA_PASSWORD ""
 #endif
 
 enum class StaConnectionState : uint8_t
@@ -192,9 +198,7 @@ public:
     _running = true;
 
     LOG_OUT("Setup Wi-Fi headless activo: ");
-    LOG_OUT(ApSsid);
-    LOG_OUT(" / ");
-    LOG_OUT_LN(ApPassword);
+    LOG_OUT_LN(ApSsid);
     LOG_OUT("URL setup: ");
     LOG_OUT_LN(PortalUrl);
     LOG_OUT("IP setup: ");
