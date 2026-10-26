@@ -8,7 +8,6 @@ on:
       - "scripts/build_flasher_site.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read

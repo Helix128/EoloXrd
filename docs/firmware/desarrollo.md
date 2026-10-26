@@ -94,7 +94,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-El workflow `Release` compila los seis envs y crea el release con un zip por variante. Cada zip trae `bootloader.bin`, `partitions.bin`, `boot_app0.bin` y `firmware.bin`, con las notas que tomó de esa sección del CHANGELOG. Al terminar, el workflow `Pages` vuelve a armar la página con todas las versiones.
+El workflow `Release` compila los seis envs y crea el release con un zip por variante. Cada zip trae `bootloader.bin`, `partitions.bin`, `boot_app0.bin` y `firmware.bin`, con las notas que tomó de esa sección del CHANGELOG. Al terminar, lanza el workflow `Pages` sobre `main`, que vuelve a armar la página con todas las versiones.
 
 La página escribe las cuatro partes en sus offsets y no toca la NVS (`0x9000`), así que el equipo conserva su calibración, presets y Wi-Fi, salvo que se elija borrarlo. El sitio lo genera `scripts/build_flasher_site.py` a partir de `flasher/`. Para agregar una variante, súmala a `flasher/variants.json`; `test/test_build_flasher_site.py` falla si un env de `platformio.ini` no está ahí.
 

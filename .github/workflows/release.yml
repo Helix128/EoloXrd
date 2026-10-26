@@ -93,8 +93,12 @@ jobs:
   pages:
     name: Actualizar página de flasheo
     needs: release
-    uses: ./.github/workflows/pages.yml
+    runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
-      id-token: write
+      actions: write
+    steps:
+      # El environment github-pages solo acepta deploys desde main, así que
+      # se lanza el workflow Pages sobre main en vez de desplegar desde el tag.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "${{ github.repository }}" --ref main
