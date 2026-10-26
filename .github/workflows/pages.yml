@@ -34,10 +34,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail
           mkdir -p releases
-          gh release list --limit 100 --json tagName,publishedAt,url \
-            --jq '.[] | [.tagName, .publishedAt, .url] | @tsv' |
-          while IFS=$'\t' read -r tag date url; do
+          gh release list --limit 100 --exclude-drafts --json tagName,publishedAt \
+            --jq '.[] | [.tagName, .publishedAt] | @tsv' |
+          while IFS=$'\t' read -r tag date; do
+            url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag"
             mkdir -p "releases/$tag"
             gh release download "$tag" -p 'eolo-*.zip' -D "releases/$tag"
             printf '{"tag": "%s", "date": "%s", "url": "%s"}\n' "$tag" "$date" "$url" > "releases/$tag/release.json"
