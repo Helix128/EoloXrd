@@ -165,7 +165,7 @@ class EoloDevHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif path == "/logo_cmas_mini.png":
-            logo_file = ROOT_DIR / "logo_cmas_mini.png"
+            logo_file = ROOT_DIR / "web-server" / "logo_cmas_mini.png"
             if logo_file.exists():
                 data = logo_file.read_bytes()
                 self.send_response(200)

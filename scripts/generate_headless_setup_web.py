@@ -11,6 +11,8 @@ PROJECT_DIR = Path(env.subst("$PROJECT_DIR")) if env else Path(__file__).resolve
 WEB_DIR = PROJECT_DIR / "web-server"
 INDEX_PATH = WEB_DIR / "index.html"
 HEADER_PATH = PROJECT_DIR / "src" / "Headless" / "HeadlessSetupWebPage.h"
+LOGO_HREF = "logo_cmas_mini.png"
+LOGO_PATH = WEB_DIR / LOGO_HREF
 
 
 def read_source(name):
@@ -47,24 +49,29 @@ def build_html():
     css = minify_css(read_source("style.css"))
     js = minify_js(read_source("app.js"))
     
-    logo_path = PROJECT_DIR / "logo_cmas_mini.png"
-    if logo_path.exists():
-        logo_base64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
-        html = html.replace('logo_cmas_mini.png', f'data:image/png;base64,{logo_base64}')
+    logo_base64 = base64.b64encode(LOGO_PATH.read_bytes()).decode("utf-8")
+    html = html.replace(LOGO_HREF, f"data:image/png;base64,{logo_base64}")
 
-    html = re.sub(
+    html = replace_once(
         r'<link\s+rel=["\']stylesheet["\']\s+href=["\']style\.css["\']\s*/?>',
-        lambda _: f"<style>{css}</style>",
+        f"<style>{css}</style>",
         html,
-        count=1,
     )
-    html = re.sub(
+    html = replace_once(
         r'<script\s+src=["\']app\.js["\']\s*>\s*</script>',
-        lambda _: f"<script>\n{js}\n</script>",
+        f"<script>\n{js}\n</script>",
         html,
-        count=1,
     )
     return minify_html(html)
+
+
+def replace_once(pattern, replacement, html):
+    # Si index.html cambia y el patrón deja de calzar, la página quedaría sin
+    # CSS o JS; mejor fallar el build.
+    html, count = re.subn(pattern, lambda _: replacement, html, count=1)
+    if count != 1:
+        raise RuntimeError(f"index.html no contiene el patrón esperado: {pattern}")
+    return html
 
 
 def format_bytes(data):
@@ -97,11 +104,21 @@ static constexpr const size_t kHeadlessSetupHtmlOriginalSize = {len(html.encode(
 """
 
 
+def header_html(header):
+    # Distintas versiones de zlib comprimen distinto el mismo contenido, así que
+    # se compara el HTML descomprimido para no reescribir el header sin motivo.
+    hex_bytes = re.findall(r"0x([0-9a-f]{2})", header.split("PROGMEM", 1)[-1])
+    try:
+        return gzip.decompress(bytes(int(b, 16) for b in hex_bytes)).decode("utf-8")
+    except (OSError, EOFError, UnicodeDecodeError):
+        return None
+
+
 def generate():
-    header = make_header(build_html())
+    html = build_html()
     previous = HEADER_PATH.read_text(encoding="utf-8") if HEADER_PATH.exists() else None
-    if previous != header:
-        HEADER_PATH.write_text(header, encoding="utf-8")
+    if previous is None or header_html(previous) != html:
+        HEADER_PATH.write_text(make_header(html), encoding="utf-8")
         print(f"Generated {HEADER_PATH.relative_to(PROJECT_DIR)}")
 
 
