@@ -1,18 +1,15 @@
-# Validacion de hardware pendiente
+# Discrepancias de hardware pendientes
 
-Este archivo congela las discrepancias que no se pueden resolver con una
-compilacion. Ninguna se corrige automaticamente durante un refactor
-estructural.
+Lista de diferencias entre el firmware, la documentación y las demos que una compilación no puede resolver.
+Sirve para saber qué valores del firmware faltan por confirmar en la placa física. Ninguna se corrige sin esa confirmación.
 
-| Modelo | Decision pendiente | Valor preservado por firmware | Evidencia que falta |
+| Modelo | Decisión pendiente | Valor actual del firmware | Evidencia que falta |
 | --- | --- | --- | --- |
-| Express | CS/controlador OLED frente a RX RS485 en GPIO27 | SPI SSD1309 con CS GPIO27 y RX RS485 GPIO27 | Esquematico o prueba simultanea OLED/RS485 |
-| Express | Escala AFM07 | divisor `100` | Ensayo con caudal conocido |
-| Express Legacy | Orden fisico de motores | PWM0 GPIO25, PWM1 GPIO14 | Esquematico o prueba de bombas |
-| Standard | Controlador OLED | SSD1306 | Identificacion del modulo fisico |
+| EOLO Express Rev.2 | CS del OLED frente a RX RS485 en GPIO27 | SPI SSD1309 con CS GPIO27 y RX RS485 GPIO27 | Esquemático o prueba simultánea OLED y RS485 |
+| EOLO Express Rev.2 | Escala del AFM07 | divisor `100` (`Express.h`) | Ensayo con caudal conocido |
+| EOLO Express Rev.1 | Orden físico de motores | PWM0 GPIO25, PWM1 GPIO14 | Esquemático o prueba de bombas |
+| EOLO-MP | Controlador del OLED | SSD1306 | Identificación del módulo físico |
 
-`scripts/check_pinouts.py` informa explícitamente la diferencia Legacy entre
-la documentación histórica (`14/25`) y el firmware preservado (`25/14`). La
-excepción es estrecha y verifica ambos valores: el chequeo falla si cualquiera
-cambia hasta que exista evidencia de hardware para elegir uno de los dos. No
-debe maquillarse cambiando la documentación o el pinout.
+`scripts/check_pinouts.py` informa de forma explícita la diferencia de Express Rev.1 entre la documentación histórica (`14/25`) y el firmware (`25/14`). Verifica ambos valores y falla si cualquiera cambia, hasta que una prueba en hardware permita elegir uno.
+
+No cambies la documentación ni el pinout solo para que el chequeo pase. Los pinouts por variante están en [pinouts](pinouts/README.md).

@@ -1,16 +1,17 @@
 # Pinouts técnicos EOLO
 
-Pinouts extraídos del firmware en `src/Variants/Pinout.h` y contrastados con `demos/EoloDemoPinout.h`. Esta carpeta documenta el mapeo real usado por los ambientes PlatformIO del repositorio.
+Asignación de pines de cada variante de EOLO, extraída del firmware en `src/Variants/Pinout.h` y contrastada con `demos/EoloDemoPinout.h`.
+Sirve para cablear, revisar o reparar una placa. Refleja el mapeo que usan los ambientes PlatformIO del repositorio.
 
 ## Variantes
 
 | Variante | Target / ambiente | Pinout |
 | --- | --- | --- |
-| EOLO Dron (base, V2) | `EOLO_TARGET_DRON` / `eolo_dron` | [eolo-dron.md](eolo-dron.md) |
-| EOLO Dron Legacy | `EOLO_TARGET_DRON_LEGACY` / `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | [eolo-dron-legacy.md](eolo-dron-legacy.md) |
-| EOLO Standard | `EOLO_TARGET_STANDARD` / `eolo_standard` | [eolo-standard.md](eolo-standard.md) |
-| EOLO Express | `EOLO_TARGET_EXPRESS` / `eolo_express` | [eolo-express.md](eolo-express.md) |
-| EOLO Express Legacy | `EOLO_TARGET_EXPRESS_LEGACY` / `eolo_express_legacy` | [eolo-express-legacy.md](eolo-express-legacy.md) |
+| EOLO Mini Rev.2 | `EOLO_TARGET_DRON` / `eolo_dron` | [eolo-dron.md](eolo-dron.md) |
+| EOLO Mini Rev.1 | `EOLO_TARGET_DRON_LEGACY` / `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | [eolo-dron-legacy.md](eolo-dron-legacy.md) |
+| EOLO-MP | `EOLO_TARGET_STANDARD` / `eolo_standard` | [eolo-standard.md](eolo-standard.md) |
+| EOLO Express Rev.2 | `EOLO_TARGET_EXPRESS` / `eolo_express` | [eolo-express.md](eolo-express.md) |
+| EOLO Express Rev.1 | `EOLO_TARGET_EXPRESS_LEGACY` / `eolo_express_legacy` | [eolo-express-legacy.md](eolo-express-legacy.md) |
 
 ## Notas comunes ESP32
 
@@ -18,5 +19,6 @@ Pinouts extraídos del firmware en `src/Variants/Pinout.h` y contrastados con `d
 - `GPIO34-39` no tienen pull-up/down interno; el firmware los configura como `INPUT` cuando aplica.
 - El firmware valida conflictos básicos de pines en `src/Variants/Pinout.h`.
 - `scripts/check_pinouts.py` verifica que `src/Variants/Pinout.h`, `demos/EoloDemoPinout.h` y estos documentos sigan sincronizados.
-- La configuración de Dron declara `DRONE_SWITCHES_HAVE_EXTERNAL_PULLS` en `platformio.ini`.
+- La configuración de Mini Rev.1 declara `DRONE_SWITCHES_HAVE_EXTERNAL_PULLS` en `platformio.ini`.
 - `EOLO_PIN_UNUSED` equivale a `-1`: función no cableada o no usada para ese target.
+- Las diferencias entre el firmware y la documentación que aún no se confirman en hardware están en [Discrepancias de hardware pendientes](../discrepancias-pines.md).

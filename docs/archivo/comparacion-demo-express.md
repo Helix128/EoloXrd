@@ -1,5 +1,7 @@
 # Comparación histórica: demo secuencial y firmware EOLO Express
 
+> Documento histórico. No describe el estado actual del firmware.
+
 Este documento conserva las diferencias que motivaron la consolidación del
 firmware Express. La configuración vigente se consulta en
 `src/Variants/Profiles/Express.h` y el mapa eléctrico autoritativo en

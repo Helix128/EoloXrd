@@ -1,5 +1,7 @@
 # Validación de entrega EOLO Dron Low Power — 2026-08-31
 
+> Documento histórico. No describe el estado actual del firmware.
+
 ## Alcance y veredicto
 
 Se validó el árbol de trabajo presente al iniciar la prueba y únicamente el

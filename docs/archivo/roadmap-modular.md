@@ -1,6 +1,8 @@
 # Roadmap de modularización EOLO
 
-Este documento acompaña a [architecture.md](architecture.md), que es la
+> Documento histórico. No describe el estado actual del firmware.
+
+Este documento acompaña a [arquitectura.md](../firmware/arquitectura.md), que es la
 descripción viva de las capas y sus dependencias.
 
 ## Hitos completados

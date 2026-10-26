@@ -1,5 +1,7 @@
 # Plan de reestructuración del firmware
 
+> Documento histórico. No describe el estado actual del firmware.
+
 Objetivo: separar el código por familia de producto (UI y headless), reducir los
 `#if`/`#ifdef` de variante en código compartido y extraer lógica pura a
 `EoloCore` con tests `native`, sin cambiar el comportamiento del firmware.

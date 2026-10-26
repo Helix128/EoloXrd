@@ -1,75 +1,86 @@
-# Guía para continuar EOLO
+# Desarrollo del firmware
 
-El firmware y las librerías locales mantienen implementaciones header-only.
-`src/main.cpp` es únicamente la entrada Arduino. No agregue nuevas unidades
-`.c` o `.cpp` para extraer lógica: ubique cada definición `inline` en el header
-del dueño y mantenga compilable cada corte.
+Esta guía explica cómo hacer cambios habituales en el código: dónde va cada parámetro, cómo agregar un sensor, una escena, una demo o una prueba.
+Es para quien ya compiló el proyecto y va a tocarlo.
+La estructura del código está en [arquitectura.md](arquitectura.md); cómo compilar y flashear, en [compilacion.md](compilacion.md).
+
+## Requisitos
+
+Necesitas PlatformIO Core (`python3 -m pip install platformio`), Python 3 y un cable USB de datos. Para flashear necesitas además una placa ESP32 de la variante correspondiente. `./eolo help` lista los comandos de compilación, respaldo y versión.
+
+## Convenciones de código
+
+El firmware y las librerías locales son header-only. No agregues archivos `.c` ni `.cpp` para extraer lógica: define las funciones `inline` en el header que corresponda. `src/main.cpp` es solo la entrada Arduino.
+
+La lógica que no necesita Arduino, FreeRTOS ni pines va en `lib/EoloCore/include/Eolo/`. Así se prueba en el host con `pio test -e native`. El código que toca hardware va en `src/`.
+
+Sigue el estilo de llaves e `#include` del archivo que editas; no hay formateador configurado. Usa `PascalCase` para tipos, `camelCase` para métodos y campos, y `UPPER_SNAKE_CASE` para flags de compilación (`EOLO_TARGET_DRON_LEGACY`). `src/Ui/` y `src/Headless/` no se incluyen entre sí; `scripts/check_family_boundaries.py` lo comprueba.
+
+## Archivos generados
+
+No edites a mano estos archivos:
+
+- `src/Headless/HeadlessSetupWebPage.h` lo genera `scripts/generate_headless_setup_web.py` antes de compilar los entornos headless. La fuente está en `web-server/`.
+- `platformio.demos.ini` lo genera `scripts/generate_demo_envs.py` a partir de `demos/`.
+
+## Secretos locales
+
+Las credenciales de la red Wi-Fi del laboratorio no están en el repositorio. Copia `src/Headless/HeadlessSecrets.example.h` a `src/Headless/HeadlessSecrets.h` (ignorado por git) y completa los valores. También puedes pasarlas con `-D HEADLESS_SETUP_STA_SSID=... -D HEADLESS_SETUP_STA_PASSWORD=...`. Sin ese archivo, el Mini Rev.1 no se conecta a una red local, salvo que la configures desde la página de setup.
 
 ## Dónde cambiar un parámetro
 
-| Tipo de valor | Dueño | Ejemplo |
+| Qué cambias | Dónde | Ejemplo |
 | --- | --- | --- |
-| Capacidad del firmware | `platformio.ini` y `Variants/VariantValidation.h` | `FEATURE_FLOW_PID` |
-| Ajuste de una variante | `src/Variants/Profiles/<Modelo>.h`, expuesto por `ActiveProfile.h` | `Profile::kFlowPid`, umbrales NTC |
+| Capacidad del firmware | `platformio.ini` y `src/Variants/VariantValidation.h` | `FEATURE_FLOW_PID` |
+| Ajuste de una variante | `src/Variants/Profiles/<Modelo>.h`, expuesto por `ActiveProfile.h` | `EoloConfig::Profile::kFlowPid`, umbrales del NTC |
 | GPIO y cableado | `src/Variants/Pinouts/<Modelo>.h`, seleccionado por `Pinout.h` | pines de motor, buses y display |
-| Constante interna de un módulo | Header del módulo | cadencia propia del servicio |
-| Dato de usuario persistido | Servicio que lee y escribe NVS | `SessionStore.h`: namespace `eolo_session`, clave `startDate` |
+| Constante interna de un módulo | El header del módulo | cadencia propia de un servicio |
+| Dato persistido | El servicio que lee y escribe NVS | `SessionStore.h`: namespace `eolo_session`, clave `startDate` |
 
-`Variants/Legacy.h` conserva los alias todavía consumidos. Para retirar uno,
-cambie primero sus consumidores a `EoloConfig` o al dueño real, confirme con
-`rg` que no quedan usos y compile las variantes. Los macros de selección de
-código y los símbolos de librerías de display siguen siendo macros.
+Los valores numéricos de ajuste no van en `build_flags`; crea la constante en el perfil. Los macros se reservan para elegir código (`EOLO_TARGET_*`, `FEATURE_*`).
 
-## Cómo añadir una variante
+`src/Variants/Legacy.h` conserva alias para código antiguo. Para retirar uno, cambia sus usos a `EoloConfig` o al módulo que lo define, confirma con `rg` que no quedan referencias y compila todas las variantes.
 
-1. Añada el perfil completo en `src/Variants/Profiles/` y su selección exclusiva
-   en `ActiveProfile.h`.
-2. Añada un pinout completo en `src/Variants/Pinouts/`, selección en `Pinout.h` y
-   reglas de conflicto en `PinoutValidation.h`.
-3. Declare target y capacidades explícitas en `platformio.ini` y valídelas en
-   `Variants/VariantValidation.h`. Actualice `scripts/demo_config.py` si la
-   variante soporta demos; regenere `platformio.demos.ini` con
-   `scripts/generate_demo_envs.py`.
-4. Documente el mapa en `pinouts/` y ejecute `scripts/check_pinouts.py`.
-   No cambie claves NVS ni formato CSV para introducir una variante.
+## Agregar un sensor
 
-## Cómo seguir una captura
+Sigue el patrón de AFM07, NTC o Plantower.
 
-La entrada es `Application/ActiveApplication.h`. En Dron,
-`DronApplication.h` comprueba switches o setup Wi-Fi y llama a
-`Context::beginCapture()`. El preflight verifica SD, AFM07 y NTC antes de
-`CaptureController::begin()`. Las definiciones que necesitan el `Context`
-completo están en `Data/ContextCaptureController.h`, incluido al final de
-`Context.h`.
+1. Si hay conversión o parseo, crea el modelo en `lib/EoloCore/include/Eolo/Core/Sensors/` y su DTO en `lib/EoloCore/include/Eolo/Types/`. No incluyas Arduino ahí; `scripts/audit_eolo_core_deps.sh` lo comprueba.
+2. Crea el adaptador en `src/Common/Sensors/`. Debe tener `begin()` idempotente y `getData(DTO&)` que informe validez y frescura, como `NTC::getData(NTCData&)`.
+3. Si el sensor es opcional, protégelo con un `FEATURE_*` nuevo, declarado en el entorno de `platformio.ini` y validado en `VariantValidation.h`.
+4. Agrega el miembro en `Components` (`src/Common/Data/Components.h`) e inicialízalo en `Components::begin()`.
+5. Si va al CSV, agrega la columna en `src/Common/Data/Logging/LogSchema.h` y el campo en `LogRecord`. Cambiar el formato afecta a quien lee los CSV; documéntalo en [docs/datos/](../datos/README.md).
+6. Agrega pruebas del modelo en `test/test_eolo_core_native/test_main.cpp`.
 
-En cada ciclo, `DronApplication::update()` llama a `Context::update()`. Ahí se
-sondea la protección térmica, se aplica seguridad de captura y se llama a
-`CaptureController::update()`. Ese controlador calcula tiempo y flujo objetivo,
-actualiza motor y volumen, y solicita registro cada 10 segundos. Un fallo de
-seguridad aborta la captura y pone el motor a PWM cero. El cierre normal
-encola el registro final y apaga el motor. `LogService` y `SessionStore` son
-los dueños de CSV/SD y NVS.
+Los pines van en el pinout de cada modelo que lleve el sensor, nunca en el adaptador.
 
-`lib/EoloCore` solo contiene lógica portable y tipos sin Arduino. Los drivers
-y la aplicación están en `src`; todavía no existe una librería
-`EoloHardware`.
+## Agregar una escena
 
-## Prueba mínima por corte
+Aplica solo a las variantes con pantalla (`Ui/`).
 
-```sh
-pio run -e eolo_express -e eolo_express_legacy -e eolo_standard -e eolo_dron_legacy -e eolo_dron_legacy_low_power
-pio test -e native
-python3 scripts/check_pinouts.py
-python3 scripts/check_family_boundaries.py
-bash scripts/audit_eolo_core_deps.sh
-git diff --check
-```
+1. Copia `src/Ui/Scenes/Template.h` a la carpeta que corresponda (`Captura/`, `Setup/` o la raíz de `Scenes/`) y renómbrala. La escena implementa `IScene`; agrégale `static constexpr const char *Name`, que usa el registro.
+2. Dibuja en `update(Context&)` y libera en `exit(Context&)` cualquier hardware que hayas activado en la escena.
+3. Regístrala en `src/Ui/Drawing/SceneRegistry.h`: incluye el header, agrega una constante en `SceneName`, crea la instancia estática y añádela con `makeScene(...)` a `scenes[]`.
+4. Navega a ella con `SceneManager::setScene(SceneName::MiEscena, ctx)`.
 
-`scripts/check_all.sh` ejecuta todo lo anterior y compila los 5 entornos
-(`--with-hw-suites` compila las suites de `test/` en `eolo_dron_legacy` y
-`--with-demos` compila todas las demos).
+Para ver las pantallas sin placa existe `scripts/ui_preview/`.
 
-Si se toca la composición de `Context`, compile también
-`demo_dronprodtest_dron`. La compilación no reemplaza una prueba física de
-arranque, captura, apagado seguro del motor y datos guardados en Dron.
-Standard, Express y Legacy requieren sus propias placas para validación física.
+## Agregar una demo
+
+Una demo es un sketch aislado para probar un componente en una placa. Crea `demos/NuevaDemo/NuevaDemo.ino`, deja el bloque `#define EOLO_MODEL_*` arriba como valor por defecto y usa los pines de `demos/EoloDemoPinout.h`. Si necesita librerías o modelos extra, regístrala en `scripts/demo_config.py`. Después regenera `platformio.demos.ini` y compila con los comandos de [demos/README.md](../../demos/README.md).
+
+## Agregar una prueba
+
+Las pruebas portables van en `test/test_eolo_core_native/test_main.cpp`: escribe una función `test_<comportamiento>` y regístrala con `RUN_TEST`. Las que necesitan una placa van en `test/<suite>/test_main.cpp`. Para el detalle de cada suite y cómo ejecutarla, ver [test/README.md](../../test/README.md).
+
+Tras cambiar `Context` o la composición de una variante, compila también la demo `demo_dronprodtest_dron_legacy`. Una compilación no reemplaza una prueba física de arranque, captura, apagado seguro del motor y datos guardados; EOLO-MP, Express y Mini Rev.1 necesitan cada uno su placa.
+
+## Verificación
+
+Compilar no prueba el hardware, así que reporta por separado lo que compiló, lo que corrió en el host y lo que probaste en placa. Los comandos de prueba están en [test/README.md](../../test/README.md).
+
+Las pruebas en hardware requieren la placa de la variante conectada. Indica su puerto con `--test-port`; no las ejecutes contra otra variante.
+
+## Commits
+
+Usa Conventional Commits con la descripción en español, por ejemplo `fix(modem): serializa el spool de telemetría entre tareas`. Los tipos habituales son `fix`, `feat`, `docs` y `chore`.

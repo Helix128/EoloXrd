@@ -1,8 +1,8 @@
-# Pinout EOLO Express Legacy
+# Pinout EOLO Express Rev.1
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
 
-EOLO Express Legacy comparte la mayor parte del mapa base con EOLO Standard y EOLO Express. La diferencia funcional principal es el sensor de flujo legacy FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
+EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Express Rev.2. La diferencia funcional principal es el sensor de flujo FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 
 ## Resumen
 
@@ -33,7 +33,7 @@ EOLO Express Legacy comparte la mayor parte del mapa base con EOLO Standard y EO
 
 | Función | Estado en `eolo_express_legacy` |
 | --- | --- |
-| Sensor de flujo | FS3000 legacy (`FEATURE_FLOW_FS3000`) |
+| Sensor de flujo | FS3000 (`FEATURE_FLOW_FS3000`) |
 | AFM07 | No habilitado |
 | Plantower | Habilitado |
 | Módem | No habilitado por flags de build |
@@ -46,4 +46,5 @@ EOLO Express Legacy comparte la mayor parte del mapa base con EOLO Standard y EO
 ## Notas
 
 - El mapa de motores `GPIO14/25` deja libre `GPIO27` para el CS del OLED SPI.
-- Plantower usa `GPIO16/GPIO17`, pines de módem no usados por Express Legacy.
+- Plantower usa `GPIO16/GPIO17`, pines de módem no usados por Express Rev.1.
+- El orden de `PWM 0` y `PWM 1` no está confirmado en placa. La tabla sigue la documentación histórica; el firmware usa `MOTOR_PWM_PIN_0 25` y `MOTOR_PWM_PIN_1 14`. Ver [Discrepancias](../discrepancias-pines.md).

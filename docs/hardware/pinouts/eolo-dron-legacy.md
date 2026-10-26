@@ -1,4 +1,4 @@
-# Pinout EOLO Dron
+# Pinout EOLO Mini Rev.1
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_DRON_LEGACY`.
 

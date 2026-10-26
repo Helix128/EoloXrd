@@ -1,12 +1,8 @@
-# Pinout EOLO Express
+# Pinout EOLO Express Rev.2
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS`.
 
-**Ground truth:** este mapa proviene de la demo secuencial oficial del EOLO
-Express (demo del profesor). El firmware Express **ya no** comparte el bloque de
-pines con Standard: tiene su propio bloque en `Pinout.h`. No habilita módem,
-anemómetro, doble batería ni NeoPixel. Express no es headless, por lo que los
-switches de captura no se usan.
+Referencia: este mapa proviene de la demo secuencial oficial de EOLO Express Rev.2. Tiene su propio bloque de pines en `Pinout.h`, distinto del de EOLO-MP. No habilita módem, anemómetro, doble batería ni NeoPixel. No es headless, por lo que los switches de captura no se usan.
 
 ## Resumen
 
@@ -32,9 +28,7 @@ switches de captura no se usan.
 | Módem | PWR/RX/TX | `EOLO_PIN_UNUSED` | `MODEM_*_PIN` |
 | LED estado | NeoPixel | `EOLO_PIN_UNUSED` | `NEOPIXEL_PIN` |
 
-**AFM07:** Modbus RTU, ID esclavo **2**, **4800 8N1**, registro de flujo
-instantáneo `0x0000` (raw/10 = L/min). El firmware usa `SoftwareSerial` sobre
-GPIO27/25; la demo del profe usa `Serial1` sobre los mismos pines.
+AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro de flujo instantáneo `0x0000`. Caudal = raw / 100 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Express.h`. Esa escala aún no tiene ensayo con caudal conocido; ver [Discrepancias](../discrepancias-pines.md). El firmware usa `SoftwareSerial` sobre GPIO27/25; la demo usa `Serial1` sobre los mismos pines.
 
 ## Funciones no usadas por firmware Express
 
@@ -47,7 +41,6 @@ GPIO27/25; la demo del profe usa `Serial1` sobre los mismos pines.
 | NTC motor | `EOLO_PIN_UNUSED` |
 | Motor FG | `EOLO_PIN_UNUSED` |
 | Switches captura | `EOLO_PIN_UNUSED` (Express no es headless) |
-| Módem | `EOLO_PIN_UNUSED` |
 
 ## Notas
 

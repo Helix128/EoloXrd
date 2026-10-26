@@ -1,156 +1,128 @@
-# Manual de usuario EOLO Express
+# Manual EOLO Express Rev.2
 
-EOLO Express se opera desde pantalla con encoder y boton. Usa sensor de flujo AFM07 y Plantower para material particulado. A diferencia de EOLO Standard, no incluye modem, anemometro ni sistema de doble bateria.
+EOLO Express Rev.2 es el equipo con pantalla y encoder que captura aire y registra flujo (AFM07) y material particulado (Plantower). Usa una sola batería.
 
-## Preparacion
+No tiene módem, anemómetro ni doble batería. Todo se maneja desde la pantalla con el encoder y su botón.
 
-1. Cargue y conecte la bateria.
-2. Inserte una microSD.
-3. Revise mangueras, filtros, bombas y entrada/salida de aire.
-4. Verifique que el AFM07 y el Plantower esten conectados.
-5. Encienda el equipo y espere el menu principal.
+## Antes de salir a terreno
 
-## Pinout técnico
+1. Conecta la batería cargada.
+2. Inserta una microSD antes de encender. El equipo revisa la SD solo al arrancar.
+3. Revisa mangueras, filtros, bombas y la entrada y salida de aire.
+4. Enciende el equipo y espera el menú principal.
+5. Entra en Componentes, luego en Sensores, y comprueba que Flujo y Plantower muestren OK.
 
-El pinout real usado por el firmware de EOLO Express está documentado en [`../pinouts/eolo-express.md`](../pinouts/eolo-express.md).
+## Controles
 
-## Controles e iconos
+- Gira el encoder para cambiar valores o moverte por los menús.
+- Presiona el botón del encoder para confirmar.
 
-- **Encoder:** gire para cambiar valores o moverse por menus.
-- **Boton del encoder:** presione para confirmar.
-- **Pantalla:** muestra hora, estado SD, nombre EOLO y bateria.
-- **Icono SD:** indica tarjeta disponible, escritura o error.
-- **Bateria:** muestra el porcentaje estimado de bateria simple.
+La barra superior muestra la hora, el estado de la SD y la batería. El ícono de la SD indica tarjeta disponible, escribiendo, con error (`!`) o sin tarjeta (X).
 
-Este modelo no muestra icono de modem ni doble bateria.
+## Menú principal
 
-## Menu principal
-
-| Opcion | Uso |
+| Opción | Uso |
 | --- | --- |
-| Nueva sesion | Crea una captura programada desde cero. |
-| Continuar sesion | Reanuda una sesion guardada, si existe. |
-| Captura rapida | Inicia una captura cercana al momento actual, con duracion por defecto de 1 hora. |
-| Ajustar reloj | Permite cambiar la hora manualmente. La opcion Sincronizar puede fallar o no aplicar si el firmware no tiene modem. |
-| Calibrar bombas | Ejecuta la calibracion guiada de bombas y flujo. |
-| Probar componentes | Muestra sensores y permite probar cada motor por separado. |
+| Nueva sesión | Programa una captura: flujo, hora de inicio y hora de fin. |
+| Continuar sesión | Reanuda la sesión guardada. Aparece solo si existe. |
+| Captura rápida | Inicia una captura inmediata de 1 hora. |
+| Ajustar reloj | Cambia la hora a mano. |
+| Calibrar bombas | Ejecuta la calibración guiada de bombas. |
+| Componentes | Muestra los sensores y prueba cada motor. |
 
-## Nueva sesion
+### Reloj
 
-1. Seleccione **Nueva sesion**.
-2. Ajuste el **flujo objetivo** entre 0.0 y 8.0 L/min.
-3. Confirme la **hora de inicio**.
-4. Confirme la **hora de fin**. La pantalla muestra la duracion calculada.
-5. El equipo pasa a espera. Se muestra flujo actual, hora de inicio y tiempo restante.
-6. Al llegar la hora de inicio, comienza la captura.
-7. Al llegar la hora de fin, la captura termina y las bombas se apagan.
+Revisa el reloj antes de una campaña larga. El nombre del archivo y la columna `time` dependen de esa hora.
 
-Durante la espera, al presionar el boton se vuelve al menu principal y se guarda la sesion.
+Ajustar reloj ofrece Cambiar hora (hora y minuto), Sincronizar y Regresar. Express no tiene módem, así que Sincronizar no cambia la hora. Usa Cambiar hora.
 
-## Captura rapida
+## Capturar
 
-1. Seleccione **Captura rapida**.
-2. Ajuste el flujo objetivo entre 0.0 y 8.0 L/min.
-3. Confirme con el boton.
-4. El equipo programa el inicio inmediato y una duracion de 1 hora.
+### Nueva sesión
 
-## Pantalla durante captura
+1. Elige Nueva sesión.
+2. Ajusta el flujo objetivo entre 0.0 y 8.0 L/min. El encoder avanza en pasos de 0.1.
+3. Confirma la hora de inicio. Si la hora ya pasó, el equipo usa el minuto siguiente.
+4. Confirma la hora de fin. Debe ser posterior al inicio. La pantalla muestra la duración calculada.
+5. El equipo queda en espera y muestra el flujo actual, la hora de inicio y el tiempo restante. Al llegar la hora de inicio comienza la captura. Al llegar la hora de fin termina y las bombas se apagan.
 
-La pantalla principal muestra flujo actual y volumen capturado. Girando el encoder se recorren vistas inferiores con:
+Durante la espera, el botón guarda la sesión y vuelve al menú principal.
 
-- Temperatura, humedad y presion.
-- PM1.0, PM2.5 y PM10.
+### Captura rápida
+
+1. Elige Captura rápida.
+2. Ajusta el flujo objetivo entre 0.0 y 8.0 L/min.
+3. Confirma. La captura empieza de inmediato y dura 1 hora.
+
+### Durante la captura
+
+La vista principal muestra el flujo actual y el volumen capturado. Girar el encoder cambia de vista, en este orden:
+
+- Temperatura, humedad y presión.
+- PM1.0 y PM2.5, y después PM10.
 - Flujo configurado.
-- Tiempo transcurrido.
-- Tiempo restante.
-- Hora de fin.
+- Tiempo transcurrido y tiempo restante.
+- Hora de inicio y hora de fin.
 
-Presione el boton para abrir el menu de captura.
+Presionar el botón abre el menú de captura. Mientras el menú está abierto, la captura queda en pausa, y el tiempo en pausa alarga la duración de la sesión.
 
-## Menu durante captura
-
-| Opcion | Uso |
+| Opción | Uso |
 | --- | --- |
-| Continuar | Vuelve a la captura. |
-| Finalizar | Termina la captura y apaga bombas. |
-| Probar bombas | Permite probar bombas y ver flujo medido. |
-| Ajustar hora fin | Cambia la hora de termino. |
-| Ajustar reloj | Ajusta el reloj; la sincronizacion por red puede no aplicar. |
-| Ajustar flujo | Cambia el flujo objetivo de la sesion. |
+| Continuar | Reanuda la captura. |
+| Finalizar | Termina la captura y apaga las bombas. |
+| Probar bombas | Cambia la potencia con el encoder (0 a 100 %) y muestra el flujo medido. Al salir, las bombas se apagan. |
+| Ajustar hora fin | Cambia la hora de término. |
+| Ajustar reloj | Cambia la hora del reloj. |
+| Ajustar flujo | Cambia el flujo objetivo de la sesión. |
 
-## Datos generados
+Al terminar, la pantalla «Fin de captura» muestra la hora de inicio, la de fin, el flujo y el volumen capturado. Si una bomba deja de dar flujo, la pantalla dice «Falla bomba». Presionar el botón abre el menú final con Ajustar reloj, Reiniciar EOLO y Regresar.
 
-Los datos se guardan en:
+## Descargar los datos
+
+Retira la microSD y cópiala a un computador. Copia la carpeta `/EOLO` completa para que los enlaces de `log_index.html` sigan funcionando.
 
 ```text
-/EOLO/logs/log_<fecha>.csv
-/EOLO/log_index.csv
-/EOLO/log_index.html
+/EOLO/logs/log_<inicio>.csv   un archivo por captura
+/EOLO/log_index.csv           índice de capturas
+/EOLO/log_index.html          el mismo índice, con enlaces a cada CSV
 ```
 
-`log_index.csv` es el indice maestro de capturas y `log_index.html` permite
-recorrerlo en un navegador, con enlaces a cada CSV. Copie o conserve la
-carpeta `/EOLO` completa para que los enlaces relativos sigan funcionando.
-El indice CSV usa las columnas `log_file,start_date,start_time,end_date,end_time,captured_volume_l`.
+El formato de los CSV, incluido el nombre de cada archivo y las columnas de cada variante, está en [`../datos/README.md`](../datos/README.md).
 
-El intervalo de registro es de 10 segundos. El CSV de EOLO Express contiene:
+## Calibración
 
-```text
-time,flow,flow_target,captured_volume,temperature,humidity,pressure,pm1,pm25,pm10,battery_pct
-```
+Usa Calibrar bombas cuando cambies bombas, mangueras o parte del circuito de aire, cuando el flujo real no siga al objetivo o antes de una campaña crítica.
 
-EOLO Express no registra `wind_speed` ni `wind_direction`, porque no incluye anemometro. Las columnas PM corresponden al sensor Plantower.
+1. Arma el circuito de aire como lo usarás en terreno.
+2. Elige Calibrar bombas.
+3. El equipo mide cada motor y genera las rampas de calibración, primero para el motor débil y luego para el fuerte.
+4. Espera a que termine y pulsa el botón para volver al menú principal. La pantalla no muestra si la curva es válida.
+5. Revisa el resultado en la consola serie. Si la curva no cumple los mínimos, aparece «Calibración NO válida» y el equipo conserva la curva anterior. Después haz una captura corta de prueba.
 
-`captured_volume` es el volumen acumulado desde el inicio de la captura, expresado en litros con tres decimales. Una captura nueva comienza en `0.000`.
+Durante el barrido, el botón pausa la calibración y apaga las bombas. El encoder alterna entre Continuar y Cancelar, y el botón confirma. Cancelar vuelve al menú principal y conserva la curva anterior.
 
-Al finalizar manualmente o por tiempo, se agrega una ultima muestra con la
-hora real del RTC y luego se actualizan ambos indices. Si el equipo recupera
-un log historico tras un reinicio o corte, infiere el termino y el volumen
-desde la ultima fila valida disponible, que puede ser anterior al termino real.
+No obstruyas el flujo ni desconectes sensores o bombas durante el proceso. Si falla o el flujo queda inestable, revisa fugas, filtros, mangueras y alimentación antes de repetir.
 
-## Reloj
+La calibración es opcional. Sin curva guardada, el control arranca con el Motor 1 y ajusta el caudal en lazo cerrado. Una curva válida solo acelera la llegada al objetivo. La curva se guarda en la memoria Flash, no en la SD. La relación entre flujo y bombas está en [Calibración de flujo y bombas](../hardware/calibracion/README.md).
 
-En **Ajustar reloj** hay tres opciones:
+## Problemas comunes
 
-- **Cambiar hora:** ajuste manual de hora y minuto.
-- **Sincronizar:** puede fallar o no aplicar en Express, ya que el firmware de este modelo no tiene modem.
-- **Regresar:** vuelve a la pantalla anterior.
+Los comandos de la consola serie se escriben a 115200 baudios. Si falta la SD, las filas no se escriben. Si falta un sensor, su columna del CSV queda en `-1`.
 
-Revise el reloj antes de iniciar campanas largas, porque el nombre del archivo y la columna `time` dependen de esta hora.
-
-## Calibracion de bombas
-
-Use **Calibrar bombas** cuando:
-
-- Se cambien bombas, mangueras o componentes del circuito de aire.
-- El flujo real no siga el flujo objetivo.
-- Se prepare el equipo para una campana critica.
-
-Procedimiento:
-
-1. Asegure que el circuito de aire este armado como se usara en terreno.
-2. Seleccione **Calibrar bombas**.
-3. El equipo mide cada motor, identifica el motor debil y genera rampas de calibracion.
-4. Espere el resultado en pantalla; no es necesario reiniciar el equipo.
-5. Realice una captura corta de prueba.
-
-Referencia visual de calibracion de flujo:
-
-![Calibracion FS3000 vs AFM07](assets/calibracion-fs3000.png)
-
-Advertencias:
-
-- No obstruya el flujo durante la calibracion.
-- No desconecte sensores ni bombas durante el proceso.
-- Si la calibracion falla o el flujo queda inestable, revise fugas, filtros, mangueras y alimentacion antes de repetir.
-- La calibracion no es un requisito para usar EOLO: sin una curva guardada, el control inicia con Motor 1 y ajusta el caudal con el lazo cerrado. Una curva valida solo acelera la llegada al objetivo.
-- Durante el barrido, el boton pausa con las bombas apagadas; elija Continuar o Cancelar. Cancelar conserva la curva anterior.
-
-## Solucion de problemas
-
-| Sintoma | Revision recomendada |
+| Síntoma | Qué revisar |
 | --- | --- |
-| No hay archivo CSV | Revise la microSD y reinicie el equipo. |
-| Flujo inestable | Revise mangueras, filtros, fugas y calibracion de bombas. |
-| PM en cero o sin cambios | Revise conexion y alimentacion del Plantower. |
-| Sincronizar reloj falla | Use Cambiar hora manualmente; Express no tiene modem. |
+| Al encender aparece «Revisar SD» o el ícono de SD tiene X | No hay tarjeta o no se pudo abrir. Inserta la tarjeta y reinicia el equipo: la SD solo se revisa al arrancar. |
+| El ícono de SD muestra `!` durante la captura | Error de escritura. El equipo no vuelve a intentar la SD hasta reiniciarse. Revisa la tarjeta y reinicia antes de la siguiente captura. |
+| No hay CSV después de una captura | La SD faltaba o tenía error. La consola muestra «SD no disponible; se omite log local». |
+| El flujo muestra `--` o «Sin dato» en Componentes > Sensores | El AFM07 no responde. Revisa cableado y alimentación. |
+| El flujo es inestable | Revisa mangueras, filtros y fugas. Repite Calibrar bombas si el circuito cambió. |
+| La captura termina con «Falla bomba» | El AFM07 marcó caudal cero con la bomba encendida, así que el equipo detuvo la captura. Revisa bombas, mangueras, filtros y alimentación. Prueba cada motor en Componentes > Motores antes de iniciar otra captura. |
+| El PM muestra 0 o no cambia | El Plantower no responde. Sin lectura válida, la pantalla muestra 0 y el CSV guarda `-1`. Revisa su conexión y alimentación. |
+| La batería muestra «Sin dato» | No hay lectura válida de la batería. Revisa la conexión. El CSV guarda `-1`. |
+| La hora del archivo es incorrecta | Ajusta la hora con Ajustar reloj > Cambiar hora. Sincronizar no funciona en Express. |
+| «Calibración NO válida» en la consola | La curva no cumplió los mínimos: al menos 6 puntos y un rango de flujo de 0.25 L/min. Revisa el circuito y repite. |
+
+## Más información
+
+- Pinout y conexiones: [`../hardware/pinouts/eolo-express.md`](../hardware/pinouts/eolo-express.md)
+- Calibración y sensores de flujo: [`../hardware/calibracion/README.md`](../hardware/calibracion/README.md)

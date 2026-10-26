@@ -1,5 +1,7 @@
 # Progreso de modularización de sensores EOLO
 
+> Documento histórico. No describe el estado actual del firmware.
+
 La lógica reutilizable vive en `lib/EoloCore`; los adaptadores con Arduino,
 FreeRTOS, pines y buses permanecen en `src/Common/Sensors`.
 

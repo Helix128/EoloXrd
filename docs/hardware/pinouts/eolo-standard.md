@@ -1,4 +1,4 @@
-# Pinout EOLO Standard
+# Pinout EOLO-MP
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_STANDARD`.
 
@@ -19,7 +19,7 @@ este controlador.
 | microSD | MISO | `GPIO19` | `SD_MISO_PIN` |
 | microSD | SCK | `GPIO18` | `SD_SCK_PIN` |
 | Switches headless | SW0..SW3 | `EOLO_PIN_UNUSED` | `WAIT_SW*_PIN`, `DURATION_SW*_PIN` |
-| Batería | ADC | `GPIO34` | `BATTERY_ADC_PIN` |
+| Batería | ADC (sin uso: la batería dual se lee por I2C) | `GPIO34` | `BATTERY_ADC_PIN` |
 | RS485 | RX | `GPIO35` | `RS485_RX_PIN` |
 | RS485 | TX | `GPIO33` | `RS485_TX_PIN` |
 | RS485 | DE/RE | `GPIO26` | `RS485_DE_RE_PIN` |
@@ -35,13 +35,13 @@ este controlador.
 
 ## RS485 compartido
 
-El Standard comparte un único transceptor entre los dos instrumentos. Ambos
+El EOLO-MP comparte un único transceptor entre los dos instrumentos. Ambos
 usan Modbus RTU a **4800 8N1** y el firmware conserva las direcciones físicas:
 
-| Esclavo | ID | Consulta | Prioridad | Periodicidad nominal |
+| Esclavo | ID | Consulta | Prioridad | Temporización |
 | --- | ---: | --- | --- | ---: |
-| AFM07 | `0x02` | Holding `0x0000`, 1 registro | Crítica | 800 ms |
-| Anemómetro | `0x01` | Holding `0x0000`, 2 registros | Opcional | 1100 ms |
+| AFM07 | `0x02` | Holding `0x0000`, 1 registro | Crítica | 250 ms de descanso tras cada consulta (`EOLO_AFM07_POLL_GAP_MS`) |
+| Anemómetro | `0x01` | Holding `0x0000`, 2 registros | Opcional | cada 1100 ms |
 
 `RS485Scheduler` es el único propietario del UART y de `DE/RE`. Antes de cada
 consulta exige 8 ms de silencio continuo, transmite con `DE` activo y vuelve a
@@ -52,7 +52,7 @@ AFM07. Un anemómetro ausente se reintenta
 cada 5 s, sin desplazar la ventana crítica del AFM07.
 
 No se cambia automáticamente el ID de ningún instrumento. Si el AFM07 no está
-en `0x02`, corrija su configuración física antes de diagnosticar el bus. Use
+en `0x02`, corrige su configuración física antes de diagnosticar el bus. Usa
 `rs485 status` en la consola para revisar estado, latencia, huecos entre
 intentos, bytes tardíos, tramas inesperadas y recuperaciones del transceptor.
 
@@ -70,5 +70,6 @@ intentos, bytes tardíos, tramas inesperadas y recuperaciones del transceptor.
 - `GPIO34`, `GPIO35`, `GPIO36` y `GPIO39` son solo entrada.
 - `GPIO27` queda dedicado a CS del OLED; NeoPixel está deshabilitado.
 - Los motores usan `GPIO14/25` con PWM directo (`duty 0 = apagado`), por lo que no comparten GPIO con el OLED.
-- Plantower mantiene `GPIO34/GPIO32`: `GPIO34` no se usa como ADC en Standard porque la batería es dual por I2C; `GPIO32` no se usa como switch en firmware no-headless.
-- El firmware Standard habilita módem, anemómetro, doble batería, AFM07 y Plantower mediante flags de `platformio.ini`.
+- Plantower mantiene `GPIO34/GPIO32`: `GPIO34` no se usa como ADC en EOLO-MP porque la batería es dual por I2C; `GPIO32` no se usa como switch en firmware no-headless.
+- El firmware EOLO-MP habilita módem, anemómetro, doble batería, AFM07 y Plantower mediante flags de `platformio.ini`.
+- AFM07: caudal = raw / 10 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Standard.h`. Es distinto del `/100` de EOLO Mini Rev.2, Mini Rev.1 y EOLO Express Rev.2.

@@ -1,137 +1,61 @@
 <p align="center">
-  <img src="docs/assets/eolo-logo.png" alt="EOLO" width="520">
+  <img src="docs/assets/eolo-logo.png" alt="EOLO" width="420">
 </p>
 
-# EOLOXrd - Firmware de dispositivos de la serie EOLO
+# EoloXrd
 
-Firmware PlatformIO/Arduino para **EOLO**, dispositivo desarrollado por el **Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo** (a.k.a C+) y sus variantes operativas.
+Firmware PlatformIO/ESP32 de la familia de equipos EOLO.
 
-Este repositorio contiene firmware, manuales y definiciones de pinout para la familia EOLO.
+[![CI](https://github.com/Helix128/EoloXrd/actions/workflows/ci.yml/badge.svg)](https://github.com/Helix128/EoloXrd/actions/workflows/ci.yml)
 
-## Familia EOLO
+## Qué es
 
-| Variante | Ambiente PlatformIO | Perfil |
+EOLO es una familia de equipos de monitoreo de material particulado y calidad del aire. Los desarrolla el laboratorio C+ (UDD), el Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo.
+
+Este repositorio reúne el firmware de todas las variantes, sus manuales, los pinouts y las herramientas de desarrollo.
+
+## Variantes
+
+| Variante | Env | Descripción |
 | --- | --- | --- |
-| EOLO Dron (base, V2) | `eolo_dron` | Pantalla OLED I2C y encoder (bus propio), una bomba, AFM07, batería 2S. Compila; sin validar en hardware. |
-| EOLO Dron Legacy | `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | Equipo headless. Switches físicos o setup Wi-Fi, AFM07, NTC, NeoPixel, captura automática. |
-| EOLO Standard | `eolo_standard` | Pantalla y encoder, módem, anemómetro, doble batería/DC, AFM07 y Plantower. |
-| EOLO Express | `eolo_express` | Pantalla y encoder, AFM07, Plantower, batería simple, sin módem ni anemómetro. |
-| EOLO Express Legacy | `eolo_express_legacy` | Express con sensor de flujo FS3000 legacy. |
+| EOLO Mini Rev.2 | `eolo_dron` | Muestreador compacto para montar en dron, con pantalla para configurarlo en terreno. |
+| EOLO Mini Rev.1 | `eolo_dron_legacy`, `eolo_dron_legacy_low_power` | Primera revisión del Mini. No tiene pantalla: se configura con switches o desde el celular. |
+| EOLO-MP Rev.1 | `eolo_standard` | Estación de monitoreo de material particulado que mide viento y envía los datos por red celular. |
+| EOLO Express Rev.2 | `eolo_express` (env por defecto) | Equipo portátil y más simple que el MP, pensado para campañas de muestreo cortas. |
+| EOLO Express Rev.1 | `eolo_express_legacy` | Primera revisión del Express, con otro sensor de flujo. |
 
 ## Documentación
 
-| Recurso | Descripción |
-| --- | --- |
-| [Manuales EOLO](docs/README.md) | Índice de manuales de usuario por modelo. |
-| [Pinouts](pinouts/README.md) | GPIO reales extraídos del firmware para cada variante. |
-| [Demos de hardware](demos/README.md) | Demos PlatformIO para probar sensores y componentes aislados. |
-| [Calibración](Calibración.md) | Notas y recursos de calibración. |
+- Usar un equipo: [manuales](docs/README.md#manuales) por variante.
+- Obtener los datos: [formato de los CSV en la SD](docs/datos/README.md).
+- Compilar y flashear: [compilación](docs/firmware/compilacion.md).
+- Hardware y pinouts: [hardware](docs/hardware/README.md).
+- Modificar el firmware: [guía de desarrollo](docs/firmware/desarrollo.md).
 
-## Requisitos de desarrollo
+El [índice completo](docs/README.md) enlaza el resto de los documentos.
 
-- PlatformIO Core o PlatformIO IDE.
-- Placa ESP32 compatible con `esp32dev`.
-- Cable USB de datos.
-- Hardware EOLO según variante.
-
-Instalación rápida de PlatformIO Core:
+## Compilar y probar
 
 ```bash
-python3 -m pip install platformio
+pio run                        # compila eolo_express (env por defecto)
+pio run -e eolo_dron -t upload # compila y flashea otra variante
+pio test -e native             # pruebas portables de EoloCore, sin placa
+scripts/check_all.sh           # compila todos los envs y corre las comprobaciones sin hardware
 ```
 
-## Ambientes PlatformIO
-
-| Ambiente | Uso |
-| --- | --- |
-| `eolo_express` | Build default. Display, AFM07, Plantower. |
-| `eolo_express_legacy` | Express con FS3000 legacy. |
-| `eolo_standard` | Display, módem, anemómetro, doble batería, AFM07, Plantower. |
-| `eolo_dron` | Dron base (V2): OLED SH1106 I2C, encoder en Wire1, bomba PWM, AFM07, batería 2S. |
-| `eolo_dron_legacy` | Equipo headless. Switches, AFM07, NTC, NeoPixel, setup Wi-Fi headless. |
-| `eolo_dron_legacy_low_power` | Dron headless con LED NeoPixel configurada para menor consumo de batería. |
-
-La configuración de compilación y perfiles de hardware está documentada en [Configuración de compilación](docs/configuracion-compilacion.md). Para continuar el desarrollo, ver [Guía para continuar](docs/guia-para-continuar.md).
-
-Comandos básicos:
-
-```bash
-pio run                          # compila ambiente default eolo_express
-pio run -e eolo_dron              # compila Dron base (V2)
-pio run -e eolo_dron_legacy       # compila Dron Legacy (headless)
-pio run -e eolo_dron -t upload    # sube firmware
-pio device monitor -b 115200       # monitor serial
-```
-
-`platformio.demos.ini` agrega ambientes `demo_*` generados desde `demos/`.
-
-## Dependencias
-
-Declaradas en `platformio.ini`:
-
-- `adafruit/Adafruit Unified Sensor@^1.1.15`
-- `adafruit/Adafruit BME280 Library@^2.3.0`
-- `olikraus/U8g2@^2.36.14`
-- `sparkfun/SparkFun_FS3000_Arduino_Library@^1.0.5`
-- `adafruit/RTClib@^2.1.4`
-- `4-20ma/ModbusMaster@^2.0.1`
-- `plerup/EspSoftwareSerial@^8.2.0`
-- `vshymanskyy/TinyGSM@^0.12.0`
-- `adafruit/Adafruit NeoPixel@^1.12.5` solo en ambientes Dron.
-
-La plataforma ESP32 está fijada en `espressif32@6.10.0` para builds reproducibles.
-
-## Pinouts técnicos
-
-Los pinouts están centralizados en [`pinouts/`](pinouts/README.md) y se derivan de `src/Variants/Pinout.h`:
-
-- [EOLO Dron](pinouts/eolo-dron-legacy.md)
-- [EOLO Standard](pinouts/eolo-standard.md)
-- [EOLO Express](pinouts/eolo-express.md)
-- [EOLO Express Legacy](pinouts/eolo-express-legacy.md)
-
-Las discrepancias que requieren equipo o esquemático están congeladas en [validación de hardware](docs/hardware-validation.md); el firmware no modifica pines ni escalas sólo para reconciliar documentación histórica.
-
-## Setup Wi-Fi headless
-
-`HeadlessSetup` es una feature para equipos sin pantalla. Actualmente se activa solo en `eolo_dron_legacy`.
-Este feature crea un servidor web para configurar los parámetros de forma más libre, se puede acceder a través de la siguiente red AP + url web.
-
-Defaults:
+## Estructura
 
 ```text
-SSID: eolo-dron
-Password: eolo-dron
-URL: http://eolo.setup/ o http://192.168.4.1/
+src/        firmware: aplicaciones, interfaz, módem, variantes y código común
+lib/        EoloCore, lógica portable sin dependencias de Arduino
+include/    headers compartidos (Eolo/)
+test/       pruebas Unity (PlatformIO) y pruebas Python de las herramientas
+scripts/    herramientas de desarrollo y comprobaciones
+demos/      sketches para probar sensores y componentes aislados
+web-server/ página de setup Wi-Fi del Mini Rev.1
+docs/       manuales, datos, firmware, hardware y archivo histórico
 ```
 
-Credenciales pueden cambiarse con build flags:
+## Licencia
 
-```ini
--DHEADLESS_SETUP_AP_SSID=\"mi-red-setup\"
--DHEADLESS_SETUP_AP_PASSWORD=\"clave-local\"
-```
-
-## Demos
-
-```bash
-./scripts/demo.py list
-./scripts/demo.py build AFM07 dron
-./scripts/demo.py upload AFM07 dron
-./scripts/demo.py monitor AFM07 dron
-```
-
-Ver [`demos/README.md`](demos/README.md).
-
-## Tests
-
-Las capas de validacion se reportan por separado:
-
-- `pio test -e native` ejecuta pruebas host de `EoloCore`.
-- `pio test -e <entorno> -f <suite> --without-uploading --without-testing` compila una suite Arduino sin ejecutarla; es una comprobacion de compilacion/enlace, no una prueba HIL.
-- Las pruebas HIL requieren el equipo correspondiente conectado (AFM07, RS485, Plantower, RTC, etc.) y un `test_port` configurado localmente. No se deben ejecutar contra una variante distinta de la placa conectada.
-
-```bash
-pio test -e native
-pio test -e eolo_dron_legacy -f test_capture_switches --without-uploading --without-testing
-```
+El código pertenece al laboratorio C+ (UDD). Licencia por definir.

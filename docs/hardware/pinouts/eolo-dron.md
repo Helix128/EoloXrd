@@ -1,11 +1,11 @@
-# Pinout EOLO Dron (base, hardware V2)
+# Pinout EOLO Mini Rev.2
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_DRON`.
 
-**Ground truth:** mapa de la demo validada en hardware `demos/DronBase`. El
+Referencia: el mapa de la demo `demos/DronBase`, validada en hardware. El
 modelo anterior (headless, switches DIP, NeoPixel, NTC) es
-[EOLO Dron Legacy](eolo-dron-legacy.md); **los roles de GPIO4/16/17 en RS485 son
-distintos entre ambos** (ver abajo). Dron base pertenece a la familia UI:
+[EOLO Mini Rev.1](eolo-dron-legacy.md); **los roles de GPIO4/16/17 en RS485 son
+distintos entre ambos** (ver abajo). El Mini Rev.2 pertenece a la familia UI:
 OLED + encoder, una bomba, sin Plantower, módem ni anemómetro.
 
 ## Resumen
@@ -36,24 +36,16 @@ OLED + encoder, una bomba, sin Plantower, módem ni anemómetro.
 
 ## Parámetros eléctricos y de protocolo
 
-- **OLED:** SH1106 128x64 por I2C hardware (`U8G2_SH1106_128X64_NONAME_F_HW_I2C`),
-  100 kHz. Con el driver SSD1306 aparece un borde blanco y texto cortado.
-- **Encoder:** ATmega328 esclavo, dirección `0x08`, mismo protocolo de 3 bytes
-  (dirección, contador, botón) que las demás variantes, pero en `Wire1` a
-  **10 kHz** (`kEncoderBusClockHz`).
-- **AFM07:** Modbus RTU, ID esclavo **2**, **4800 8N1**, registro `0x0000`,
-  divisor `/100` (L/min). El comentario de la demo ("0x01, 9600, x10") está
-  desactualizado respecto a su código.
-- **Batería:** pack 18650 2S, divisor R1=220k / R2=100k (3.2:1). A 8.4 V el pin
-  recibe 2.625 V. Se lee con `analogReadMilliVolts` y la curva de descarga 2S de
-  `BatteryMath`.
-- **Bomba:** N-FET low-side, PWM directo (duty 0 = apagado), 20 kHz. Requiere
-  rampa: un salto brusco hunde el riel y resetea el ESP32 (brownout).
+- OLED: SH1106 128x64 por I2C hardware (`U8G2_SH1106_128X64_NONAME_F_HW_I2C`), 100 kHz. Con el driver SSD1306 aparece un borde blanco y texto cortado.
+- Encoder: ATmega328 esclavo, dirección `0x08`, mismo protocolo de 3 bytes (dirección, contador, botón) que las demás variantes con pantalla, pero en `Wire1` a 10 kHz (`kEncoderBusClockHz`).
+- AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro `0x0000`. Caudal = raw / 100 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Dron.h`. El comentario de la demo ("0x01, 9600, x10") no coincide con su código.
+- Batería: pack 18650 2S, divisor R1=220k / R2=100k (3.2:1). A 8.4 V el pin recibe 2.625 V. Se lee con `analogReadMilliVolts` y la curva de descarga 2S de `BatteryMath`.
+- Bomba: N-FET low-side, PWM directo (duty 0 = apagado), 20 kHz. Requiere rampa: un salto brusco hunde el riel y resetea el ESP32 (brownout).
 
 ## Notas
 
 - `GPIO35` es solo entrada (batería ADC).
-- Dron Legacy usa RX=`GPIO16`, TX=`GPIO17`, DE/RE=`GPIO4`; no mezclar firmwares
-  entre ambas placas.
+- Mini Rev.1 usa RX=`GPIO16`, TX=`GPIO17`, DE/RE=`GPIO4`; no cargues el firmware
+  de una placa en la otra.
 - El ambiente `eolo_dron` habilita motor PWM directo, AFM07 y calibración de
-  flujo (el control PID es exclusivo de Dron Legacy).
+  flujo (el control PID es exclusivo de Mini Rev.1).
