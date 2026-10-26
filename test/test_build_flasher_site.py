@@ -19,8 +19,9 @@ def make_release(root, tag, envs, parts=PART_NAMES):
     (release / "release.json").write_text(
         json.dumps({"tag": tag, "date": "2026-10-26T12:00:00Z", "url": f"https://example/{tag}"})
     )
+    slugs = {v["env"]: v for v in site.load_variants()}
     for env in envs:
-        with zipfile.ZipFile(release / f"eolo-{env}-{tag}.zip", "w") as zf:
+        with zipfile.ZipFile(release / site.package_name(slugs[env], tag), "w") as zf:
             for name in parts:
                 zf.writestr(name, f"{env}:{name}")
 

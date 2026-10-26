@@ -1,36 +1,42 @@
 [
   {
     "env": "eolo_dron",
+    "slug": "mini-rev2",
     "name": "EOLO Mini Rev.2",
     "description": "Muestreador compacto para montar en dron, con pantalla para configurarlo en terreno.",
     "manual": "docs/manuales/mini-rev2.md"
   },
   {
     "env": "eolo_dron_legacy",
+    "slug": "mini-rev1",
     "name": "EOLO Mini Rev.1",
     "description": "Primera revisión del Mini. No tiene pantalla: se configura con switches o desde el celular.",
     "manual": "docs/manuales/mini-rev1.md"
   },
   {
     "env": "eolo_dron_legacy_low_power",
+    "slug": "mini-rev1-low-power",
     "name": "EOLO Mini Rev.1 (bajo consumo)",
     "description": "El mismo firmware del Mini Rev.1, con el LED de estado más tenue y apagado al terminar.",
     "manual": "docs/manuales/mini-rev1.md"
   },
   {
     "env": "eolo_standard",
+    "slug": "mp-rev1",
     "name": "EOLO-MP Rev.1",
     "description": "Estación de monitoreo de material particulado que mide viento y envía los datos por red celular.",
     "manual": "docs/manuales/mp.md"
   },
   {
     "env": "eolo_express",
+    "slug": "express-rev2",
     "name": "EOLO Express Rev.2",
     "description": "Equipo portátil y más simple que el MP, pensado para campañas de muestreo cortas.",
     "manual": "docs/manuales/express.md"
   },
   {
     "env": "eolo_express_legacy",
+    "slug": "express-rev1",
     "name": "EOLO Express Rev.1",
     "description": "Primera revisión del Express, con otro sensor de flujo.",
     "manual": "docs/manuales/express.md"

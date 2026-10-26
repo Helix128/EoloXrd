@@ -46,7 +46,7 @@ function renderCards() {
     card.querySelector('.card-desc').textContent = variant.description;
     card.querySelector('.install').setAttribute('manifest', `${base}/manifest.json`);
     const zip = card.querySelector('.card-zip');
-    zip.href = `${base}/eolo-${variant.env}-${version.tag}.zip`;
+    zip.href = `${base}/${version.packages[variant.env]}`;
     const manual = card.querySelector('.card-manual');
     manual.href = variant.manual;
     grid.append(card);

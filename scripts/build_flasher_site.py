@@ -3,7 +3,7 @@
 
 Espera los paquetes descargados así:
 
-    <releases>/<tag>/eolo-<env>-<tag>.zip
+    <releases>/<tag>/eolo-<slug>-<tag>.zip     (slug en flasher/variants.json)
     <releases>/<tag>/release.json   {"tag", "date", "url"}
 
 Cada zip trae bootloader.bin, partitions.bin, boot_app0.bin y firmware.bin.
@@ -42,6 +42,10 @@ def load_variants():
     return json.loads((FLASHER_DIR / "variants.json").read_text(encoding="utf-8"))
 
 
+def package_name(variant, tag):
+    return f"eolo-{variant['slug']}-{tag}.zip"
+
+
 def manifest(variant, tag):
     return {
         "name": variant["name"],
@@ -62,7 +66,7 @@ def extract_release(release_dir, out_dir, variants):
     available = []
     for variant in variants:
         env = variant["env"]
-        package = release_dir / f"eolo-{env}-{tag}.zip"
+        package = release_dir / package_name(variant, tag)
         if not package.exists():
             continue
         target = out_dir / "firmware" / tag / env
@@ -108,6 +112,10 @@ def build(releases_dir, out_dir):
         ],
         "versions": versions,
     }
+    for version in versions:
+        version["packages"] = {
+            v["env"]: package_name(v, version["tag"]) for v in variants if v["env"] in version["envs"]
+        }
     (out_dir / "site.json").write_text(
         json.dumps(site, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
