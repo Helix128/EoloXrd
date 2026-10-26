@@ -1,0 +1,241 @@
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --text: #1c2226;
+  --muted: #5d6870;
+  --border: #dde2e6;
+  --accent: #0b6e8a;
+  --accent-text: #ffffff;
+  --notice: #fff4d6;
+  --notice-text: #5c4300;
+  --radius: 10px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161a;
+    --surface: #1a2126;
+    --text: #e6eaed;
+    --muted: #9aa6ae;
+    --border: #2b343a;
+    --accent: #3fb3d1;
+    --accent-text: #0b1418;
+    --notice: #3a3014;
+    --notice-text: #f3dc9b;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.top {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+.wordmark {
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+
+
+.top-links a {
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.intro {
+  padding: 40px 0 8px;
+}
+
+.intro h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+  letter-spacing: -0.01em;
+}
+
+.intro p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--muted);
+}
+
+.version-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 24px 0 16px;
+}
+
+.version-bar label {
+  font-weight: 600;
+}
+
+.version-bar select {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.version-meta {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.notice {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--notice);
+  color: var(--notice-text);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.card-name {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.card-desc {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 0.94rem;
+  flex: 1;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.card-manual {
+  font-size: 0.9rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn-ghost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.btn:focus-visible,
+.card-manual:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.empty {
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.howto {
+  margin: 48px 0 0;
+  max-width: 70ch;
+}
+
+.howto h2 {
+  font-size: 1.25rem;
+}
+
+.howto li {
+  margin-bottom: 8px;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 48px;
+  padding-top: 24px;
+  padding-bottom: 32px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lab-logo {
+  display: block;
+  height: 64px;
+}
+
+.foot p {
+  flex: 1 1 280px;
+  margin: 0;
+}

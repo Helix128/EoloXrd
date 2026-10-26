@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/eolo-logo.png" alt="EOLO" width="420">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-cplus.png">
+    <img src="docs/assets/logo-cplus-dark.png" alt="C+ (UDD)" width="360">
+  </picture>
 </p>
 
 # EoloXrd
@@ -28,6 +31,7 @@ Este repositorio reúne el firmware de todas las variantes, sus manuales, los pi
 
 - Usar un equipo: [manuales](docs/README.md#manuales) por variante.
 - Obtener los datos: [formato de los CSV en la SD](docs/datos/README.md).
+- Instalar una versión publicada: [página de flasheo](https://helix128.github.io/EoloXrd/), desde Chrome o Edge.
 - Compilar y flashear: [compilación](docs/firmware/compilacion.md).
 - Hardware y pinouts: [hardware](docs/hardware/README.md).
 - Modificar el firmware: [guía de desarrollo](docs/firmware/desarrollo.md).

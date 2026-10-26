@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firmware EOLO</title>
+  <meta name="description" content="Flashea versiones publicadas del firmware EOLO desde el navegador.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230b6e8a%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22sans-serif%22 font-size=%2216%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="wordmark" href="./">EOLO</a>
+      <nav class="top-links">
+        <a id="repo-link" href="https://github.com/Helix128/EoloXrd">Repositorio</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="intro">
+      <h1>Firmware EOLO</h1>
+      <p>Flashea una versión publicada del firmware directo desde el navegador, sin instalar PlatformIO. Conecta el equipo por USB, elige su variante y presiona Instalar.</p>
+    </section>
+
+    <section class="version-bar" id="version-bar" hidden>
+      <label for="version">Versión</label>
+      <select id="version"></select>
+      <span class="version-meta" id="version-meta"></span>
+    </section>
+
+    <p class="notice" id="unsupported" hidden>Tu navegador no puede flashear por USB. Usa Chrome o Edge en un computador; en el celular puedes ver las versiones y descargar los archivos.</p>
+
+    <section class="grid" id="variants" aria-live="polite"></section>
+
+    <p class="empty" id="empty" hidden>Todavía no hay versiones publicadas. Se crean al subir un tag <code>vX.Y.Z</code> al repositorio.</p>
+
+    <section class="howto">
+      <h2>Cómo flashear</h2>
+      <ol>
+        <li>Conecta el equipo con un cable USB de datos. Si el computador no lo detecta, instala el driver del puente USB (CP210x o CH340, según la placa).</li>
+        <li>Elige la versión y presiona Instalar en la tarjeta de tu variante. El navegador te pedirá elegir el puerto serial.</li>
+        <li>Cuando pregunte si quieres borrar el equipo, responde que no para conservar la calibración, las presets y la configuración Wi-Fi. Bórralo solo si el equipo viene de otro firmware o se comporta raro.</li>
+        <li>Espera a que termine. El equipo se reinicia solo con la versión nueva.</li>
+      </ol>
+      <p>Cada versión también se puede descargar como zip, con los cuatro binarios y sus offsets en el <a id="releases-link" href="https://github.com/Helix128/EoloXrd/releases">release de GitHub</a>.</p>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="logo-cplus.png">
+      <img class="lab-logo" src="logo-cplus-dark.png" alt="C+ (UDD)">
+    </picture>
+    <p>EOLO es desarrollado por el laboratorio C+, Centro de Investigación en Tecnologías para la Sociedad de la Universidad del Desarrollo.</p>
+  </footer>
+
+  <template id="card-template">
+    <article class="card">
+      <h3 class="card-name"></h3>
+      <p class="card-desc"></p>
+      <div class="card-actions">
+        <esp-web-install-button class="install">
+          <button slot="activate" class="btn btn-primary">Instalar</button>
+          <span slot="unsupported"></span>
+          <span slot="not-allowed"></span>
+        </esp-web-install-button>
+        <a class="btn btn-ghost card-zip" download>Descargar</a>
+      </div>
+      <a class="card-manual">Manual</a>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

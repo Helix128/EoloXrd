@@ -81,6 +81,23 @@ Compilar no prueba el hardware, así que reporta por separado lo que compiló, l
 
 Las pruebas en hardware requieren la placa de la variante conectada. Indica su puerto con `--test-port`; no las ejecutes contra otra variante.
 
+## Publicar una versión
+
+Cada versión publicada queda fija: tiene su release en GitHub y aparece en la [página de flasheo](https://helix128.github.io/EoloXrd/), desde donde cualquiera la instala con Chrome o Edge sin PlatformIO.
+
+1. En `CHANGELOG.md`, renombra `[Sin publicar]` a la versión nueva con su fecha, por ejemplo `## [1.0.0] - 2026-10-26`, y deja un `[Sin publicar]` vacío arriba.
+2. Haz commit de ese cambio en `main`.
+3. Crea y sube el tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+El workflow `Release` compila los seis envs y crea el release con un zip por variante. Cada zip trae `bootloader.bin`, `partitions.bin`, `boot_app0.bin` y `firmware.bin`, con las notas que tomó de esa sección del CHANGELOG. Al terminar, el workflow `Pages` vuelve a armar la página con todas las versiones.
+
+La página escribe las cuatro partes en sus offsets y no toca la NVS (`0x9000`), así que el equipo conserva su calibración, presets y Wi-Fi, salvo que se elija borrarlo. El sitio lo genera `scripts/build_flasher_site.py` a partir de `flasher/`. Para agregar una variante, súmala a `flasher/variants.json`; `test/test_build_flasher_site.py` falla si un env de `platformio.ini` no está ahí.
+
 ## Commits
 
 Usa Conventional Commits con la descripción en español, por ejemplo `fix(modem): serializa el spool de telemetría entre tareas`. Los tipos habituales son `fix`, `feat`, `docs` y `chore`.

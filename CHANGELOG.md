@@ -8,6 +8,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 - Plantilla `src/Headless/HeadlessSecrets.example.h` para las credenciales Wi-Fi locales.
 - Integración continua en `.github/workflows/ci.yml`.
+- Releases automáticos al subir un tag `vX.Y.Z` y página de flasheo web en GitHub Pages (`flasher/`), con todas las versiones publicadas.
 - `CHANGELOG.md`.
 
 ### Cambiado

@@ -19,3 +19,6 @@ artifacts/
 
 # Credenciales locales del setup headless
 src/Headless/HeadlessSecrets.h
+
+# Salida local de scripts/build_flasher_site.py
+site/
