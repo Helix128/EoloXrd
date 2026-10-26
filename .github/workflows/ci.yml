@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host:
+    name: Pruebas en host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio test -e native
+      - run: python3 -m unittest discover -s test -p 'test_*.py'
+      - run: python3 scripts/check_family_boundaries.py
+      - run: python3 scripts/check_pinouts.py
+
+  build:
+    name: Compilar ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - eolo_express
+          - eolo_express_legacy
+          - eolo_standard
+          - eolo_dron
+          - eolo_dron_legacy
+          - eolo_dron_legacy_low_power
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-esp32-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -e ${{ matrix.env }}
+      # Los archivos generados (página de setup) deben estar al día en el repo.
+      - run: git diff --exit-code
