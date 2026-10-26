@@ -19,18 +19,19 @@
 #include "../Common/Data/Context.h"
 #include "../Common/Utility/SystemDiagnostics.h"
 
+// Credenciales locales opcionales (AP del setup y red local). Copie
+// HeadlessSecrets.example.h a HeadlessSecrets.h (ignorado por git) o
+// defínalas con -D en la compilación.
+#if __has_include("HeadlessSecrets.h")
+#include "HeadlessSecrets.h"
+#endif
+
 #ifndef HEADLESS_SETUP_AP_SSID
 #define HEADLESS_SETUP_AP_SSID "eolo-dron"
 #endif
 
 #ifndef HEADLESS_SETUP_AP_PASSWORD
 #define HEADLESS_SETUP_AP_PASSWORD "eolo-dron"
-#endif
-
-// Credenciales de la red local opcionales. Copie HeadlessSecrets.example.h a
-// HeadlessSecrets.h (ignorado por git) o defínalas con -D en la compilación.
-#if __has_include("HeadlessSecrets.h")
-#include "HeadlessSecrets.h"
 #endif
 
 #ifndef HEADLESS_SETUP_STA_SSID
