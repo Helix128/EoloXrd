@@ -47,7 +47,7 @@ class BuildFlasherSiteTests(unittest.TestCase):
         make_release(self.releases, "v1.0.0", ["eolo_dron_legacy"])
         site.build(self.releases, self.out)
         manifest = json.loads(
-            (self.out / "firmware/v1.0.0/eolo_dron_legacy/manifest.json").read_text()
+            (self.out / "firmware/v1.0.0/mini-rev1/manifest.json").read_text()
         )
         offsets = [part["offset"] for part in manifest["builds"][0]["parts"]]
         self.assertEqual(offsets, [0x1000, 0x8000, 0xE000, 0x10000])
@@ -56,7 +56,7 @@ class BuildFlasherSiteTests(unittest.TestCase):
         self.assertTrue(manifest["new_install_prompt_erase"])
         self.assertEqual(manifest["name"], "EOLO Mini Rev.1")
         for name in PART_NAMES:
-            self.assertTrue((self.out / "firmware/v1.0.0/eolo_dron_legacy" / name).exists())
+            self.assertTrue((self.out / "firmware/v1.0.0/mini-rev1" / name).exists())
 
     def test_only_lists_envs_present_in_release(self):
         make_release(self.releases, "v1.0.0", ["eolo_standard"])

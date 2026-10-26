@@ -40,7 +40,7 @@ function renderCards() {
 
   for (const variant of site.variants) {
     if (!version.envs.includes(variant.env)) continue;
-    const base = `firmware/${version.tag}/${variant.env}`;
+    const base = `firmware/${version.tag}/${variant.slug}`;
     const card = template.content.firstElementChild.cloneNode(true);
     card.querySelector('.card-name').textContent = variant.name;
     card.querySelector('.card-desc').textContent = variant.description;

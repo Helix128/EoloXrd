@@ -69,7 +69,7 @@ def extract_release(release_dir, out_dir, variants):
         package = release_dir / package_name(variant, tag)
         if not package.exists():
             continue
-        target = out_dir / "firmware" / tag / env
+        target = out_dir / "firmware" / tag / variant["slug"]
         target.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(package) as zf:
             names = set(zf.namelist())
