@@ -109,6 +109,7 @@
         "eolo_express",
         "eolo_express_legacy",
         "eolo_standard",
+        "eolo_dron",
         "eolo_dron_legacy",
         "eolo_dron_legacy_low_power"
       ]
@@ -128,7 +129,14 @@
       "id": "snapTarget",
       "type": "pickString",
       "description": "Selecciona el target a congelar en snapshot:",
-      "options": ["eolo_express", "eolo_dron_legacy", "eolo_standard", "eolo_express_legacy"]
+      "options": [
+        "eolo_express",
+        "eolo_express_legacy",
+        "eolo_standard",
+        "eolo_dron",
+        "eolo_dron_legacy",
+        "eolo_dron_legacy_low_power"
+      ]
     },
     {
       "id": "snapName",
@@ -146,7 +154,14 @@
       "id": "flashTarget",
       "type": "pickString",
       "description": "Selecciona el firmware a flashear en el dispositivo:",
-      "options": ["express", "dron", "standard", "express_legacy"]
+      "options": [
+        "express",
+        "express_legacy",
+        "standard",
+        "dron",
+        "dron_legacy",
+        "dron_legacy_low_power"
+      ]
     },
     {
       "id": "demoChoice",
@@ -159,7 +174,12 @@
         "Anemometer",
         "BME280",
         "DIPSwitchDiag",
+        "DronBase",
+        "DronEncoderTest",
         "DronFull",
+        "DronI2CDiag",
+        "DronProdTest",
+        "DronSdDiag",
         "DynamicMotorCalibration",
         "FS3000",
         "I2CDisplayDiag",
@@ -173,8 +193,14 @@
       "id": "modelChoice",
       "type": "pickString",
       "description": "Selecciona el modelo de hardware:",
-      "options": ["dron", "express", "standard", "express_legacy"],
-      "default": "dron"
+      "options": [
+        "dron_legacy",
+        "dron",
+        "express",
+        "express_legacy",
+        "standard"
+      ],
+      "default": "dron_legacy"
     }
   ]
 }

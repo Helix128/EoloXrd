@@ -49,7 +49,11 @@ def main():
             ))
 
     output = "".join(chunks)
-    with open(PROJECT_ROOT / "platformio.demos.ini", "w", encoding="utf-8", newline="\n") as f:
+    target = PROJECT_ROOT / "platformio.demos.ini"
+    # Se llama en cada list/build; reescribir sin cambios ensucia el árbol.
+    if target.exists() and target.read_text(encoding="utf-8") == output:
+        return
+    with open(target, "w", encoding="utf-8", newline="\n") as f:
         f.write(output)
 
 
