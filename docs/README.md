@@ -11,6 +11,10 @@ Uso de cada equipo.
 - [EOLO Express](manuales/express.md)
 - [EOLO-MP](manuales/mp.md)
 
+## Instalar el firmware
+
+- [Página de flasheo](https://helix128.github.io/EoloXrd/): instala una versión publicada por USB desde Chrome o Edge, sin PlatformIO. Fuente en `flasher/`.
+
 ## Datos
 
 - [Formato de los CSV en la SD](datos/README.md)
