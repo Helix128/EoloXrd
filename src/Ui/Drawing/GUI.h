@@ -27,24 +27,17 @@ public:
                           Layout::Header::Time.y + 9, timeStr);
         drawSdIcon(ctx, Layout::Header::Sd.x, Layout::Header::Sd.y,
                    snapshot.status.sdStatus);
-        ctx.u8g2.setFont(FONT_LABEL);
-        constexpr const char *brand = "EOLO";
-        const int brandWidth = ctx.u8g2.getStrWidth(brand);
-        const int brandX = Layout::Header::Brand.x +
-                           (Layout::Header::Brand.w - brandWidth) / 2;
-        ctx.u8g2.drawStr(brandX, Layout::Header::Brand.y + 9, brand);
-
 #ifdef FEATURE_DUAL_BATTERY
         const bool isDC = snapshot.power.poweredByDc;
         const uint8_t activeMosfet = snapshot.power.activeBattery;
         const bool batteryDataValid = snapshot.power.valid;
 
-        drawBatteryIcon(ctx, Layout::Header::Battery0.x, Layout::Header::Battery0.y,
-                        batteryDataValid ? static_cast<int>(snapshot.power.batteryPct0) : -1,
-                        batteryDataValid && !isDC && activeMosfet == 2);
-        drawBatteryIcon(ctx, Layout::Header::Battery1.x, Layout::Header::Battery1.y,
-                        batteryDataValid ? static_cast<int>(snapshot.power.batteryPct1) : -1,
-                        batteryDataValid && !isDC && activeMosfet == 3);
+        drawBattery(ctx, Layout::Header::Battery0,
+                    batteryDataValid ? static_cast<int>(snapshot.power.batteryPct0) : -1,
+                    batteryDataValid && !isDC && activeMosfet == 2, false);
+        drawBattery(ctx, Layout::Header::Battery1,
+                    batteryDataValid ? static_cast<int>(snapshot.power.batteryPct1) : -1,
+                    batteryDataValid && !isDC && activeMosfet == 3, false);
         if (isDC)
             drawDcText(ctx, Layout::Header::Dc.x, Layout::Header::Dc.y);
 
@@ -55,14 +48,18 @@ public:
                             snapshot.status.modemSignalBars);
 #endif
 #else
+        ctx.u8g2.setFont(FONT_LABEL);
+        constexpr const char *brand = "EOLO";
+        ctx.u8g2.drawStr(Layout::CenterX - ctx.u8g2.getStrWidth(brand) / 2,
+                          Layout::Header::Brand.y + 9, brand);
 #ifdef FEATURE_MODEM
         drawModemSignalIcon(ctx, Layout::Header::Modem.x, Layout::Header::Modem.y,
                             snapshot.status.modemPowered, snapshot.status.modemActive,
                             snapshot.status.modemError, snapshot.status.modemSignalKnown,
                             snapshot.status.modemSignalBars);
 #endif
-        drawBatteryIcon(ctx, Layout::Header::Battery1.x, Layout::Header::Battery1.y,
-                        static_cast<int>(snapshot.power.batteryPct), false);
+        drawBattery(ctx, Layout::Header::Battery,
+                    static_cast<int>(snapshot.power.batteryPct), false, true);
 #endif
 
         ctx.u8g2.drawLine(0, Layout::HeaderBottom, Layout::ScreenW - 1,
@@ -142,33 +139,50 @@ private:
         }
     }
 
-    // Bateria horizontal 9x9 (cuerpo 8x5 + terminal): se llena de izquierda a derecha.
-    // Sin dato = cuerpo vacio con guion.
-    static void drawBatteryIcon(Context &ctx, int x, int y, int pct, bool active)
+    static constexpr int BatteryLowPct = 15;
+
+    // Bateria: icono vertical 5x9 (borne arriba, se llena de abajo hacia
+    // arriba) + porcentaje. Sin dato = "--". Baja = "!" dentro del icono.
+    // Activa = subrayado bajo icono y numero.
+    static void drawBattery(Context &ctx, const Layout::Header::Slot &slot, int pct,
+                            bool active, bool percentSign)
     {
-        constexpr int bodyW = 8;
-        constexpr int bodyH = 5;
-        const int bodyY = y + 2;
+        constexpr int iconW = 5;
+        constexpr int iconH = 9;
+        constexpr int fillH = iconH - 3;
         const bool unknown = pct < 0;
+        if (pct > 100) pct = 100;
 
-        ctx.u8g2.drawFrame(x, bodyY, bodyW, bodyH);
-        ctx.u8g2.drawVLine(x + bodyW, bodyY + 1, 3);
-
+        char text[5];
         if (unknown)
-        {
-            ctx.u8g2.drawHLine(x + 2, bodyY + 2, 4);
-        }
+            snprintf(text, sizeof(text), "--");
         else
+            snprintf(text, sizeof(text), percentSign ? "%d%%" : "%d", pct);
+
+        ctx.u8g2.setFont(FONT_VALUE);
+        const int x = slot.x + 1;
+        const int y = slot.y + 1;
+        const int textX = x + iconW + 2;
+        const int contentW = textX + ctx.u8g2.getStrWidth(text) - x;
+        ctx.u8g2.drawHLine(x + 1, y, iconW - 2);
+        ctx.u8g2.drawFrame(x, y + 1, iconW, iconH - 1);
+        if (!unknown && pct <= BatteryLowPct)
         {
-            if (pct > 100) pct = 100;
-            int fillW = (pct * (bodyW - 2) + 50) / 100;
-            if (pct > 0 && fillW < 1) fillW = 1;
-            if (fillW > 0)
-                ctx.u8g2.drawBox(x + 1, bodyY + 1, fillW, bodyH - 2);
+            ctx.u8g2.drawVLine(x + 2, y + 2, 3);
+            ctx.u8g2.drawPixel(x + 2, y + 6);
         }
+        else if (!unknown)
+        {
+            int fill = (pct * fillH + 50) / 100;
+            if (pct > 0 && fill < 1) fill = 1;
+            if (fill > 0)
+                ctx.u8g2.drawBox(x + 1, y + 2 + fillH - fill, iconW - 2, fill);
+        }
+
+        ctx.u8g2.drawStr(textX, y + 8, text);
 
         if (active)
-            ctx.u8g2.drawHLine(x, Layout::Header::ActiveSourceY, bodyW);
+            ctx.u8g2.drawHLine(slot.x, Layout::Header::ActiveSourceY, contentW + 2);
     }
 
     // Rayo (alimentacion externa) en 6x9.

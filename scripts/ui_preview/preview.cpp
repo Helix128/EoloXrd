@@ -100,6 +100,12 @@ struct Context
     RTCNetworkSyncStatus rtcStatus = RTCNetworkSyncStatus::Idle;
     SDStatus sd = SD_OK;
     const char *rtcAdjustReturnScene = "inicio";
+    const char *optionsReturnScene = "inicio";
+#ifdef FEATURE_MODEM
+    static constexpr bool kCanSyncRtcOverNetwork = true;
+#else
+    static constexpr bool kCanSyncRtcOverNetwork = false;
+#endif
 
     const UiSnapshot &getUiSnapshot() const { return snapshot; }
     uint32_t getUnixTime() { return components.rtc.now().unixtime(); }
@@ -264,8 +270,15 @@ static void checkCapturePages()
 
     ctx.u8g2.setFont(FONT_VALUE);
     assert(ctx.u8g2.getStrWidth("23:59") <= Layout::Header::Time.w);
+    // Bateria: 1px + icono 5 + 2px + texto + 1px dentro del slot.
+#ifdef FEATURE_DUAL_BATTERY
+    assert(9 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery0.w);
+    assert(9 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery1.w);
+#else
+    assert(9 + ctx.u8g2.getStrWidth("100%") <= Layout::Header::Battery.w);
     ctx.u8g2.setFont(FONT_LABEL);
     assert(ctx.u8g2.getStrWidth("EOLO") <= Layout::Header::Brand.w);
+#endif
 }
 
 int main(int argc, char **argv)
@@ -282,7 +295,8 @@ int main(int argc, char **argv)
     headerShot("header_modem_error", [](UiSnapshot &s) { s.status.modemError = true; });
     headerShot("header_modem_off", [](UiSnapshot &s) { s.status.modemPowered = false; });
     headerShot("header_battery_low", [](UiSnapshot &s) { s.power.batteryPct = 8; s.power.batteryPct0 = 8; s.power.batteryPct1 = 100; });
-    headerShot("header_battery_unknown", [](UiSnapshot &s) { s.power.valid = false; });
+    headerShot("header_battery_full", [](UiSnapshot &s) { s.power.batteryPct = 100; s.power.batteryPct0 = 100; s.power.batteryPct1 = 100; s.power.activeBattery = 3; });
+    headerShot("header_battery_unknown", [](UiSnapshot &s) { s.power.valid = false; s.power.batteryPct = -1; });
     headerShot("header_dc", [](UiSnapshot &s) { s.power.poweredByDc = true; });
 
     shot<LogoScene>("logo_boot");

@@ -110,7 +110,7 @@ El formato completo está en [`../datos/README.md`](../datos/README.md).
 
 ## Batería
 
-El equipo usa una batería 2S de iones de litio. El icono de la cabecera muestra su porcentaje, calculado a partir de la tensión del pack. Muestra un guion cuando no hay dato.
+El equipo usa una batería 2S de iones de litio. La cabecera muestra un icono y su porcentaje, calculado a partir de la tensión del pack. Muestra `--` cuando no hay dato y un `!` en el icono bajo 15 %.
 
 Para ver la tensión, entra a «Componentes», luego «Sensores», y gira hasta la página «Batería». El campo «Voltaje» muestra el valor en V. El porcentaje se guarda en la columna `battery_pct` del CSV.
 

@@ -8,6 +8,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). L
 
 - Pantalla: tras 15 s sin actividad baja el brillo con suavidad y a los 30 s hace fade out y se apaga; al interactuar vuelve de inmediato. Nuevo menú «Opciones» (en el inicio y en la pausa de captura) con «Pantalla» (brillo y ambos tiempos, que se guardan) y «Reloj» (el ajuste de reloj, que sale de esos menús). «Sincronizar» solo se muestra en equipos con modem. Una captura activa conserva el comportamiento de apagado.
 
+### Cambiado
+
+- Cabecera: cada batería muestra su porcentaje junto a un ícono vertical, con `!` bajo 15 % y `--` sin dato. Con dos baterías se quita «EOLO» de la cabecera para que quepan ambos números; con una, «EOLO» queda centrado en la pantalla.
+
 ### Corregido
 
 - Al terminar «Probar bombas» durante una captura, la interfaz vuelve a la información de captura y no al menú de pausa.

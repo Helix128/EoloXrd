@@ -67,13 +67,21 @@ namespace Layout
     {
         struct Slot { int x; int y; int w; int h; };
 
+        // Bateria = icono vertical 5x9 + porcentaje en FONT_VALUE, con 1px de
+        // margen a cada lado; el subrayado de bateria activa cubre el slot.
         constexpr Slot Time = {2, 1, 29, 11};      // x=2..30
-        constexpr Slot Sd = {34, 2, 10, 9};        // x=34..43
-        constexpr Slot Brand = {47, 1, 28, 11};    // x=47..74
-        constexpr Slot Modem = {78, 2, 16, 9};     // x=78..93
-        constexpr Slot Dc = {97, 2, 8, 9};         // x=97..104
-        constexpr Slot Battery0 = {108, 2, 9, 9};  // x=108..116
-        constexpr Slot Battery1 = {119, 2, 9, 9};  // x=119..127
+        constexpr Slot Sd = {32, 2, 10, 9};        // x=32..41
+#ifdef FEATURE_DUAL_BATTERY
+        // Sin marca: el espacio va a los dos porcentajes ("100" sin signo %).
+        constexpr Slot Modem = {44, 2, 16, 9};     // x=44..59
+        constexpr Slot Dc = {62, 2, 8, 9};         // x=62..69
+        constexpr Slot Battery0 = {72, 1, 26, 11}; // x=72..97
+        constexpr Slot Battery1 = {102, 1, 26, 11};// x=102..127
+#else
+        constexpr Slot Brand = {51, 1, 26, 11};    // x=51..76, centrada en CenterX
+        constexpr Slot Modem = {77, 2, 16, 9};     // x=77..92
+        constexpr Slot Battery = {94, 1, 34, 11};  // x=94..127 ("100%")
+#endif
         constexpr int ActiveSourceY = 12;
 
         constexpr bool fits(const Slot &slot)
@@ -89,21 +97,31 @@ namespace Layout
                    a.y < b.y + b.h && b.y < a.y + a.h;
         }
 
-        static_assert(fits(Time) && fits(Sd) && fits(Brand) && fits(Modem) &&
-                          fits(Dc) && fits(Battery0) && fits(Battery1),
-                      "Header slot outside the 128x64 header content area");
-        static_assert(!intersects(Time, Sd) && !intersects(Time, Brand) &&
-                          !intersects(Time, Modem) && !intersects(Time, Dc) &&
-                          !intersects(Time, Battery0) && !intersects(Time, Battery1) &&
-                          !intersects(Sd, Brand) && !intersects(Sd, Modem) &&
-                          !intersects(Sd, Dc) && !intersects(Sd, Battery0) &&
-                          !intersects(Sd, Battery1) && !intersects(Brand, Modem) &&
-                          !intersects(Brand, Dc) && !intersects(Brand, Battery0) &&
-                          !intersects(Brand, Battery1) && !intersects(Modem, Dc) &&
-                          !intersects(Modem, Battery0) && !intersects(Modem, Battery1) &&
-                          !intersects(Dc, Battery0) && !intersects(Dc, Battery1) &&
-                          !intersects(Battery0, Battery1),
-                      "Header slots must not overlap");
+#ifdef FEATURE_DUAL_BATTERY
+        constexpr Slot Slots[] = {Time, Sd, Modem, Dc, Battery0, Battery1};
+#else
+        constexpr Slot Slots[] = {Time, Sd, Brand, Modem, Battery};
+        static_assert(Brand.x + Brand.w / 2 == CenterX, "Brand must be centered");
+#endif
+        constexpr int SlotCount = sizeof(Slots) / sizeof(Slots[0]);
+
+        constexpr bool allFit()
+        {
+            for (int i = 0; i < SlotCount; ++i)
+                if (!fits(Slots[i])) return false;
+            return true;
+        }
+
+        constexpr bool anyOverlap()
+        {
+            for (int i = 0; i < SlotCount; ++i)
+                for (int j = i + 1; j < SlotCount; ++j)
+                    if (intersects(Slots[i], Slots[j])) return true;
+            return false;
+        }
+
+        static_assert(allFit(), "Header slot outside the 128x64 header content area");
+        static_assert(!anyOverlap(), "Header slots must not overlap");
     }
 }
 

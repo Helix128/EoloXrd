@@ -17,7 +17,7 @@ No tiene módem, anemómetro ni doble batería. Todo se maneja desde la pantalla
 - Gira el encoder para cambiar valores o moverte por los menús.
 - Presiona el botón del encoder para confirmar.
 
-La barra superior muestra la hora, el estado de la SD y la batería. El ícono de la SD indica tarjeta disponible, escribiendo, con error (`!`) o sin tarjeta (X).
+La barra superior muestra la hora, el estado de la SD y el porcentaje de batería (`--` sin dato; `!` en el ícono bajo 15 %). El ícono de la SD indica tarjeta disponible, escribiendo, con error (`!`) o sin tarjeta (X).
 
 ## Menú principal
 

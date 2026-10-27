@@ -21,7 +21,7 @@ La barra superior muestra la hora, la SD, las dos baterías, el módem y la alim
 
 - SD: disponible, escribiendo, con error (`!`) o sin tarjeta (X).
 - Módem: barras de señal. Un cuadro indica actividad, una X indica error y una línea cruzada indica módem apagado.
-- Baterías: una línea bajo la batería en uso. Con DC conectada aparece un rayo y ninguna batería queda marcada.
+- Baterías: un ícono con el porcentaje de cada una (`--` sin dato; `!` en el ícono bajo 15 %). Una línea bajo la batería en uso. Con DC conectada aparece un rayo y ninguna batería queda marcada.
 
 ## Menú principal
 
