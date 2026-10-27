@@ -64,23 +64,9 @@ private:
         RowBack
     };
 
-    static constexpr uint16_t DimSteps[] = {5, 10, 15, 30, 60, 120};
-    static constexpr uint16_t OffSteps[] = {10, 15, 30, 60, 120, 300, 600};
-
     int selected = 0;
     bool editing = false;
     char labels[RowBack + 1][24] = {};
-
-    template <size_t N>
-    static uint16_t stepped(const uint16_t (&steps)[N], uint16_t current, int delta)
-    {
-        int index = 0;
-        for (size_t i = 0; i < N; i++)
-            if (steps[i] <= current)
-                index = (int)i;
-        index = constrain(index + (delta > 0 ? 1 : -1), 0, (int)N - 1);
-        return steps[index];
-    }
 
     void adjust(DisplayPowerConfig &cfg, int delta)
     {
@@ -92,10 +78,10 @@ private:
                                                    DisplayPowerConfig::MaxBrightnessPct);
             break;
         case RowDim:
-            cfg.dimAfterS = stepped(DimSteps, cfg.dimAfterS, delta);
+            cfg.dimAfterS = DisplayPowerConfig::stepBy(cfg.dimAfterS, delta);
             break;
         case RowOff:
-            cfg.offAfterS = stepped(OffSteps, cfg.offAfterS, delta);
+            cfg.offAfterS = DisplayPowerConfig::stepBy(cfg.offAfterS, delta);
             break;
         }
         cfg.sanitize();

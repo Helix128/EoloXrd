@@ -96,13 +96,45 @@ static void test_display_power_scales_with_brightness_and_sanitizes()
     cfg.offAfterS = 2;
     cfg.sanitize();
     TEST_ASSERT_EQUAL_UINT8(DisplayPowerConfig::MinBrightnessPct, cfg.brightnessPct);
-    TEST_ASSERT_EQUAL_UINT16(DisplayPowerConfig::MinDimAfterS, cfg.dimAfterS);
-    TEST_ASSERT_TRUE(cfg.offAfterS >= cfg.dimAfterS + 2);
+    TEST_ASSERT_EQUAL_UINT16(5, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(10, cfg.offAfterS);
+}
+
+static void test_display_power_times_stay_on_shared_steps()
+{
+    DisplayPowerConfig cfg;
+
+    // Valores guardados fuera de la lista se llevan al paso inferior o al tope.
+    cfg.dimAfterS = 62;
+    cfg.offAfterS = 600;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT16(60, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(300, cfg.offAfterS);
+
+    // Atenuar alcanza a apagar: apagar pasa al siguiente paso, no a +2 s.
+    cfg.dimAfterS = 60;
+    cfg.offAfterS = 60;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT16(120, cfg.offAfterS);
 
     cfg.dimAfterS = 120;
     cfg.offAfterS = 30;
     cfg.sanitize();
-    TEST_ASSERT_TRUE(cfg.offAfterS >= 122);
+    TEST_ASSERT_EQUAL_UINT16(120, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(180, cfg.offAfterS);
+
+    // Atenuar no pasa del penultimo paso para dejar uno a apagar.
+    cfg.dimAfterS = 300;
+    cfg.offAfterS = 300;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT16(240, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(300, cfg.offAfterS);
+
+    TEST_ASSERT_EQUAL_UINT16(10, DisplayPowerConfig::stepBy(5, 1));
+    TEST_ASSERT_EQUAL_UINT16(120, DisplayPowerConfig::stepBy(60, 1));
+    TEST_ASSERT_EQUAL_UINT16(60, DisplayPowerConfig::stepBy(120, -1));
+    TEST_ASSERT_EQUAL_UINT16(5, DisplayPowerConfig::stepBy(5, -1));
+    TEST_ASSERT_EQUAL_UINT16(300, DisplayPowerConfig::stepBy(300, 1));
 }
 
 static void test_session_is_epoch_only()
@@ -2141,6 +2173,7 @@ int main(int, char **)
     RUN_TEST(test_flow_relative_deadband_corrects_small_offset);
     RUN_TEST(test_display_power_dims_fades_and_turns_off);
     RUN_TEST(test_display_power_scales_with_brightness_and_sanitizes);
+    RUN_TEST(test_display_power_times_stay_on_shared_steps);
     RUN_TEST(test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable);
     RUN_TEST(test_flow_cusum_jump_damping_converges_without_limit_cycle);
     RUN_TEST(test_flow_cusum_pauses_when_flow_near_zero);

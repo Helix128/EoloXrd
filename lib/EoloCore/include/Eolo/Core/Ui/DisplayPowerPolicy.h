@@ -15,30 +15,47 @@ struct DisplayPowerConfig
     static constexpr uint8_t DimLevelPct = 25; // del brillo configurado
     static constexpr uint32_t DimFadeMs = 2000;
     static constexpr uint32_t OffFadeMs = 2000;
-    static constexpr uint16_t MinDimAfterS = 5;
-    static constexpr uint16_t MaxOffAfterS = 600;
+    // Tiempos posibles, comunes a atenuar y apagar: de 5 s a 1 min cada 5 s,
+    // y de 1 a 5 min cada minuto.
+    static constexpr uint16_t Steps[] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60,
+                                         120, 180, 240, 300};
+    static constexpr uint8_t StepCount = sizeof(Steps) / sizeof(Steps[0]);
 
     uint8_t brightnessPct = MaxBrightnessPct;
     uint16_t dimAfterS = 15;
     uint16_t offAfterS = 30;
 
-    // Mantiene los valores dentro de rango y el apagado despues de que
-    // termine el fade de atenuacion (si chocan, cede el apagado).
+    // Indice del mayor paso que no supera `seconds` (0 si es menor al primero).
+    static uint8_t stepIndex(uint16_t seconds)
+    {
+        uint8_t index = 0;
+        for (uint8_t i = 0; i < StepCount; i++)
+            if (Steps[i] <= seconds)
+                index = i;
+        return index;
+    }
+
+    // Paso anterior o siguiente a `current`, sin salirse de la lista.
+    static uint16_t stepBy(uint16_t current, int delta)
+    {
+        const int index = (int)stepIndex(current) + (delta > 0 ? 1 : -1);
+        return Steps[index < 0 ? 0 : (index >= StepCount ? StepCount - 1 : index)];
+    }
+
+    // Deja los tiempos sobre la lista de pasos y el apagado siempre en un paso
+    // posterior al de atenuar (si chocan, cede el apagado).
     void sanitize()
     {
-        constexpr uint16_t fadeS = (DimFadeMs + 999) / 1000;
         if (brightnessPct < MinBrightnessPct)
             brightnessPct = MinBrightnessPct;
         if (brightnessPct > MaxBrightnessPct)
             brightnessPct = MaxBrightnessPct;
-        if (dimAfterS < MinDimAfterS)
-            dimAfterS = MinDimAfterS;
-        if (dimAfterS > MaxOffAfterS - fadeS)
-            dimAfterS = MaxOffAfterS - fadeS;
-        if (offAfterS < dimAfterS + fadeS)
-            offAfterS = dimAfterS + fadeS;
-        if (offAfterS > MaxOffAfterS)
-            offAfterS = MaxOffAfterS;
+        const uint8_t dimIndex = stepIndex(dimAfterS) < StepCount - 1 ? stepIndex(dimAfterS) : StepCount - 2;
+        uint8_t offIndex = stepIndex(offAfterS);
+        if (offIndex <= dimIndex)
+            offIndex = dimIndex + 1;
+        dimAfterS = Steps[dimIndex];
+        offAfterS = Steps[offIndex];
     }
 
     uint8_t baseContrast() const { return (uint8_t)((uint32_t)brightnessPct * 255U / 100U); }
