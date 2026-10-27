@@ -66,7 +66,7 @@ public:
         if (ctx.components.input.isButtonPressed())
         {      
             ctx.components.motor.setPowerPct(0);
-            SceneManager::setScene("captura_menu", ctx);
+            SceneManager::setScene("captura", ctx);
         }
     }
 };

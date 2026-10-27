@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). L
 
 ## [Sin publicar]
 
+### Corregido
+
+- Al terminar «Probar bombas» durante una captura, la interfaz vuelve a la información de captura y no al menú de pausa.
+
 ## [1.0.0] - 2026-10-26
 
 ### Agregado
