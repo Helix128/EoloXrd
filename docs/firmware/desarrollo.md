@@ -81,13 +81,26 @@ Compilar no prueba el hardware, así que reporta por separado lo que compiló, l
 
 Las pruebas en hardware requieren la placa de la variante conectada. Indica su puerto con `--test-port`; no las ejecutes contra otra variante.
 
+## Versionado
+
+Las versiones siguen `MAJOR.MINOR.PATCH`:
+
+| Parte | Sube cuando | Ejemplos |
+|---|---|---|
+| `X.0.0` | Hay una plataforma o familia de hardware nueva, o un cambio que rompe los datos guardados en la NVS (calibración, presets) o su formato | Un SoC distinto; una familia nueva en `src/` |
+| `1.X.0` | Cambia la interfaz o se agrega una función a sistemas existentes, incluida una variante nueva dentro de una familia existente | Menú «Opciones»; porcentaje de batería en la cabecera; Mini Rev.3 |
+| `1.0.X` | Corrección de un error o ajuste menor, sin cambio de interfaz | «Probar bombas» vuelve a la captura |
+
+Al subir `MINOR`, `PATCH` vuelve a 0; al subir `MAJOR`, ambos vuelven a 0. Si una versión mezcla cambios, manda el mayor. Los cambios que no tocan el firmware (CI, página de flasheo, docs) no justifican una versión por sí solos.
+
 ## Publicar una versión
 
 Cada versión publicada queda fija: tiene su release en GitHub y aparece en la [página de flasheo](https://helix128.github.io/EoloXrd/), desde donde cualquiera la instala con Chrome o Edge sin PlatformIO.
 
-1. En `CHANGELOG.md`, renombra `[Sin publicar]` a la versión nueva con su fecha, por ejemplo `## [1.0.0] - 2026-10-26`, y deja un `[Sin publicar]` vacío arriba.
-2. Haz commit de ese cambio en `main`.
-3. Crea y sube el tag:
+1. Elige la versión según [Versionado](#versionado) y actualiza `version` en `lib/EoloCore/library.json`.
+2. En `CHANGELOG.md`, renombra `[Sin publicar]` a la versión nueva con su fecha, por ejemplo `## [1.0.0] - 2026-10-26`, y deja un `[Sin publicar]` vacío arriba.
+3. Haz commit de ambos cambios en `main`.
+4. Crea y sube el tag:
 
 ```bash
 git tag v1.0.0
