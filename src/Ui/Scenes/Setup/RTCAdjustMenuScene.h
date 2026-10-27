@@ -58,6 +58,38 @@ private:
         ManualTime
     };
 
+    enum MainAction
+    {
+        ActionChangeTime,
+        ActionSync,
+        ActionBack
+    };
+
+    // «Sincronizar» solo existe en equipos con modem.
+    static int mainMenuCount() { return Context::kCanSyncRtcOverNetwork ? 3 : 2; }
+
+    static MainAction mainActionAt(int index)
+    {
+        if (index == 0)
+            return ActionChangeTime;
+        if (Context::kCanSyncRtcOverNetwork && index == 1)
+            return ActionSync;
+        return ActionBack;
+    }
+
+    static const char *mainLabelAt(int index)
+    {
+        switch (mainActionAt(index))
+        {
+        case ActionChangeTime:
+            return "Cambiar hora";
+        case ActionSync:
+            return "Sincronizar";
+        default:
+            return "Regresar";
+        }
+    }
+
     State state = MainMenu;
     int selected = 0;
     int field = 0;
@@ -69,11 +101,12 @@ private:
 
     void updateMain(Context &ctx, int delta, bool pressed)
     {
-        selected = constrain(selected + delta, 0, 2);
+        selected = constrain(selected + delta, 0, mainMenuCount() - 1);
         if (!pressed)
             return;
 
-        if (selected == 0)
+        const MainAction action = mainActionAt(selected);
+        if (action == ActionChangeTime)
         {
             DateTime now = ctx.components.rtc.timeForManualAdjustment();
             hour = now.hour();
@@ -81,7 +114,7 @@ private:
             field = 0;
             state = ManualTime;
         }
-        else if (selected == 1)
+        else if (action == ActionSync)
         {
             ctx.startRTCNetworkSync();
         }
@@ -128,8 +161,11 @@ private:
             }
             else
             {
-                const char *labels[3] = {"Cambiar hora", "Sincronizar", "Regresar"};
-                drawMenu(ctx, labels, 3);
+                const char *labels[3];
+                const int count = mainMenuCount();
+                for (int i = 0; i < count; i++)
+                    labels[i] = mainLabelAt(i);
+                drawMenu(ctx, labels, count);
             }
         }
         else if (state == ManualTime)

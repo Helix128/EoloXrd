@@ -12,6 +12,8 @@
 #include "../Scenes/Setup/FlujoScene.h"
 #include "../Scenes/Setup/InstantFlujoScene.h"
 #include "../Scenes/Setup/PlantowerScene.h"
+#include "../Scenes/Setup/OpcionesScene.h"
+#include "../Scenes/Setup/PantallaScene.h"
 #include "../Scenes/Captura/WaitScene.h"
 #include "../Scenes/Captura/CapturaScene.h"
 #include "../Scenes/Captura/MenuCapturaScene.h"
@@ -41,6 +43,8 @@ namespace SceneName
     constexpr const char *EndMenu = EndMenuScene::Name;
     constexpr const char *CapturaBombas = CapturaBombasScene::Name;
     constexpr const char *AcercaDe = AcercaDeScene::Name;
+    constexpr const char *Opciones = OpcionesScene::Name;
+    constexpr const char *Pantalla = PantallaScene::Name;
 }
 
 inline void registerAllScenes()
@@ -65,6 +69,8 @@ inline void registerAllScenes()
     static EndMenuScene s_end_menu;
     static CapturaBombasScene s_captura_bombas;
     static AcercaDeScene s_acerca_de;
+    static OpcionesScene s_opciones;
+    static PantallaScene s_pantalla;
 
     static const SceneEntry scenes[] = {
         makeScene(s_splash),
@@ -87,6 +93,8 @@ inline void registerAllScenes()
         makeScene(s_end_menu),
         makeScene(s_captura_bombas),
         makeScene(s_acerca_de),
+        makeScene(s_opciones),
+        makeScene(s_pantalla),
     };
 
     SceneManager::setScenes(scenes, sizeof(scenes) / sizeof(scenes[0]));

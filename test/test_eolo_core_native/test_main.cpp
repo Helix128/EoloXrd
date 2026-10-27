@@ -20,6 +20,7 @@
 #include <Eolo/Core/Communication/HttpUrl.h>
 #include <Eolo/Core/Communication/SignalQuality.h>
 #include <Eolo/Core/Ui/StatusLedPatterns.h>
+#include <Eolo/Core/Ui/DisplayPowerPolicy.h>
 #include <Eolo/Core/Debug/ConsoleArgs.h>
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
@@ -55,6 +56,53 @@ void test_rtc_parser_is_calendar_aware()
     TEST_ASSERT_EQUAL_UINT16(2028, value.year);
     TEST_ASSERT_FALSE(RtcTimeParser::parseDateTime("2026-02-29 12:00:00", value));
     TEST_ASSERT_FALSE(RtcTimeParser::parseDateTime("2026-04-31 12:00:00", value));
+}
+
+static void test_display_power_dims_fades_and_turns_off()
+{
+    DisplayPowerConfig cfg; // 100 %, atenua a 15 s, apaga a 30 s
+    DisplayPowerOutput out = DisplayPowerPolicy::evaluate(cfg, 0);
+    TEST_ASSERT_EQUAL_UINT8(255, out.contrast);
+    TEST_ASSERT_TRUE(out.powerOn);
+
+    out = DisplayPowerPolicy::evaluate(cfg, 14999);
+    TEST_ASSERT_EQUAL_UINT8(255, out.contrast);
+
+    // A mitad del fade de atenuacion el contraste esta entre el pleno y el tenue.
+    out = DisplayPowerPolicy::evaluate(cfg, 16000);
+    TEST_ASSERT_TRUE(out.contrast < 255 && out.contrast > 63);
+
+    out = DisplayPowerPolicy::evaluate(cfg, 20000);
+    TEST_ASSERT_EQUAL_UINT8(63, out.contrast);
+    TEST_ASSERT_TRUE(out.powerOn);
+
+    out = DisplayPowerPolicy::evaluate(cfg, 31000);
+    TEST_ASSERT_TRUE(out.contrast < 63);
+    TEST_ASSERT_TRUE(out.powerOn);
+
+    out = DisplayPowerPolicy::evaluate(cfg, 32000);
+    TEST_ASSERT_EQUAL_UINT8(0, out.contrast);
+    TEST_ASSERT_FALSE(out.powerOn);
+}
+
+static void test_display_power_scales_with_brightness_and_sanitizes()
+{
+    DisplayPowerConfig cfg;
+    cfg.brightnessPct = 50;
+    TEST_ASSERT_EQUAL_UINT8(127, DisplayPowerPolicy::evaluate(cfg, 0).contrast);
+
+    cfg.brightnessPct = 0;
+    cfg.dimAfterS = 1;
+    cfg.offAfterS = 2;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT8(DisplayPowerConfig::MinBrightnessPct, cfg.brightnessPct);
+    TEST_ASSERT_EQUAL_UINT16(DisplayPowerConfig::MinDimAfterS, cfg.dimAfterS);
+    TEST_ASSERT_TRUE(cfg.offAfterS >= cfg.dimAfterS + 2);
+
+    cfg.dimAfterS = 120;
+    cfg.offAfterS = 30;
+    cfg.sanitize();
+    TEST_ASSERT_TRUE(cfg.offAfterS >= 122);
 }
 
 static void test_session_is_epoch_only()
@@ -2091,6 +2139,8 @@ int main(int, char **)
     RUN_TEST(test_flow_cusum_recovers_from_pump_gain_loss);
     RUN_TEST(test_flow_cusum_disabled_keeps_legacy_behavior);
     RUN_TEST(test_flow_relative_deadband_corrects_small_offset);
+    RUN_TEST(test_display_power_dims_fades_and_turns_off);
+    RUN_TEST(test_display_power_scales_with_brightness_and_sanitizes);
     RUN_TEST(test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable);
     RUN_TEST(test_flow_cusum_jump_damping_converges_without_limit_cycle);
     RUN_TEST(test_flow_cusum_pauses_when_flow_near_zero);

@@ -17,6 +17,9 @@ constexpr uint32_t LockTimeoutMs = 20;
 // Solo dibuja la tarea de UI, por lo que el estado no necesita protección.
 inline bool skipping = false;
 inline bool dropReported = false;
+// Transferencias descartadas por bus ocupado. Quien envia un comando que no
+// admite perderse (encender, contraste) compara el contador antes y despues.
+inline uint32_t dropCount = 0;
 
 inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
 {
@@ -27,6 +30,7 @@ inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
         {
             // Se descarta la transferencia; el siguiente frame repinta todo.
             skipping = true;
+            dropCount++;
             if (!dropReported)
             {
                 dropReported = true;

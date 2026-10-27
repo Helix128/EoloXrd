@@ -32,6 +32,10 @@
 #include "Profiler.h"
 #include <atomic>
 #include <Eolo/Core/Capture/CaptureSafetyModel.h>
+#ifndef FEATURE_HEADLESS
+#include <Eolo/Core/Ui/DisplayPowerPolicy.h>
+#include "PreferencesSettingsStore.h"
+#endif
 
 typedef struct Context
 {
@@ -41,7 +45,14 @@ typedef struct Context
     bool isDisplayOn = true;
     bool isDisplayReady = false;
     unsigned long int lastInputTime = 0;
-    const unsigned long int DISPLAY_TIMEOUT_MS = 60000;
+#ifndef FEATURE_HEADLESS
+    DisplayPowerConfig displayPower;
+    uint8_t appliedContrast = 255;
+    unsigned long lastContrastMs = 0;
+    // Los fades bajan el contraste a este ritmo: cada paso es una transferencia
+    // al panel y el bus I2C lo comparten los sensores.
+    static constexpr unsigned long CONTRAST_STEP_MS = 40;
+#endif
 
     Components components;
     Session session;
@@ -81,6 +92,7 @@ typedef struct Context
     std::atomic_uint32_t bootPhaseRevision{0};
     std::atomic_uint32_t bootPhaseRenderedRevision{0};
     const char *rtcAdjustReturnScene = "inicio";
+    const char *optionsReturnScene = "inicio";
 
     using RTCNetworkSyncStatus = ::RTCNetworkSyncStatus;
 
@@ -145,6 +157,10 @@ public:
 #ifndef FEATURE_HEADLESS
         // 3. Inicializar pantalla
         LOG_LN("Iniciando pantalla...");
+        {
+            PreferencesSettingsStore displayStore("eolo_display");
+            displayPower = DisplayPowerConfig::load(displayStore);
+        }
         initDisplay();
         LOG_LN("Pantalla iniciada");
 #else
@@ -261,6 +277,14 @@ public:
             0);
     }
 
+    // La sincronizacion de hora por red requiere el modem; sin el, la UI no
+    // debe ofrecerla.
+#ifdef FEATURE_MODEM
+    static constexpr bool kCanSyncRtcOverNetwork = true;
+#else
+    static constexpr bool kCanSyncRtcOverNetwork = false;
+#endif
+
     bool syncRTCFromTimeServer(const char *url = RTCManager::DefaultTimeServerUrl)
     {
 #ifdef FEATURE_MODEM
@@ -308,6 +332,8 @@ public:
         u8g2.setBusClock(EoloConfig::i2cClockHz);
         I2CDisplayTransport::install(u8g2.getU8x8());
 #endif
+        appliedContrast = displayPower.baseContrast();
+        u8g2.setContrast(appliedContrast);
         u8g2.clearBuffer();
         u8g2.setBitmapMode(1);
         u8g2.drawXBM(0, 0, 128, 64, cmas);
@@ -316,22 +342,88 @@ public:
 #endif
     }
 
-    void setDisplayPower(bool on)
+    // Ejecuta un comando del panel sin bloquear el loop: con SD o sensores
+    // ocupando el bus (SPI compartido, I2C por transferencia) devuelve false y
+    // el llamador reintenta en el siguiente ciclo, en vez de esperar o de dar
+    // por aplicado un comando que no llego.
+    template <typename Command>
+    bool tryDisplayCommand(Command &&command)
     {
 #ifndef FEATURE_HEADLESS
-        SPIBus::Guard spiGuard;
+        SPIBus::Guard spiGuard(pdMS_TO_TICKS(1));
+        if (!spiGuard.acquired())
+            return false;
+#if !EOLO_DISPLAY_SPI
+        const uint32_t dropsBefore = I2CDisplayTransport::dropCount;
+#endif
+        command();
+#if !EOLO_DISPLAY_SPI
+        return I2CDisplayTransport::dropCount == dropsBefore;
+#else
+        return true;
+#endif
+#else
+        (void)command;
+        return false;
+#endif
+    }
+
+    bool setDisplayPower(bool on)
+    {
+#ifndef FEATURE_HEADLESS
+        if (!tryDisplayCommand([&] { u8g2.setPowerSave(on ? 0 : 1); }))
+            return false;
         isDisplayOn = on;
-        if (on)
-        {
-            u8g2.setPowerSave(0);
-        }
-        else
-        {
-            u8g2.setPowerSave(1);
-        }
+        return true;
 #else
         (void)on;
         isDisplayOn = false;
+        return false;
+#endif
+    }
+
+    bool applyDisplayContrast(uint8_t contrast)
+    {
+#ifndef FEATURE_HEADLESS
+        if (!tryDisplayCommand([&] { u8g2.setContrast(contrast); }))
+            return false;
+        appliedContrast = contrast;
+        lastContrastMs = millis();
+        return true;
+#else
+        (void)contrast;
+        return false;
+#endif
+    }
+
+    // Persiste el ajuste de pantalla (brillo y tiempos de atenuado/apagado).
+    void saveDisplayPower()
+    {
+#ifndef FEATURE_HEADLESS
+        displayPower.sanitize();
+        PreferencesSettingsStore displayStore("eolo_display");
+        displayPower.save(displayStore);
+#endif
+    }
+
+    // Aplica la politica de energia segun la inactividad: atenua, desvanece y
+    // apaga el panel; al despertar enciende primero y luego restaura el brillo.
+    void updateDisplayPower()
+    {
+#ifndef FEATURE_HEADLESS
+        if (!isDisplayReady)
+            return;
+        const DisplayPowerOutput out =
+            DisplayPowerPolicy::evaluate(displayPower, (uint32_t)(millis() - lastInputTime));
+        if (out.powerOn && !isDisplayOn && setDisplayPower(true))
+            markUiDirty();
+        // Subir (despertar) es inmediato; bajar se espacia. Si el comando no
+        // llega, appliedContrast no cambia y se reintenta en el siguiente ciclo.
+        if (out.powerOn && out.contrast != appliedContrast &&
+            (out.contrast > appliedContrast || millis() - lastContrastMs >= CONTRAST_STEP_MS))
+            applyDisplayContrast(out.contrast);
+        if (!out.powerOn && isDisplayOn && setDisplayPower(false))
+            markUiDirty();
 #endif
     }
 
@@ -710,17 +802,11 @@ public:
         inputChanged = components.input.hasChanged;
         if (components.input.hasChanged)
         {
-            setDisplayPower(true);
             lastInputTime = millis();
             components.input.hasChanged = false;
             markUiDirty();
         }
-
-        if (isDisplayOn && (millis() - lastInputTime > DISPLAY_TIMEOUT_MS))
-        {
-            setDisplayPower(false);
-            markUiDirty();
-        }
+        updateDisplayPower();
 #endif
 
         // Una captura activa siempre conserva la protección térmica. El Dron
