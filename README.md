@@ -59,7 +59,3 @@ demos/      sketches para probar sensores y componentes aislados
 web-server/ página de setup Wi-Fi del Mini Rev.1
 docs/       manuales, datos, firmware, hardware y archivo histórico
 ```
-
-## Licencia
-
-El código pertenece al laboratorio C+ (UDD). Licencia por definir.
