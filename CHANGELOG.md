@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). L
 
 ## [Sin publicar]
 
+### Agregado
+
+- Pantalla: «Atenuar» y «Apagar» pueden ponerse en «Nunca» (después de 5 min). Sin atenuar, la pantalla se apaga desde el brillo normal; sin apagar, queda atenuada; con ambos en «Nunca» no cambia. «Apagar» empieza en 10 s.
+
 ### Cambiado
 
 - Pantalla: «Atenuar» y «Apagar» comparten los mismos tiempos (de 5 s a 1 min cada 5 s, y de 1 a 5 min cada minuto). Si «Atenuar» alcanza a «Apagar», este pasa al paso siguiente en vez de quedar unos segundos después. Los tiempos guardados fuera de esa lista se ajustan al paso inferior; el máximo baja de 10 a 5 min.

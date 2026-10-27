@@ -78,18 +78,19 @@ private:
                                                    DisplayPowerConfig::MaxBrightnessPct);
             break;
         case RowDim:
-            cfg.dimAfterS = DisplayPowerConfig::stepBy(cfg.dimAfterS, delta);
+            cfg.stepDim(delta);
             break;
         case RowOff:
-            cfg.offAfterS = DisplayPowerConfig::stepBy(cfg.offAfterS, delta);
+            cfg.stepOff(delta);
             break;
         }
-        cfg.sanitize();
     }
 
     static void formatSeconds(char *out, size_t len, const char *name, uint16_t s)
     {
-        if (s >= 60 && s % 60 == 0)
+        if (s == DisplayPowerConfig::Never)
+            snprintf(out, len, "%s: Nunca", name);
+        else if (s >= 60 && s % 60 == 0)
             snprintf(out, len, "%s: %u min", name, s / 60);
         else
             snprintf(out, len, "%s: %u s", name, s);

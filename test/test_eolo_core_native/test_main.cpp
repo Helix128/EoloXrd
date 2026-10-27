@@ -123,18 +123,63 @@ static void test_display_power_times_stay_on_shared_steps()
     TEST_ASSERT_EQUAL_UINT16(120, cfg.dimAfterS);
     TEST_ASSERT_EQUAL_UINT16(180, cfg.offAfterS);
 
-    // Atenuar no pasa del penultimo paso para dejar uno a apagar.
+    // Sin paso posterior a atenuar, apagar pasa a Never.
     cfg.dimAfterS = 300;
     cfg.offAfterS = 300;
     cfg.sanitize();
-    TEST_ASSERT_EQUAL_UINT16(240, cfg.dimAfterS);
-    TEST_ASSERT_EQUAL_UINT16(300, cfg.offAfterS);
+    TEST_ASSERT_EQUAL_UINT16(300, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(DisplayPowerConfig::Never, cfg.offAfterS);
+
+    // Apagar parte de 10 s aunque atenuar este en Never.
+    cfg.dimAfterS = DisplayPowerConfig::Never;
+    cfg.offAfterS = 5;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT16(10, cfg.offAfterS);
 
     TEST_ASSERT_EQUAL_UINT16(10, DisplayPowerConfig::stepBy(5, 1));
     TEST_ASSERT_EQUAL_UINT16(120, DisplayPowerConfig::stepBy(60, 1));
     TEST_ASSERT_EQUAL_UINT16(60, DisplayPowerConfig::stepBy(120, -1));
     TEST_ASSERT_EQUAL_UINT16(5, DisplayPowerConfig::stepBy(5, -1));
-    TEST_ASSERT_EQUAL_UINT16(300, DisplayPowerConfig::stepBy(300, 1));
+    TEST_ASSERT_EQUAL_UINT16(DisplayPowerConfig::Never, DisplayPowerConfig::stepBy(300, 1));
+    TEST_ASSERT_EQUAL_UINT16(DisplayPowerConfig::Never, DisplayPowerConfig::stepBy(DisplayPowerConfig::Never, 1));
+    TEST_ASSERT_EQUAL_UINT16(300, DisplayPowerConfig::stepBy(DisplayPowerConfig::Never, -1));
+}
+
+static void test_display_power_never_disables_each_stage()
+{
+    DisplayPowerConfig cfg;
+    cfg.brightnessPct = 100;
+
+    cfg.dimAfterS = DisplayPowerConfig::Never;
+    cfg.offAfterS = 30;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT8(255, DisplayPowerPolicy::evaluate(cfg, 29000).contrast);
+    TEST_ASSERT_EQUAL_UINT8(128, DisplayPowerPolicy::evaluate(cfg, 31000).contrast);
+    TEST_ASSERT_FALSE(DisplayPowerPolicy::evaluate(cfg, 33000).powerOn);
+
+    cfg.dimAfterS = 15;
+    cfg.offAfterS = DisplayPowerConfig::Never;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT8(63, DisplayPowerPolicy::evaluate(cfg, 20000).contrast);
+    TEST_ASSERT_EQUAL_UINT8(63, DisplayPowerPolicy::evaluate(cfg, 4000000).contrast);
+    TEST_ASSERT_TRUE(DisplayPowerPolicy::evaluate(cfg, 4000000).powerOn);
+
+    cfg.dimAfterS = DisplayPowerConfig::Never;
+    cfg.sanitize();
+    TEST_ASSERT_EQUAL_UINT8(255, DisplayPowerPolicy::evaluate(cfg, 4000000).contrast);
+    TEST_ASSERT_TRUE(DisplayPowerPolicy::evaluate(cfg, 4000000).powerOn);
+
+    // Bajar atenuar desde Never queda bajo el apagado y no lo empuja a Never.
+    cfg.dimAfterS = DisplayPowerConfig::Never;
+    cfg.offAfterS = 60;
+    cfg.stepDim(-1);
+    TEST_ASSERT_EQUAL_UINT16(55, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(60, cfg.offAfterS);
+
+    // Subir atenuar hasta apagar empuja apagar al paso siguiente.
+    cfg.stepDim(1);
+    TEST_ASSERT_EQUAL_UINT16(60, cfg.dimAfterS);
+    TEST_ASSERT_EQUAL_UINT16(120, cfg.offAfterS);
 }
 
 static void test_session_is_epoch_only()
@@ -2174,6 +2219,7 @@ int main(int, char **)
     RUN_TEST(test_display_power_dims_fades_and_turns_off);
     RUN_TEST(test_display_power_scales_with_brightness_and_sanitizes);
     RUN_TEST(test_display_power_times_stay_on_shared_steps);
+    RUN_TEST(test_display_power_never_disables_each_stage);
     RUN_TEST(test_flow_single_motor_caps_virtual_pwm_and_flags_unreachable);
     RUN_TEST(test_flow_cusum_jump_damping_converges_without_limit_cycle);
     RUN_TEST(test_flow_cusum_pauses_when_flow_near_zero);

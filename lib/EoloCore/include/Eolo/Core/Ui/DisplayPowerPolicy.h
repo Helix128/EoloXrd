@@ -16,7 +16,9 @@ struct DisplayPowerConfig
     static constexpr uint32_t DimFadeMs = 2000;
     static constexpr uint32_t OffFadeMs = 2000;
     // Tiempos posibles, comunes a atenuar y apagar: de 5 s a 1 min cada 5 s,
-    // y de 1 a 5 min cada minuto.
+    // y de 1 a 5 min cada minuto. Never (0) desactiva esa etapa y es el valor
+    // mayor de la lista, despues de 5 min.
+    static constexpr uint16_t Never = 0;
     static constexpr uint16_t Steps[] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60,
                                          120, 180, 240, 300};
     static constexpr uint8_t StepCount = sizeof(Steps) / sizeof(Steps[0]);
@@ -35,27 +37,52 @@ struct DisplayPowerConfig
         return index;
     }
 
-    // Paso anterior o siguiente a `current`, sin salirse de la lista.
+    // Paso anterior o siguiente a `current`; despues del ultimo viene Never.
     static uint16_t stepBy(uint16_t current, int delta)
     {
-        const int index = (int)stepIndex(current) + (delta > 0 ? 1 : -1);
-        return Steps[index < 0 ? 0 : (index >= StepCount ? StepCount - 1 : index)];
+        const int index = (current == Never ? (int)StepCount : (int)stepIndex(current)) + (delta > 0 ? 1 : -1);
+        if (index < 0)
+            return Steps[0];
+        return index >= StepCount ? Never : Steps[index];
     }
 
-    // Deja los tiempos sobre la lista de pasos y el apagado siempre en un paso
-    // posterior al de atenuar (si chocan, cede el apagado).
+    // Mueve el tiempo de atenuar. Al bajar desde Never queda en el mayor paso
+    // anterior al apagado, para no empujarlo a Never.
+    void stepDim(int delta)
+    {
+        if (dimAfterS == Never && delta < 0 && offAfterS != Never)
+            dimAfterS = Steps[stepIndex(offAfterS) > 0 ? stepIndex(offAfterS) - 1 : 0];
+        else
+            dimAfterS = stepBy(dimAfterS, delta);
+        sanitize();
+    }
+
+    void stepOff(int delta)
+    {
+        offAfterS = stepBy(offAfterS, delta);
+        sanitize();
+    }
+
+    // Deja los tiempos sobre la lista de pasos. Si ambos estan activos, el
+    // apagado queda en un paso posterior al de atenuar (si chocan, cede el
+    // apagado, y pasa a Never si no queda un paso). El apagado parte de 10 s.
     void sanitize()
     {
         if (brightnessPct < MinBrightnessPct)
             brightnessPct = MinBrightnessPct;
         if (brightnessPct > MaxBrightnessPct)
             brightnessPct = MaxBrightnessPct;
-        const uint8_t dimIndex = stepIndex(dimAfterS) < StepCount - 1 ? stepIndex(dimAfterS) : StepCount - 2;
+        const uint8_t dimIndex = stepIndex(dimAfterS);
+        if (dimAfterS != Never)
+            dimAfterS = Steps[dimIndex];
+        if (offAfterS == Never)
+            return;
         uint8_t offIndex = stepIndex(offAfterS);
-        if (offIndex <= dimIndex)
+        if (offIndex < 1)
+            offIndex = 1;
+        if (dimAfterS != Never && offIndex <= dimIndex)
             offIndex = dimIndex + 1;
-        dimAfterS = Steps[dimIndex];
-        offAfterS = Steps[offIndex];
+        offAfterS = offIndex < StepCount ? Steps[offIndex] : Never;
     }
 
     uint8_t baseContrast() const { return (uint8_t)((uint32_t)brightnessPct * 255U / 100U); }
@@ -98,23 +125,29 @@ inline uint8_t lerp(uint8_t from, uint8_t to, uint32_t elapsed, uint32_t span)
     return (uint8_t)((int32_t)from + delta * (int32_t)elapsed / (int32_t)span);
 }
 
-// idleMs: milisegundos desde la ultima actividad.
+// idleMs: milisegundos desde la ultima actividad. Una etapa en Never no ocurre:
+// sin atenuar, el apagado hace el fade desde el brillo normal; sin apagar, el
+// panel se queda atenuado.
 inline DisplayPowerOutput evaluate(const DisplayPowerConfig &cfg, uint32_t idleMs)
 {
+    const bool dimOn = cfg.dimAfterS != DisplayPowerConfig::Never;
+    const bool offOn = cfg.offAfterS != DisplayPowerConfig::Never;
     const uint8_t base = cfg.baseContrast();
     const uint8_t dim = (uint8_t)((uint32_t)base * DisplayPowerConfig::DimLevelPct / 100U);
     const uint32_t dimAt = (uint32_t)cfg.dimAfterS * 1000UL;
     const uint32_t offAt = (uint32_t)cfg.offAfterS * 1000UL;
 
-    if (idleMs < dimAt)
+    if (offOn && idleMs >= offAt)
+    {
+        if (idleMs < offAt + DisplayPowerConfig::OffFadeMs)
+            return {lerp(dimOn ? dim : base, 0, idleMs - offAt, DisplayPowerConfig::OffFadeMs), true};
+        return {0, false};
+    }
+    if (!dimOn || idleMs < dimAt)
         return {base, true};
     if (idleMs < dimAt + DisplayPowerConfig::DimFadeMs)
         return {lerp(base, dim, idleMs - dimAt, DisplayPowerConfig::DimFadeMs), true};
-    if (idleMs < offAt)
-        return {dim, true};
-    if (idleMs < offAt + DisplayPowerConfig::OffFadeMs)
-        return {lerp(dim, 0, idleMs - offAt, DisplayPowerConfig::OffFadeMs), true};
-    return {0, false};
+    return {dim, true};
 }
 } // namespace DisplayPowerPolicy
 
