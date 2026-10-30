@@ -36,7 +36,10 @@ class LogService
     bool sdMissingLogReported = false;
     LogIndexService logIndex;
 
+    bool indexTaskStarted = false;
+
     static void logTaskWorker(void *arg);
+    static void indexTaskWorker(void *arg);
 
 public:
     const char *eoloDir = "/EOLO";
@@ -58,13 +61,15 @@ public:
                           bool kickActive = false, bool finalRecord = false);
     bool logsIdle() const;
     LogIndexService::ReconcileSummary indexSummary() const { return logIndex.reconciliationSummary(); }
+    // Sincrono; reconcile toma el SPI por bloques, no hay que tomarlo aqui.
     bool reconcileIndex(bool force = false)
     {
         if (!isSdReady)
             return false;
-        SPIBus::Guard spiGuard;
         return logIndex.reconcile(logsDir, force);
     }
+    void startIndexReconcile();
+    bool indexReconciling() const { return logIndex.reconciling(); }
     bool logData(const LogRecord &record, uint32_t sessionStartUnix,
                  bool includeState, bool includePlantower,
                  bool includeAnemometer, bool includeNtc,
@@ -207,17 +212,31 @@ inline bool LogService::initSD()
         LOG_LN("Directorio /EOLO/logs ya existe en SD");
     }
 
-    sdStatus = SD_WRITING;
-    if (!logIndex.reconcile(logsDir))
-    {
-        LOG_LN("No se pudo reconciliar el indice maestro de capturas");
-        markSdFailed();
-        return false;
-    }
-
     LOG_LN("SD inicializada");
     sdStatus = SD_OK;
     return true;
+}
+
+inline void LogService::indexTaskWorker(void *arg)
+{
+    LogService *service = static_cast<LogService *>(arg);
+    if (!service->reconcileIndex())
+    {
+        LOG_LN("No se pudo reconciliar el indice maestro de capturas");
+        service->markSdFailed();
+    }
+    vTaskDelete(nullptr);
+}
+
+inline void LogService::startIndexReconcile()
+{
+    if (!isSdReady || indexTaskStarted)
+        return;
+    indexTaskStarted = true;
+    // Prio 1 (servicio de fondo): reconstruye el indice sin retrasar el arranque.
+    // Stack 8192: lectura de CSV con Strings y vector de entradas.
+    // Core 0: la UI vive en core 1; el SPI compartido se cede por bloques.
+    xTaskCreatePinnedToCore(indexTaskWorker, "EoloIndexTask", 8192, this, 1, nullptr, 0);
 }
 
 inline void LogService::markSdFailed()

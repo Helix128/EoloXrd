@@ -5,7 +5,9 @@
 #include <SD.h>
 #include <RTClib.h>
 #include <algorithm>
+#include <atomic>
 #include <vector>
+#include "../../Board/SPIBus.h"
 #include "../../../Variants/Legacy.h"
 #include <Eolo/Core/Time/RtcTimeParser.h>
 
@@ -46,13 +48,21 @@ public:
         VolumeSource volumeSource = VolumeSource::Recorded;
     };
 
+    // Filas leidas por cada toma del SPI durante el escaneo de capturas.
+    static constexpr uint8_t ScanRowsPerBlock = 64;
+
+    // Toma el SPI por bloques; no debe llamarse con SPIBus::Guard tomado o la
+    // pantalla quedaria sin bus hasta terminar.
     bool reconcile(const char *logsDir, bool force = false);
+    // upsert/remove los llaman el hilo de log y removeLogAndIndex con el SPI
+    // tomado. Mientras reconcile escanea, se acumulan y se aplican al final.
     bool upsert(const Entry &entry);
     bool remove(const char *logFile);
     bool makeEntryFromCapture(const char *logFile, uint32_t startUnix,
                               uint32_t endUnix, float capturedVolume,
                               Entry &entry) const;
     ReconcileSummary reconciliationSummary() const;
+    bool reconciling() const { return _reconciling.load(); }
     static const char *volumeSourceName(VolumeSource source);
 
 private:
@@ -74,6 +84,10 @@ private:
     bool writeAll(std::vector<Entry> &entries) const;
     mutable portMUX_TYPE _summaryMux = portMUX_INITIALIZER_UNLOCKED;
     ReconcileSummary _summary;
+    // Escritos solo con el SPI tomado.
+    std::atomic_bool _reconciling{false};
+    std::vector<Entry> _pendingUpserts;
+    std::vector<String> _pendingRemovals;
 };
 
 inline const char *LogIndexService::volumeSourceName(VolumeSource source)
@@ -222,25 +236,29 @@ inline bool LogIndexService::readCapture(const char *path, const String &name, E
                                          uint32_t &ignoredRows) const
 {
     validRows = ignoredRows = 0;
-    File file = SD.open(path, FILE_READ);
-    if (!file) {
-        result = ReadResult::ReadError;
-        return false;
+    // El SPI se comparte con la pantalla: se toma por bloques cortos y se
+    // cede entre ellos para que la UI siga dibujando y IDLE0 alimente el
+    // watchdog aunque la captura tenga miles de filas.
+    File file;
+    String header;
+    {
+        SPIBus::Guard spiGuard;
+        file = SD.open(path, FILE_READ);
+        if (!file) {
+            result = ReadResult::ReadError;
+            return false;
+        }
+        header = file.readStringUntil('\n');
     }
-    String header = file.readStringUntil('\n');
     header.trim();
-    if (header.length() == 0) {
-        file.close();
-        result = ReadResult::Empty;
-        return false;
-    }
     const int timeColumn = fieldIndex(header, "time");
     const int volumeColumn = fieldIndex(header, "captured_volume");
     const int flowColumn = fieldIndex(header, "flow");
-    if (timeColumn < 0)
+    if (header.length() == 0 || timeColumn < 0)
     {
+        SPIBus::Guard spiGuard;
         file.close();
-        result = ReadResult::MissingTime;
+        result = header.length() == 0 ? ReadResult::Empty : ReadResult::MissingTime;
         return false;
     }
 
@@ -252,45 +270,62 @@ inline bool LogIndexService::readCapture(const char *path, const String &name, E
     bool foundFlow = false;
     bool found = false;
     bool sawDataRow = false;
-    while (file.available())
+    bool more = true;
+    while (more)
     {
-        String row = file.readStringUntil('\n');
-        row.trim();
-        if (row.length() == 0)
-            continue;
-        sawDataRow = true;
-        uint32_t rowUnix = 0;
-        if (!parseTimestamp(fieldAt(row, timeColumn), rowUnix) ||
-            (found && rowUnix < lastUnix))
         {
-            ++ignoredRows;
-            continue;
-        }
-        if (!found)
-            firstUnix = rowUnix;
-        lastUnix = rowUnix;
-        found = true;
-        ++validRows;
+            SPIBus::Guard spiGuard;
+            for (uint8_t scanned = 0; scanned < ScanRowsPerBlock; ++scanned)
+            {
+                if (!file.available())
+                {
+                    more = false;
+                    break;
+                }
+                String row = file.readStringUntil('\n');
+                row.trim();
+                if (row.length() == 0)
+                    continue;
+                sawDataRow = true;
+                uint32_t rowUnix = 0;
+                if (!parseTimestamp(fieldAt(row, timeColumn), rowUnix) ||
+                    (found && rowUnix < lastUnix))
+                {
+                    ++ignoredRows;
+                    continue;
+                }
+                if (!found)
+                    firstUnix = rowUnix;
+                lastUnix = rowUnix;
+                found = true;
+                ++validRows;
 
-        if (volumeColumn >= 0) {
-            String text = fieldAt(row, volumeColumn);
-            char *end = nullptr;
-            float value = strtof(text.c_str(), &end);
-            if (end != text.c_str() && *end == '\0' && isfinite(value)) {
-                lastVolume = value;
-                foundVolume = true;
-            }
-        } else if (flowColumn >= 0) {
-            String text = fieldAt(row, flowColumn);
-            char *end = nullptr;
-            float flow = strtof(text.c_str(), &end);
-            if (end != text.c_str() && *end == '\0' && isfinite(flow) && flow >= 0.0f) {
-                estimatedVolume += flow * (10.0f / 60.0f);
-                foundFlow = true;
+                if (volumeColumn >= 0) {
+                    String text = fieldAt(row, volumeColumn);
+                    char *end = nullptr;
+                    float value = strtof(text.c_str(), &end);
+                    if (end != text.c_str() && *end == '\0' && isfinite(value)) {
+                        lastVolume = value;
+                        foundVolume = true;
+                    }
+                } else if (flowColumn >= 0) {
+                    String text = fieldAt(row, flowColumn);
+                    char *end = nullptr;
+                    float flow = strtof(text.c_str(), &end);
+                    if (end != text.c_str() && *end == '\0' && isfinite(flow) && flow >= 0.0f) {
+                        estimatedVolume += flow * (10.0f / 60.0f);
+                        foundFlow = true;
+                    }
+                }
             }
         }
+        if (more)
+            vTaskDelay(1);
     }
-    file.close();
+    {
+        SPIBus::Guard spiGuard;
+        file.close();
+    }
     if (!found) {
         result = sawDataRow ? ReadResult::NoValidTimestamp : ReadResult::Empty;
         return false;
@@ -481,6 +516,17 @@ inline bool LogIndexService::writeAll(std::vector<Entry> &entries) const
 
 inline bool LogIndexService::upsert(const Entry &entry)
 {
+    if (_reconciling.load())
+    {
+        for (Entry &pending : _pendingUpserts)
+            if (pending.logFile == entry.logFile)
+            {
+                pending = entry;
+                return true;
+            }
+        _pendingUpserts.push_back(entry);
+        return true;
+    }
     std::vector<Entry> entries;
     if (SD.exists(CsvPath) && !loadCsv(entries))
         return false;
@@ -515,6 +561,15 @@ inline bool LogIndexService::upsert(const Entry &entry)
 
 inline bool LogIndexService::remove(const char *logFile)
 {
+    if (_reconciling.load())
+    {
+        _pendingUpserts.erase(
+            std::remove_if(_pendingUpserts.begin(), _pendingUpserts.end(),
+                           [logFile](const Entry &entry) { return entry.logFile == logFile; }),
+            _pendingUpserts.end());
+        _pendingRemovals.push_back(logFile);
+        return true;
+    }
     std::vector<Entry> entries;
     if (!loadCsv(entries))
         return false;
@@ -543,46 +598,64 @@ inline bool LogIndexService::remove(const char *logFile)
 inline bool LogIndexService::reconcile(const char *logsDir, bool force)
 {
     std::vector<Entry> entries;
-    const bool masterValid = !force && loadCsv(entries);
-    if (masterValid)
-    {
-        ReconcileSummary summary;
-        summary.examined = entries.size();
-        for (const Entry &e : entries)
-        {
-            if (e.volumeSource == VolumeSource::Recorded)
-                ++summary.current;
-            else
-                ++summary.recovered;
-        }
-        summary.rebuiltIndex = false;
-        portENTER_CRITICAL(&_summaryMux);
-        _summary = summary;
-        portEXIT_CRITICAL(&_summaryMux);
-        LOG_F("Indice maestro valido (%u capturas); reconciliacion omitida.\n",
-              (unsigned int)entries.size());
-
-        if (!SD.exists(HtmlPath))
-        {
-            writeHtml(entries);
-        }
-        return true;
-    }
-
+    File directory;
     ReconcileSummary summary;
     summary.rebuiltIndex = true;
-    LOG_LN("Indice maestro ausente o corrupto; ejecutando reconciliacion.");
+    {
+        SPIBus::Guard spiGuard;
+        // Ya hay una reconstruccion en curso: no se pisan las listas pendientes.
+        if (_reconciling.load())
+            return true;
+        const bool masterValid = !force && loadCsv(entries);
+        if (masterValid)
+        {
+            summary.rebuiltIndex = false;
+            summary.examined = entries.size();
+            for (const Entry &e : entries)
+            {
+                if (e.volumeSource == VolumeSource::Recorded)
+                    ++summary.current;
+                else
+                    ++summary.recovered;
+            }
+            portENTER_CRITICAL(&_summaryMux);
+            _summary = summary;
+            portEXIT_CRITICAL(&_summaryMux);
+            LOG_F("Indice maestro valido (%u capturas); reconciliacion omitida.\n",
+                  (unsigned int)entries.size());
 
-    File directory = SD.open(logsDir);
-    if (!directory || !directory.isDirectory())
-        return false;
-    entries.clear();
-    File file = directory.openNextFile();
+            if (!SD.exists(HtmlPath))
+            {
+                writeHtml(entries);
+            }
+            return true;
+        }
+
+        LOG_LN("Indice maestro ausente o corrupto; ejecutando reconciliacion.");
+        directory = SD.open(logsDir);
+        if (!directory || !directory.isDirectory())
+            return false;
+        entries.clear();
+        _pendingUpserts.clear();
+        _pendingRemovals.clear();
+        _reconciling = true;
+    }
+
+    File file;
+    {
+        SPIBus::Guard spiGuard;
+        file = directory.openNextFile();
+    }
     while (file)
     {
-        String fullName = file.name();
-        const bool isDirectory = file.isDirectory();
-        file.close();
+        String fullName;
+        bool isDirectory;
+        {
+            SPIBus::Guard spiGuard;
+            fullName = file.name();
+            isDirectory = file.isDirectory();
+            file.close();
+        }
         int slash = fullName.lastIndexOf('/');
         String name = slash >= 0 ? fullName.substring(slash + 1) : fullName;
         if (!isDirectory && validBasename(name))
@@ -613,12 +686,34 @@ inline bool LogIndexService::reconcile(const char *logsDir, bool force)
                       name.c_str(), reason, (unsigned long)ignoredRows);
             }
         }
+        SPIBus::Guard spiGuard;
         file = directory.openNextFile();
     }
-    directory.close();
-    // Always rewrite both files: the HTML is a disposable view and this also
-    // repairs stale/missing HTML after interrupted writes.
-    const bool written = writeAll(entries);
+    bool written;
+    {
+        SPIBus::Guard spiGuard;
+        directory.close();
+        // Altas y bajas ocurridas durante el escaneo prevalecen sobre lo leido.
+        for (const String &removed : _pendingRemovals)
+            entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                         [&removed](const Entry &entry) { return entry.logFile == removed; }),
+                          entries.end());
+        for (const Entry &pending : _pendingUpserts)
+        {
+            auto existing = std::find_if(entries.begin(), entries.end(),
+                                         [&pending](const Entry &entry) { return entry.logFile == pending.logFile; });
+            if (existing != entries.end())
+                *existing = pending;
+            else
+                entries.push_back(pending);
+        }
+        _pendingUpserts.clear();
+        _pendingRemovals.clear();
+        _reconciling = false;
+        // Always rewrite both files: the HTML is a disposable view and this also
+        // repairs stale/missing HTML after interrupted writes.
+        written = writeAll(entries);
+    }
     if (!written) ++summary.errors;
     portENTER_CRITICAL(&_summaryMux);
     _summary = summary;

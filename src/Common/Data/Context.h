@@ -131,6 +131,7 @@ public:
     bool reconcileLogIndex(bool force = false) { return logging.reconcileIndex(force); }
 
     bool isLogActive() const { return logging.logActive.load(); }
+    bool logIndexReconciling() const { return logging.indexReconciling(); }
     bool isUploadPending() const {
 #ifdef FEATURE_MODEM
         return logging.uploadPending.load() || components.api.pendingTelemetry() > 0;
@@ -257,6 +258,9 @@ public:
         LOG_F("Boot: interfaz local lista en %lu ms; modem continúa en segundo plano\n",
               (unsigned long)(millis() - bootStarted));
         self->bootTaskHandle = nullptr;
+        // El indice de capturas se reconstruye en segundo plano: ninguna
+        // pantalla lo necesita para arrancar.
+        self->logging.startIndexReconcile();
         vTaskDelete(nullptr);
     }
 

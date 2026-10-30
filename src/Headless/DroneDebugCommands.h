@@ -357,6 +357,7 @@ public:
                  (unsigned long)summary.recovered, (unsigned long)summary.incompatible,
                  (unsigned long)summary.errors, (unsigned long)summary.validRows,
                  (unsigned long)summary.ignoredRows, summary.rebuiltIndex ? "si" : "no");
+      if (_ctx->logIndexReconciling()) out.println("indice en reconstruccion; cifras parciales");
       return true;
     }
     if (line == "logs index rebuild" || line == "logs index reconcile") {
