@@ -2,7 +2,7 @@
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
 
-Este mapa sale del firmware original de noviembre 2025 que corre en el equipo físico: OLED SSD1306 por I2C (`0x3C`, 150 kHz) y bombas en `GPIO26/27`. Sus dos primeros datos se comprobaron en la placa (escaneo I2C) y en el binario respaldado (init SSD1306). La variante con OLED SPI está en [eolo-express-legacy-spi.md](eolo-express-legacy-spi.md).
+Este mapa sale del firmware original de noviembre 2025 que corre en el equipo físico: OLED SSD1306 por I2C (`0x3C`, 150 kHz) y bombas en `GPIO26/27`. Sus dos primeros datos se comprobaron en la placa (escaneo I2C) y en el binario respaldado (init SSD1306). La existencia de una subrevisión con cableado alternativo fue reportada; su mapa está pendiente de validación en placa y se documenta en [eolo-express-legacy-alt.md](eolo-express-legacy-alt.md).
 
 EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Express Rev.2. La diferencia funcional principal es el sensor de flujo FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 
@@ -46,6 +46,12 @@ EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Expr
 | RS485 | No usado (FS3000 va por I2C); GPIO26 es una bomba |
 | NTC motor | `EOLO_PIN_UNUSED` |
 | Motor FG | `EOLO_PIN_UNUSED` |
+
+## Pantalla SPI y subrevisión de cableado
+
+La pantalla SSD1309 por SPI de software usa CS `GPIO27`, DC `GPIO15`, RESET `GPIO2`, SCK `GPIO18` y MOSI `GPIO23`; el descriptor declara 8 MHz, sin medición de velocidad física. El entorno `eolo_express_legacy_spi` activa el controlador con `EOLO_DISPLAY=SSD1309_SW_SPI` y selecciona también `EOLO_PINOUT=EXPRESS_REV1_ALT`, que cambia al cableado alternativo descrito en [su mapa completo](eolo-express-legacy-alt.md).
+
+No basta con sobrescribir `EOLO_DISPLAY` en el pinout I2C original: allí `GPIO27` controla una bomba y chocaría con CS de la pantalla. `EOLO_PINOUT` solo se admite en el target `EOLO_TARGET_EXPRESS_LEGACY`.
 
 ## Notas
 

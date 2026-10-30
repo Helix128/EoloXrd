@@ -1,8 +1,8 @@
-#ifndef EOLO_BOARD_PINOUTS_EXPRESS_LEGACY_SPI_H
-#define EOLO_BOARD_PINOUTS_EXPRESS_LEGACY_SPI_H
+#ifndef EOLO_BOARD_PINOUTS_EXPRESS_LEGACY_ALT_H
+#define EOLO_BOARD_PINOUTS_EXPRESS_LEGACY_ALT_H
 
-// EOLO Express Legacy SPI: mapa FS3000 con OLED SSD1309 por SPI. Hardware sin
-// verificar: el Express Rev.1 disponible usa OLED I2C (ver ExpressLegacy.h).
+// EOLO Express Rev.1, subrevisión con otro cableado. La selección del pinout
+// no cambia el perfil funcional FS3000 ni el target Express Legacy.
 #define SDA_PIN 21
 #define SCL_PIN 22
 
@@ -11,7 +11,7 @@
 #define SD_MISO_PIN 19
 #define SD_SCK_PIN 18
 
-// OLED SPI por software de la revisión Legacy.
+// OLED SSD1309 SPI por software en esta subrevisión de cableado.
 #define EOLO_DISPLAY_CS_PIN 27
 #define EOLO_DISPLAY_DC_PIN 15
 #define EOLO_DISPLAY_RESET_PIN 2
@@ -30,13 +30,13 @@
 #define NTC_PIN EOLO_PIN_UNUSED
 #define BATTERY_ADC_PIN 34
 
-// Este bus no es usado por FS3000, pero se conserva el mapa compilado actual.
+// RS485 del cableado alternativo confirmado; no lo usa el FS3000.
 #define RS485_RX_PIN 35
 #define RS485_TX_PIN 33
 #define RS485_DE_RE_PIN 26
 
-// Se conserva el orden de producción 25/14 hasta validación física del
-// cableado Legacy; no normalizarlo según documentación histórica.
+// Cableado confirmado: bombas GPIO25/14. El orden histórico PWM0/PWM1
+// documentado como 14/25 sigue pendiente de verificación física.
 #define MOTOR_PWM_PIN_0 25
 #define MOTOR_PWM_PIN_1 14
 #define MOTOR_PWM_PIN_COUNT 2

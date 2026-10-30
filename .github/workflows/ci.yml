@@ -33,7 +33,7 @@ jobs:
         env:
           - eolo_express
           - eolo_express_legacy
-          - eolo_express_legacy_spi
+          - eolo_express_legacy_spi # selector de pinout alternativo y pantalla SPI
           - eolo_standard
           - eolo_dron
           - eolo_dron_legacy

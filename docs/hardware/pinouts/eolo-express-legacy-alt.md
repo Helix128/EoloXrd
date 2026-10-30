@@ -1,12 +1,14 @@
-# Pinout EOLO Express Rev.1 (OLED SPI)
+# Pinout EOLO Express Rev.1 (subrevisión con OLED SPI)
 
-Variante con OLED SSD1309 por SPI. **Sin verificar en hardware**: la unidad Rev.1 disponible usa OLED I2C ([eolo-express-legacy.md](eolo-express-legacy.md)).
+Subrevisión de cableado alternativo reportada para Express Rev.1, con OLED SSD1309 por SPI. Comparte el target y perfil funcional Express Legacy; selecciona este mapa mediante `EOLO_PINOUT=EXPRESS_REV1_ALT`. El mapa se conserva según el cableado reportado, pero aún no se ha validado en placa.
 
-Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY_SPI`.
+Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY` y `EOLO_PINOUT=EXPRESS_REV1_ALT`.
 
 EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Express Rev.2. La diferencia funcional principal es el sensor de flujo FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 
 ## Resumen
+
+La tabla conserva el orden histórico de las bombas (`14/25`). El firmware mantiene PWM0=`25`, PWM1=`14`; no se debe cablear por esta tabla sin resolver esa discrepancia en placa.
 
 | Grupo | Señal | GPIO | Define firmware |
 | --- | --- | --- | --- |
@@ -47,6 +49,7 @@ EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Expr
 
 ## Notas
 
-- El mapa de motores `GPIO14/25` deja libre `GPIO27` para el CS del OLED SPI.
+- El firmware conserva `MOTOR_PWM_PIN_0=25` y `MOTOR_PWM_PIN_1=14`; la documentación histórica invierte el orden. El orden PWM0/PWM1 requiere validación física.
+- El mapa reporta RS485 RX `GPIO35`, TX `GPIO33` y DE/RE `GPIO26`; el FS3000 no usa este bus. Su cableado físico está pendiente de validación.
 - Plantower usa `GPIO16/GPIO17`, pines de módem no usados por Express Rev.1.
-- El orden de `PWM 0` y `PWM 1` no está confirmado en placa. La tabla sigue la documentación histórica; el firmware usa `MOTOR_PWM_PIN_0 25` y `MOTOR_PWM_PIN_1 14`. Ver [Discrepancias](../discrepancias-pines.md).
+- El mapa SPI usa SCK/MOSI `GPIO18/23`, compartidos con microSD y operados con SPI de software. Ver [Discrepancias](../discrepancias-pines.md).

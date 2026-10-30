@@ -17,7 +17,7 @@ Cada entorno de firmware extiende `[embedded]` (ESP32, Arduino, C++17) y declara
 | --- | --- | --- | --- |
 | `eolo_express` (por defecto) | `EOLO_TARGET_EXPRESS` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07` |
 | `eolo_express_legacy` | `EOLO_TARGET_EXPRESS_LEGACY` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000`; OLED SSD1306 por I2C |
-| `eolo_express_legacy_spi` | `EOLO_TARGET_EXPRESS_LEGACY_SPI` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000`; OLED SSD1309 por SPI (sin verificar) |
+| `eolo_express_legacy_spi` | `EOLO_TARGET_EXPRESS_LEGACY` + `EOLO_PINOUT=EXPRESS_REV1_ALT` | `UiApplication` | Hereda `eolo_express_legacy`; cableado alternativo reportado, OLED SSD1309 por SPI (validación física pendiente) |
 | `eolo_standard` | `EOLO_TARGET_STANDARD` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07`, `FEATURE_MODEM`, `FEATURE_ANEMOMETER`, `FEATURE_DUAL_BATTERY` |
 | `eolo_dron` | `EOLO_TARGET_DRON` | `UiApplication` | `FEATURE_MOTOR_PWM`, `FEATURE_FLOW_CALIBRATION`, `FEATURE_FLOW_AFM07` |
 | `eolo_dron_legacy` | `EOLO_TARGET_DRON_LEGACY` | `DronApplication` | `FEATURE_HEADLESS`, `FEATURE_MOTOR_PWM`, `FEATURE_FLOW_AFM07`, `FEATURE_FLOW_PID`, `FEATURE_NEOPIXEL`, `FEATURE_NTC` |
@@ -40,7 +40,7 @@ pio run -e eolo_standard -t config_info  # muestra target y features activos
 `platformio.ini` solo selecciona código: el target, las `FEATURE_*`, el backend I²C y las opciones del compilador. Los valores numéricos no van en `build_flags`.
 
 - `src/Variants/Profiles/<Modelo>.h`: constantes con nombre de cada modelo y su `FlowPidConfig`. Los perfiles no heredan entre sí.
-- `src/Variants/Pinouts/<Modelo>.h`: mapa completo de GPIO por modelo, incluidos los del display. `Pinout.h` lo selecciona y `PinoutValidation.h` valida conflictos.
+- `src/Variants/Pinouts/<Modelo>.h`: mapa completo de GPIO por modelo, incluidos los del display. `Pinout.h` lo selecciona y `PinoutValidation.h` valida conflictos. `EOLO_PINOUT` solo se admite en Express Legacy para seleccionar una subrevisión de cableado.
 - `src/Variants/ActiveProfile.h`: elige un único perfil según el target y expone sus constantes.
 - `src/Variants/VariantValidation.h`: rechaza targets múltiples, sensores de flujo omitidos y combinaciones de capacidades que el modelo no admite.
 - `src/Variants/Displays.h`: selecciona el controlador, transporte y reloj de pantalla. Cada perfil declara `kDefaultDisplay`; `-DEOLO_DISPLAY=SSD1309_SW_SPI` permite elegir otra pantalla sin duplicar el perfil. Las opciones son `SSD1306_I2C`, `SSD1309_I2C`, `SH1106_I2C`, `SSD1309_SW_SPI` y `SSD1306_HW_SPI`. El reloj es 0 para I²C, 8 MHz para SPI por software y 4 MHz para SPI hardware de MP. Los GPIO siguen en el pinout; una pantalla SPI exige pines completos y sin conflictos.

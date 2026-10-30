@@ -125,6 +125,60 @@ static_assert(EOLO_DISPLAY_CS_PIN == EOLO_PIN_UNUSED);
         result = self.compile_source(source)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_express_legacy_alt_selects_spi_and_alternate_pin_map(self):
+        source = f"""
+#define EOLO_TARGET_EXPRESS_LEGACY
+#define EOLO_PINOUT EXPRESS_REV1_ALT
+#define EOLO_DEFAULT_DISPLAY SSD1306_I2C
+#define EOLO_DISPLAY SSD1309_SW_SPI
+#include "{HEADER}"
+#include "{ROOT / 'src/Variants/Pinout.h'}"
+static_assert(EOLO_DISPLAY_SPI == 1);
+static_assert(EOLO_DISPLAY_SPI_CLOCK_HZ == 8000000UL);
+static_assert(EOLO_DISPLAY_CS_PIN == 27 && EOLO_DISPLAY_DC_PIN == 15);
+static_assert(EOLO_DISPLAY_RESET_PIN == 2 && EOLO_DISPLAY_SCK_PIN == 18);
+static_assert(EOLO_DISPLAY_MOSI_PIN == 23);
+static_assert(MOTOR_PWM_PIN_0 == 25 && MOTOR_PWM_PIN_1 == 14);
+static_assert(RS485_RX_PIN == 35 && RS485_TX_PIN == 33 && RS485_DE_RE_PIN == 26);
+"""
+        result = self.compile_source(source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_express_legacy_alt_i2c_preserves_motor_and_rs485_pins(self):
+        source = f"""
+#define EOLO_TARGET_EXPRESS_LEGACY
+#define EOLO_PINOUT EXPRESS_REV1_ALT
+#define EOLO_DEFAULT_DISPLAY SSD1306_I2C
+#include "{HEADER}"
+#include "{ROOT / 'src/Variants/Pinout.h'}"
+static_assert(EOLO_DISPLAY_SPI == 0);
+static_assert(EOLO_DISPLAY_SPI_CLOCK_HZ == 0UL);
+static_assert(MOTOR_PWM_PIN_0 == 25 && MOTOR_PWM_PIN_1 == 14);
+static_assert(RS485_RX_PIN == 35 && RS485_TX_PIN == 33 && RS485_DE_RE_PIN == 26);
+"""
+        result = self.compile_source(source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unknown_pinout_is_rejected(self):
+        source = f"""
+#define EOLO_TARGET_EXPRESS_LEGACY
+#define EOLO_PINOUT UNKNOWN_PINOUT
+#include "{ROOT / 'src/Variants/Pinout.h'}"
+"""
+        result = self.compile_source(source)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("EOLO_PINOUT no reconocido", result.stderr)
+
+    def test_alt_pinout_is_rejected_for_another_target(self):
+        source = f"""
+#define EOLO_TARGET_STANDARD
+#define EOLO_PINOUT EXPRESS_REV1_ALT
+#include "{ROOT / 'src/Variants/Pinout.h'}"
+"""
+        result = self.compile_source(source)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("EOLO_PINOUT solo se admite", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

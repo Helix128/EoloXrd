@@ -12,7 +12,7 @@ Sirve para cablear, revisar o reparar una placa. Refleja el mapeo que usan los a
 | EOLO-MP | `EOLO_TARGET_STANDARD` / `eolo_standard` | [eolo-standard.md](eolo-standard.md) |
 | EOLO Express Rev.2 | `EOLO_TARGET_EXPRESS` / `eolo_express` | [eolo-express.md](eolo-express.md) |
 | EOLO Express Rev.1 (OLED I2C) | `EOLO_TARGET_EXPRESS_LEGACY` / `eolo_express_legacy` | [eolo-express-legacy.md](eolo-express-legacy.md) |
-| EOLO Express Rev.1 (OLED SPI, sin verificar) | `EOLO_TARGET_EXPRESS_LEGACY_SPI` / `eolo_express_legacy_spi` | [eolo-express-legacy-spi.md](eolo-express-legacy-spi.md) |
+| EOLO Express Rev.1 (OLED SPI, cableado alternativo) | `EOLO_TARGET_EXPRESS_LEGACY` + `EOLO_PINOUT=EXPRESS_REV1_ALT` / `eolo_express_legacy_spi` | [eolo-express-legacy-alt.md](eolo-express-legacy-alt.md) |
 
 ## Notas comunes ESP32
 

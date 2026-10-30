@@ -3,7 +3,7 @@
 
 // EOLO Express Legacy (Rev.1, FS3000): mapa del firmware original de noviembre
 // 2025 que corre en el equipo físico: OLED SSD1306 por I2C y bombas en
-// GPIO26/27. La variante con OLED SPI es ExpressLegacySpi.h.
+// GPIO26/27. La subrevisión con otro cableado está en ExpressLegacyAlt.h.
 #define SDA_PIN 21
 #define SCL_PIN 22
 

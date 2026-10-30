@@ -34,10 +34,11 @@ TARGETS = {
         "demo": "EOLO_MODEL_EXPRESS_LEGACY",
         "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy.md",
     },
-    "express_legacy_spi": {
-        "macro": "EOLO_TARGET_EXPRESS_LEGACY_SPI",
+    "express_legacy_alt": {
+        "macro": "EOLO_TARGET_EXPRESS_LEGACY",
+        "selector": "EXPRESS_REV1_ALT",
         "demo": "EOLO_MODEL_EXPRESS_LEGACY",
-        "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy-spi.md",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy-alt.md",
     },
 }
 
@@ -55,8 +56,8 @@ DOC_DEFINES = {
 # the checker still fails if either side changes until hardware validation
 # resolves the decision and this entry is removed.
 KNOWN_UNRESOLVED_DIFFERENCES = {
-    ("express_legacy_spi", "MOTOR_PWM_PIN_0"): (14, 25),
-    ("express_legacy_spi", "MOTOR_PWM_PIN_1"): (25, 14),
+    ("express_legacy_alt", "MOTOR_PWM_PIN_0"): (14, 25),
+    ("express_legacy_alt", "MOTOR_PWM_PIN_1"): (25, 14),
 }
 
 def eval_value(raw: str, values: dict[str, int]) -> int:
@@ -68,9 +69,12 @@ def eval_value(raw: str, values: dict[str, int]) -> int:
     return int(raw, 0)
 
 
-def parse_defines(macro: str) -> dict[str, int]:
+def parse_defines(macro: str, selector: str | None = None) -> dict[str, int]:
+    flags = [f"-D{macro}"]
+    if selector:
+        flags.append(f"-DEOLO_PINOUT={selector}")
     result = subprocess.run(
-        ["cc", "-E", "-dM", "-x", "c++", f"-D{macro}", str(PINOUT)],
+        ["cc", "-E", "-dM", "-x", "c++", *flags, str(PINOUT)],
         check=True,
         capture_output=True,
         text=True,
@@ -106,7 +110,7 @@ def main() -> int:
         errors.append(f"{DEMO}: no incluye la fuente autoritativa src/Variants/Pinout.h")
 
     for target, cfg in TARGETS.items():
-        pinout = parse_defines(cfg["macro"])
+        pinout = parse_defines(cfg["macro"], cfg.get("selector"))
         doc = parse_doc(cfg["doc"])
 
         for name, doc_value in sorted(doc.items()):
