@@ -81,16 +81,6 @@ private:
     // ~3 ms a 100 kHz), por lo que nadie lo retiene más que eso.
     static constexpr uint32_t LOCK_TIMEOUT_MS = 20;
 
-    static Result resultFromTransmissionError(uint8_t error, uint32_t elapsedMs) {
-        if (error == 0)
-            return Result::Ok;
-        if (error == 5 || elapsedMs >= TRANSACTION_TIMEOUT_MS)
-            return Result::Timeout;
-        if (error == 2 || error == 3)
-            return Result::Nack;
-        return Result::BusError;
-    }
-
     void clearScanWorkingSet() {
         _scanCount = 0;
         for (uint8_t address = 0; address < 128; ++address)
@@ -136,6 +126,16 @@ public:
     static I2CBus& getInstance() {
         static I2CBus instance;
         return instance;
+    }
+
+    static Result resultFromTransmissionError(uint8_t error, uint32_t elapsedMs) {
+        if (error == 0)
+            return Result::Ok;
+        if (error == 5 || elapsedMs >= TRANSACTION_TIMEOUT_MS)
+            return Result::Timeout;
+        if (error == 2 || error == 3)
+            return Result::Nack;
+        return Result::BusError;
     }
 
     // La espera es finita: una tarea que no obtiene el bus debe degradar esa

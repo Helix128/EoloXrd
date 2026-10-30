@@ -16,6 +16,9 @@
 #if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
 #include "../Board/I2CDisplayTransport.h"
 #endif
+#if !defined(FEATURE_HEADLESS) && EOLO_DISPLAY_SPI && !EOLO_DISPLAY_HW_SPI
+#include "../Board/SoftSpiDisplayTransport.h"
+#endif
 #include "../Board/SPIBus.h"
 #include "../Board/RS485Bus.h"
 #ifndef FEATURE_HEADLESS
@@ -128,10 +131,10 @@ public:
     bool isSdReady() const { return logging.isSdReady; }
     const char *logsDirectory() const { return logging.logsDir; }
     LogIndexService::ReconcileSummary logIndexSummary() const { return logging.indexSummary(); }
+    bool logIndexReconciling() const { return logging.indexReconciling(); }
     bool reconcileLogIndex(bool force = false) { return logging.reconcileIndex(force); }
 
     bool isLogActive() const { return logging.logActive.load(); }
-    bool logIndexReconciling() const { return logging.indexReconciling(); }
     bool isUploadPending() const {
 #ifdef FEATURE_MODEM
         return logging.uploadPending.load() || components.api.pendingTelemetry() > 0;
@@ -255,12 +258,12 @@ public:
         self->bootInitComplete = true;
         self->bootInitRunning = false;
         self->markUiDirty();
-        LOG_F("Boot: interfaz local lista en %lu ms; modem continúa en segundo plano\n",
-              (unsigned long)(millis() - bootStarted));
-        self->bootTaskHandle = nullptr;
         // El indice de capturas se reconstruye en segundo plano: ninguna
         // pantalla lo necesita para arrancar.
         self->logging.startIndexReconcile();
+        LOG_F("Boot: interfaz local lista en %lu ms; modem continúa en segundo plano\n",
+              (unsigned long)(millis() - bootStarted));
+        self->bootTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
 
@@ -314,27 +317,74 @@ public:
     }
     RTCNetworkSyncStatus getRTCNetworkSyncStatus() const { return rtcSync.getStatus(); }
 
+#if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
+    static constexpr uint8_t DisplayI2cInitAttempts = 3;
+    static constexpr uint32_t DisplayI2cProbeIntervalMs = 1000UL;
+    uint32_t lastDisplayProbeMs = 0;
+    uint32_t seenI2cRecoveries = 0;
+#endif
+
+    // Ejecuta la secuencia de init de U8g2 (reset, init del controlador,
+    // limpiar y encender). Con OLED I2C indica si todas las transferencias
+    // llegaron al panel; U8g2 por sí solo no lo informa.
+    bool beginDisplayController()
+    {
+#ifndef FEATURE_HEADLESS
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+        SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+#endif
+#if !EOLO_DISPLAY_SPI
+        I2CDisplayTransport::markRecovered();
+        const uint32_t failuresBefore = I2CDisplayTransport::dropCount;
+#endif
+        if (!u8g2.begin())
+            return false;
+#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
+        u8g2.setBusClock(EoloConfig::displaySpiClockHz);
+#endif
+#if !EOLO_DISPLAY_SPI
+        return I2CDisplayTransport::dropCount == failuresBefore;
+#else
+        return true;
+#endif
+#else
+        return false;
+#endif
+    }
+
     void initDisplay()
     {
 #ifndef FEATURE_HEADLESS
         SPIBus::Guard spiGuard;
 #if !EOLO_DISPLAY_SPI
+        // Antes de begin(): la init del panel ya usa reloj, pines y timeout
+        // del bus compartido.
+        I2CDisplayTransport::install(u8g2.getU8x8());
         I2CBus::Guard i2cGuard;
+        bool acked = beginDisplayController();
+        for (uint8_t attempt = 1; attempt < DisplayI2cInitAttempts && !acked; ++attempt)
+        {
+            LOG_F("Pantalla I2C sin ACK; reintentando init (%u)\n", attempt);
+            delay(50);
+            acked = beginDisplayController();
+        }
+        if (!acked)
+        {
+            // La UI arranca igual; serviceDisplayLink() la reinicializa
+            // cuando el panel responda.
+            LOG_LN("Pantalla I2C sin ACK tras reintentos; se reintentará en segundo plano");
+            I2CDisplayTransport::lost = true;
+        }
+        seenI2cRecoveries = I2CBus::getInstance().getStats().recoveries;
+#else
+#if !EOLO_DISPLAY_HW_SPI
+        SoftSpiDisplayTransport::install(u8g2.getU8x8());
 #endif
-#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
-        SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
-#endif
-        bool began = u8g2.begin();
-        if (!began)
+        if (!beginDisplayController())
         {
             LOG_LN("Fallo al iniciar pantalla");
             return;
         }
-#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
-        u8g2.setBusClock(EoloConfig::displaySpiClockHz);
-#elif !EOLO_DISPLAY_SPI
-        u8g2.setBusClock(EoloConfig::i2cClockHz);
-        I2CDisplayTransport::install(u8g2.getU8x8());
 #endif
         appliedContrast = displayPower.baseContrast();
         u8g2.setContrast(appliedContrast);
@@ -343,6 +393,62 @@ public:
         u8g2.drawXBM(0, 0, 128, 64, cmas);
         u8g2.sendBuffer();
         isDisplayReady = true;
+#endif
+    }
+
+    // Reinicializa el controlador y restaura encendido y brillo vigentes; la
+    // escena actual se repinta en el siguiente frame. Lo usan la consola y la
+    // recuperación automática del panel I2C.
+    bool reinitDisplay()
+    {
+#ifndef FEATURE_HEADLESS
+        bool ok;
+        {
+#if EOLO_DISPLAY_SPI
+            SPIBus::Guard spiGuard;
+#endif
+            ok = beginDisplayController();
+            u8g2.setPowerSave(isDisplayOn ? 0 : 1);
+            u8g2.setContrast(appliedContrast);
+        }
+        markUiDirty();
+        LOG_F("Pantalla reinicializada: %s\n", ok ? "OK" : "sin confirmar");
+        return ok;
+#else
+        return false;
+#endif
+    }
+
+    // Vigila el enlace con la OLED I2C. Un panel que dejó de responder (cable,
+    // brownout propio) o un bus recién recuperado pudo perder su configuración
+    // sin que el ESP32 se reinicie: se reinicializa en cuanto vuelve a dar ACK.
+    void serviceDisplayLink()
+    {
+#if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
+        if (!isDisplayReady)
+            return;
+        I2CBus &bus = I2CBus::getInstance();
+        const uint32_t recoveries = bus.getStats().recoveries;
+        if (recoveries != seenI2cRecoveries)
+        {
+            seenI2cRecoveries = recoveries;
+            LOG_LN("Bus I2C recuperado; se reinicializa la pantalla");
+            if (!reinitDisplay())
+                I2CDisplayTransport::lost = true;
+            return;
+        }
+        if (!I2CDisplayTransport::lost)
+            return;
+        const uint32_t now = millis();
+        if (now - lastDisplayProbeMs < DisplayI2cProbeIntervalMs)
+            return;
+        lastDisplayProbeMs = now;
+        const uint8_t address = u8x8_GetI2CAddress(u8g2.getU8x8()) >> 1;
+        if (bus.probe(address) != I2CBus::Result::Ok)
+            return;
+        LOG_LN("Pantalla I2C responde de nuevo");
+        if (!reinitDisplay())
+            I2CDisplayTransport::lost = true;
 #endif
     }
 
@@ -810,6 +916,7 @@ public:
             components.input.hasChanged = false;
             markUiDirty();
         }
+        serviceDisplayLink();
         updateDisplayPower();
 #endif
 

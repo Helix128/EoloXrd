@@ -174,23 +174,8 @@ private:
     {
         if (activeInstance_ != nullptr)
         {
-            activeInstance_->reinitDisplay();
+            activeInstance_->_context.reinitDisplay();
         }
-    }
-
-    void reinitDisplay()
-    {
-#if EOLO_DISPLAY_SPI && EOLO_DISPLAY_HW_SPI
-        SPIBus::Guard spiGuard;
-        SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
-        _display.begin();
-        _display.setBusClock(EoloConfig::displaySpiClockHz);
-#else
-        _display.begin();
-#if !EOLO_DISPLAY_SPI
-        _display.setBusClock(EoloConfig::i2cClockHz);
-#endif
-#endif
     }
 };
 
