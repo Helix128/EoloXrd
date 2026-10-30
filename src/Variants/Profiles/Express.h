@@ -4,17 +4,16 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
-#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME0_F_HW_I2C // TMPI2C
-#define EOLO_DISPLAY_SPI 0 // TMPI2C
-#define EOLO_DISPLAY_HW_SPI 0
+#define EOLO_DEFAULT_DISPLAY SSD1309_I2C
+#include "../Displays.h"
 
 namespace EoloConfig::Profile
 {
+inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Express";
 inline constexpr bool kUseCalibrationSeed = true;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 8000000UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;

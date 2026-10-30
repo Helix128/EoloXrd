@@ -4,12 +4,12 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
-#define EOLO_DISPLAY_MODEL U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI
-#define EOLO_DISPLAY_SPI 1
-#define EOLO_DISPLAY_HW_SPI 1
+#define EOLO_DEFAULT_DISPLAY SSD1306_HW_SPI
+#include "../Displays.h"
 
 namespace EoloConfig::Profile
 {
+inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Standard";
 inline constexpr bool kUseCalibrationSeed = false;
 
@@ -18,7 +18,6 @@ inline constexpr bool kUseCalibrationSeed = false;
 // El bus principal comparte cableado con ATmega328P; 50 kHz y 5 s de
 // estabilizacion son las condiciones verificadas en Eolo Grande.
 inline constexpr uint32_t kI2cClockHz = 50000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 4000000UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;

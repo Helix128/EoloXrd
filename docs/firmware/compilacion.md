@@ -43,6 +43,7 @@ pio run -e eolo_standard -t config_info  # muestra target y features activos
 - `src/Variants/Pinouts/<Modelo>.h`: mapa completo de GPIO por modelo, incluidos los del display. `Pinout.h` lo selecciona y `PinoutValidation.h` valida conflictos.
 - `src/Variants/ActiveProfile.h`: elige un único perfil según el target y expone sus constantes.
 - `src/Variants/VariantValidation.h`: rechaza targets múltiples, sensores de flujo omitidos y combinaciones de capacidades que el modelo no admite.
+- `src/Variants/Displays.h`: selecciona el controlador, transporte y reloj de pantalla. Cada perfil declara `kDefaultDisplay`; `-DEOLO_DISPLAY=SSD1309_SW_SPI` permite elegir otra pantalla sin duplicar el perfil. Las opciones son `SSD1306_I2C`, `SSD1309_I2C`, `SH1106_I2C`, `SSD1309_SW_SPI` y `SSD1306_HW_SPI`. El reloj es 0 para I²C, 8 MHz para SPI por software y 4 MHz para SPI hardware de MP. Los GPIO siguen en el pinout; una pantalla SPI exige pines completos y sin conflictos.
 - El módulo que usa una constante interna la define en su propio header. El logging, por ejemplo, está en `src/Common/Utility/Log.h`.
 
 Los pines también están documentados en [docs/hardware/pinouts/](../hardware/pinouts/README.md), y `scripts/check_pinouts.py` comprueba que coincidan con `Pinout.h`.

@@ -4,19 +4,19 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
+#define EOLO_DEFAULT_DISPLAY SH1106_I2C
+#include "../Displays.h"
+
 // OLED 1.3" SH1106 por I2C hardware en el bus principal (Wire). El SSD1306 de
 // otras variantes deja una franja blanca/texto cortado en este panel.
-#define EOLO_DISPLAY_MODEL U8G2_SH1106_128X64_NONAME_F_HW_I2C
-#define EOLO_DISPLAY_SPI 0
-#define EOLO_DISPLAY_HW_SPI 0
 
 namespace EoloConfig::Profile
 {
+inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Dron";
 inline constexpr bool kUseCalibrationSeed = false;
 
 inline constexpr uint32_t kI2cClockHz = 100000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 0UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;

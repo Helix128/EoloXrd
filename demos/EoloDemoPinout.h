@@ -69,8 +69,8 @@
 #endif
 
 // Las demos comparten la fuente autoritativa del firmware.
-#include "../src/Variants/Pinout.h"
 #include "../src/Variants/ActiveProfile.h"
+#include "../src/Variants/Pinout.h"
 
 static constexpr int I2C_SDA_PIN = SDA_PIN;
 static constexpr int I2C_SCL_PIN = SCL_PIN;

@@ -28,7 +28,7 @@ namespace EoloConfig
 {
 inline constexpr const char *kModelName = Profile::kModelName;
 inline constexpr uint32_t i2cClockHz = Profile::kI2cClockHz;
-inline constexpr uint32_t displaySpiClockHz = Profile::kDisplaySpiClockHz;
+inline constexpr uint32_t displaySpiClockHz = selectedDisplay.spiClockHz;
 inline constexpr uint8_t attinyAddress = Profile::kAttinyAddress;
 inline constexpr bool motorPwmInverted = Profile::kMotorPwmInverted;
 inline constexpr uint8_t motorPwmResolutionBits = Profile::kMotorPwmResolutionBits;

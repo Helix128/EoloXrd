@@ -4,19 +4,18 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
-#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME2_F_4W_SW_SPI
-#define EOLO_DISPLAY_SPI 1
-#define EOLO_DISPLAY_HW_SPI 0
+#define EOLO_DEFAULT_DISPLAY SSD1309_SW_SPI
+#include "../Displays.h"
 
 namespace EoloConfig::Profile
 {
+inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Dron Legacy";
 // Producción y calificación Dron siempre parten del PID vivo. Las curvas de
 // calibración históricas permanecen guardadas, pero no inicializan los motores.
 inline constexpr bool kUseCalibrationSeed = false;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 8000000UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;
