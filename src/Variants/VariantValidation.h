@@ -69,7 +69,7 @@
       defined(FEATURE_NTC) || defined(DRONE_SWITCHES_HAVE_EXTERNAL_PULLS)
     #error "EOLO Express recibió una capacidad de otro modelo"
   #endif
-#elif defined(EOLO_TARGET_EXPRESS_LEGACY)
+#elif defined(EOLO_TARGET_EXPRESS_LEGACY) || defined(EOLO_TARGET_EXPRESS_LEGACY_SPI)
   #if !defined(FEATURE_MOTOR_PWM) || !defined(FEATURE_FLOW_FS3000) || \
       !defined(FEATURE_FLOW_CALIBRATION) || !defined(FEATURE_PLANTOWER)
     #error "EOLO Express Legacy requiere PWM directo, FS3000, calibración y Plantower explícitos"

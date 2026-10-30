@@ -40,5 +40,12 @@
     "name": "EOLO Express Rev.1",
     "description": "Primera revisión del Express, con otro sensor de flujo.",
     "manual": "docs/manuales/express.md"
+  },
+  {
+    "env": "eolo_express_legacy_spi",
+    "slug": "express-rev1-spi",
+    "name": "EOLO Express Rev.1 (OLED SPI)",
+    "description": "Express Rev.1 con pantalla OLED SSD1309 por SPI; variante sin verificar en hardware.",
+    "manual": "docs/manuales/express.md"
   }
 ]

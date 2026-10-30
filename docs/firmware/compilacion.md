@@ -16,7 +16,8 @@ Cada entorno de firmware extiende `[embedded]` (ESP32, Arduino, C++17) y declara
 | Entorno | Target | Aplicación | Capacidades declaradas |
 | --- | --- | --- | --- |
 | `eolo_express` (por defecto) | `EOLO_TARGET_EXPRESS` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07` |
-| `eolo_express_legacy` | `EOLO_TARGET_EXPRESS_LEGACY` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000` |
+| `eolo_express_legacy` | `EOLO_TARGET_EXPRESS_LEGACY` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000`; OLED SSD1306 por I2C |
+| `eolo_express_legacy_spi` | `EOLO_TARGET_EXPRESS_LEGACY_SPI` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000`; OLED SSD1309 por SPI (sin verificar) |
 | `eolo_standard` | `EOLO_TARGET_STANDARD` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07`, `FEATURE_MODEM`, `FEATURE_ANEMOMETER`, `FEATURE_DUAL_BATTERY` |
 | `eolo_dron` | `EOLO_TARGET_DRON` | `UiApplication` | `FEATURE_MOTOR_PWM`, `FEATURE_FLOW_CALIBRATION`, `FEATURE_FLOW_AFM07` |
 | `eolo_dron_legacy` | `EOLO_TARGET_DRON_LEGACY` | `DronApplication` | `FEATURE_HEADLESS`, `FEATURE_MOTOR_PWM`, `FEATURE_FLOW_AFM07`, `FEATURE_FLOW_PID`, `FEATURE_NEOPIXEL`, `FEATURE_NTC` |

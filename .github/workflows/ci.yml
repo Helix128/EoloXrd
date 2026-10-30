@@ -33,6 +33,7 @@ jobs:
         env:
           - eolo_express
           - eolo_express_legacy
+          - eolo_express_legacy_spi
           - eolo_standard
           - eolo_dron
           - eolo_dron_legacy

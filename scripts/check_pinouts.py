@@ -34,6 +34,11 @@ TARGETS = {
         "demo": "EOLO_MODEL_EXPRESS_LEGACY",
         "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy.md",
     },
+    "express_legacy_spi": {
+        "macro": "EOLO_TARGET_EXPRESS_LEGACY_SPI",
+        "demo": "EOLO_MODEL_EXPRESS_LEGACY",
+        "doc": ROOT / "docs/hardware/pinouts/eolo-express-legacy-spi.md",
+    },
 }
 
 DOC_DEFINES = {
@@ -50,8 +55,8 @@ DOC_DEFINES = {
 # the checker still fails if either side changes until hardware validation
 # resolves the decision and this entry is removed.
 KNOWN_UNRESOLVED_DIFFERENCES = {
-    ("express_legacy", "MOTOR_PWM_PIN_0"): (14, 25),
-    ("express_legacy", "MOTOR_PWM_PIN_1"): (25, 14),
+    ("express_legacy_spi", "MOTOR_PWM_PIN_0"): (14, 25),
+    ("express_legacy_spi", "MOTOR_PWM_PIN_1"): (25, 14),
 }
 
 def eval_value(raw: str, values: dict[str, int]) -> int:

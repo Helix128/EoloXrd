@@ -9,7 +9,8 @@
 
 #if (defined(EOLO_TARGET_DRON) + defined(EOLO_TARGET_DRON_LEGACY) + \
      defined(EOLO_TARGET_STANDARD) + \
-     defined(EOLO_TARGET_EXPRESS) + defined(EOLO_TARGET_EXPRESS_LEGACY)) != 1
+     defined(EOLO_TARGET_EXPRESS) + defined(EOLO_TARGET_EXPRESS_LEGACY) + \
+     defined(EOLO_TARGET_EXPRESS_LEGACY_SPI)) != 1
   #error "Define exactamente un target EOLO_TARGET_* antes de incluir Board/Pinout.h"
 #endif
 
@@ -21,6 +22,8 @@
   #include "Pinouts/Standard.h"
 #elif defined(EOLO_TARGET_EXPRESS_LEGACY)
   #include "Pinouts/ExpressLegacy.h"
+#elif defined(EOLO_TARGET_EXPRESS_LEGACY_SPI)
+  #include "Pinouts/ExpressLegacySpi.h"
 #elif defined(EOLO_TARGET_EXPRESS)
   #include "Pinouts/Express.h"
 #else

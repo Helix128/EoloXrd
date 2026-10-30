@@ -6,8 +6,8 @@
 
 // Este perfil es deliberadamente completo. Aunque hoy comparte sus valores de
 // tuning con Express, no debe heredar cambios futuros de otra revisión.
-#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME2_F_4W_SW_SPI
-#define EOLO_DISPLAY_SPI 1
+#define EOLO_DISPLAY_MODEL U8G2_SSD1306_128X64_NONAME_F_HW_I2C
+#define EOLO_DISPLAY_SPI 0
 #define EOLO_DISPLAY_HW_SPI 0
 
 namespace EoloConfig::Profile
@@ -16,7 +16,7 @@ inline constexpr const char kModelName[] = "EOLO Express FE"; // FE = FS3000 Edi
 inline constexpr bool kUseCalibrationSeed = true;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;
-inline constexpr uint32_t kDisplaySpiClockHz = 8000000UL;
+inline constexpr uint32_t kDisplaySpiClockHz = 0UL;
 inline constexpr uint8_t kAttinyAddress = 8;
 inline constexpr bool kMotorPwmInverted = false;
 inline constexpr uint8_t kMotorPwmResolutionBits = 11;

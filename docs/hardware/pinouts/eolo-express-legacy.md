@@ -2,6 +2,8 @@
 
 Fuente: `src/Variants/Pinout.h` con `EOLO_TARGET_EXPRESS_LEGACY`.
 
+Este mapa sale del firmware original de noviembre 2025 que corre en el equipo físico: OLED SSD1306 por I2C (`0x3C`, 150 kHz) y bombas en `GPIO26/27`. Sus dos primeros datos se comprobaron en la placa (escaneo I2C) y en el binario respaldado (init SSD1306). La variante con OLED SPI está en [eolo-express-legacy-spi.md](eolo-express-legacy-spi.md).
+
 EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Express Rev.2. La diferencia funcional principal es el sensor de flujo FS3000 en vez de AFM07. No habilita módem, anemómetro, doble batería ni NeoPixel.
 
 ## Resumen
@@ -16,11 +18,11 @@ EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Expr
 | microSD | SCK | `GPIO18` | `SD_SCK_PIN` |
 | Switches headless | SW0..SW3 | `EOLO_PIN_UNUSED` | `WAIT_SW*_PIN`, `DURATION_SW*_PIN` |
 | Batería | ADC | `GPIO34` | `BATTERY_ADC_PIN` |
-| RS485 | RX | `GPIO35` | `RS485_RX_PIN` |
-| RS485 | TX | `GPIO33` | `RS485_TX_PIN` |
-| RS485 | DE/RE | `GPIO26` | `RS485_DE_RE_PIN` |
-| Motor/bomba | PWM 0 | `GPIO14` | `MOTOR_PWM_PIN_0` |
-| Motor/bomba | PWM 1 | `GPIO25` | `MOTOR_PWM_PIN_1` |
+| RS485 | RX | `EOLO_PIN_UNUSED` | `RS485_RX_PIN` |
+| RS485 | TX | `EOLO_PIN_UNUSED` | `RS485_TX_PIN` |
+| RS485 | DE/RE | `EOLO_PIN_UNUSED` | `RS485_DE_RE_PIN` |
+| Motor/bomba | PWM 0 | `GPIO26` | `MOTOR_PWM_PIN_0` |
+| Motor/bomba | PWM 1 | `GPIO27` | `MOTOR_PWM_PIN_1` |
 | Plantower | RX | `GPIO16` | `PT_RX` |
 | Plantower | TX | `GPIO17` | `PT_TX` |
 | Periféricos | Alimentación | `GPIO4` | `PPH_PWR_PIN` |
@@ -39,12 +41,14 @@ EOLO Express Rev.1 comparte la mayor parte del mapa base con EOLO-MP y EOLO Expr
 | Módem | No habilitado por flags de build |
 | Anemómetro | No habilitado por flags de build |
 | Doble batería | No habilitado por flags de build |
-| NeoPixel | `EOLO_PIN_UNUSED`; GPIO27 queda disponible para CS del OLED |
+| NeoPixel | `EOLO_PIN_UNUSED` |
+| Pantalla | OLED SSD1306 por I2C (`U8G2_SSD1306_128X64_NONAME_F_HW_I2C`), sin pines de display SPI |
+| RS485 | No usado (FS3000 va por I2C); GPIO26 es una bomba |
 | NTC motor | `EOLO_PIN_UNUSED` |
 | Motor FG | `EOLO_PIN_UNUSED` |
 
 ## Notas
 
-- El mapa de motores `GPIO14/25` deja libre `GPIO27` para el CS del OLED SPI.
+- Las bombas van en `GPIO26/27`, como en el firmware original. Los `GPIO25/14` del mapa SPI son de una revisión posterior (marzo 2026).
 - Plantower usa `GPIO16/GPIO17`, pines de módem no usados por Express Rev.1.
-- El orden de `PWM 0` y `PWM 1` no está confirmado en placa. La tabla sigue la documentación histórica; el firmware usa `MOTOR_PWM_PIN_0 25` y `MOTOR_PWM_PIN_1 14`. Ver [Discrepancias](../discrepancias-pines.md).
+- El orden de `PWM 0` y `PWM 1` no está confirmado en placa. Ver [Discrepancias](../discrepancias-pines.md).

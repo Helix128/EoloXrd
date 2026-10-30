@@ -4,8 +4,8 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
-#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME2_F_4W_SW_SPI
-#define EOLO_DISPLAY_SPI 1
+#define EOLO_DISPLAY_MODEL U8G2_SSD1309_128X64_NONAME0_F_HW_I2C // TMPI2C
+#define EOLO_DISPLAY_SPI 0 // TMPI2C
 #define EOLO_DISPLAY_HW_SPI 0
 
 namespace EoloConfig::Profile

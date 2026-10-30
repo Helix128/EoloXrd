@@ -15,7 +15,7 @@
   #pragma message("Compilando para EOLO Standard.")
   #include "../Ui/UiApplication.h"
   using ActiveApplication = UiApplication;
-#elif defined(EOLO_TARGET_EXPRESS_LEGACY)
+#elif defined(EOLO_TARGET_EXPRESS_LEGACY) || defined(EOLO_TARGET_EXPRESS_LEGACY_SPI)
   #pragma message("Compilando para EOLO Express Legacy.")
   #include "../Ui/UiApplication.h"
   using ActiveApplication = UiApplication;
