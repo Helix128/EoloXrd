@@ -10,8 +10,9 @@
 #define SD_MISO_PIN 19
 #define SD_SCK_PIN 18
 
-// OLED SPI por software. La colisión CS/RS485 sigue documentada como una
-// decisión física pendiente; este mapa conserva el valor productivo actual.
+// Pines SPI heredados, inactivos con la pantalla I2C por defecto.
+// CS=27 colisiona con RX RS485=27: PinoutValidation rechaza seleccionar SPI.
+// Se conserva el mapa hasta validar físicamente otro cableado; no mover GPIO.
 #define EOLO_DISPLAY_CS_PIN 27
 #define EOLO_DISPLAY_DC_PIN 15
 #define EOLO_DISPLAY_RESET_PIN 2

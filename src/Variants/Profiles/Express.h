@@ -4,6 +4,8 @@
 #include "../Types.h"
 #include <Eolo/Core/Flow/FlowMotorController.h>
 
+// Pantalla por defecto: SSD1309 NONAME0 por I2C, reloj SPI inactivo (0).
+// El mapa SPI heredado colisiona con RS485 y no se puede activar sin otro pinout.
 #define EOLO_DEFAULT_DISPLAY SSD1309_I2C
 #include "../Displays.h"
 

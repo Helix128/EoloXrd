@@ -15,7 +15,7 @@ Cada entorno de firmware extiende `[embedded]` (ESP32, Arduino, C++17) y declara
 
 | Entorno | Target | Aplicación | Capacidades declaradas |
 | --- | --- | --- | --- |
-| `eolo_express` (por defecto) | `EOLO_TARGET_EXPRESS` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07` |
+| `eolo_express` (por defecto) | `EOLO_TARGET_EXPRESS` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07`; OLED SSD1309 por I²C |
 | `eolo_express_legacy` | `EOLO_TARGET_EXPRESS_LEGACY` | `UiApplication` | `[ui]`, `FEATURE_FLOW_FS3000`; OLED SSD1306 por I2C |
 | `eolo_express_legacy_spi` | `EOLO_TARGET_EXPRESS_LEGACY` + `EOLO_PINOUT=EXPRESS_REV1_ALT` | `UiApplication` | Hereda `eolo_express_legacy`; cableado alternativo reportado, OLED SSD1309 por SPI (validación física pendiente) |
 | `eolo_standard` | `EOLO_TARGET_STANDARD` | `UiApplication` | `[ui]`, `FEATURE_FLOW_AFM07`, `FEATURE_MODEM`, `FEATURE_ANEMOMETER`, `FEATURE_DUAL_BATTERY` |

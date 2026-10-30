@@ -30,6 +30,12 @@ Referencia: este mapa proviene de la demo secuencial oficial de EOLO Express Rev
 
 AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro de flujo instantáneo `0x0000`. Caudal = raw / 100 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Express.h`. Esa escala aún no tiene ensayo con caudal conocido; ver [Discrepancias](../discrepancias-pines.md). El firmware usa `SoftwareSerial` sobre GPIO27/25; la demo usa `Serial1` sobre los mismos pines.
 
+## Pantalla
+
+El perfil selecciona `SSD1309_I2C` por defecto: controlador `U8G2_SSD1309_128X64_NONAME0_F_HW_I2C` sobre SDA/SCL `GPIO21/22`, con reloj SPI inactivo (0). La selección no modifica bombas, RS485, Plantower ni módem.
+
+El pinout conserva los pines SPI heredados CS=27, DC=15, RESET=2, SCK=18 y MOSI=23, sin usarlos con I²C. CS comparte `GPIO27` con RX RS485, así que seleccionar una pantalla SPI falla en compilación. Antes de habilitar SPI se necesita validar otro cableado; no se reasignan GPIO para ocultar la colisión. No se ha probado la pantalla en placa durante este refactor.
+
 ## Funciones no usadas por firmware Express
 
 | Función | Estado en `eolo_express` |
