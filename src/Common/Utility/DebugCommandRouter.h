@@ -11,7 +11,7 @@ public:
 
 class DebugCommandRouter {
 private:
-    static const size_t MAX_HANDLERS = 6;
+    static const size_t MAX_HANDLERS = 8;
     ConsoleCommandHandler* _handlers[MAX_HANDLERS] = {};
     size_t _handlerCount = 0;
     Print& _out;

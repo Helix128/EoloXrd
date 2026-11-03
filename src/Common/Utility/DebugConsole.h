@@ -7,6 +7,7 @@
 #include "I2CDebugCommands.h"
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
+#include "SDDebugCommands.h"
 #include "../Board/RTCManager.h"
 #ifndef FEATURE_HEADLESS
 #include "../Board/DisplayMirror.h"
@@ -30,6 +31,7 @@ private:
     String _terminalLine;
     static const size_t MAX_LINE_LENGTH = 160;
     SystemDebugCommands _systemCommands;
+    SDDebugCommands _sdCommands;
     ModemDebugCommands _modemCommands;
     I2CDebugCommands _i2cCommands;
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
@@ -117,6 +119,7 @@ public:
 #endif
           _router(cmdOut) {
         _router.addHandler(_systemCommands);
+        _router.addHandler(_sdCommands);
         _router.addHandler(_modemCommands);
         _router.addHandler(_i2cCommands);
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)

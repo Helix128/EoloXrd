@@ -22,3 +22,9 @@ src/Headless/HeadlessSecrets.h
 
 # Salida local de scripts/build_flasher_site.py
 site/
+
+# Extracciones y respaldos locales de SD y Flash
+eolo_sd_dump/
+sd_backup_data/
+flash_backups/
+

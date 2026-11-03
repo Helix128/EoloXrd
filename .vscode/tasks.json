@@ -65,11 +65,22 @@
       }
     },
     {
+      "label": "EOLO: Extraer datos de la tarjeta SD",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo sd-backup --port /dev/ttyUSB0 --out \"${workspaceFolder}/sd_backup_data\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      }
+    },
+    {
       "label": "EOLO: Ver pantalla del EOLO",
       "type": "shell",
       "command": "${workspaceFolder}/eolo mirror",
       "problemMatcher": [],
-      "isBackground": true,}
+      "isBackground": true,
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",

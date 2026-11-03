@@ -39,6 +39,7 @@ private:
 #ifndef FEATURE_HEADLESS
         out.println("  D/d               espejo de pantalla on (repetir cada <5 s)/off, ver scripts/eolo_mirror.py");
 #endif
+        out.println("  sd                comandos de tarjeta SD (status, ls, get)");
         out.println("  !                 entrar al terminal silencioso");
         out.println("  exit              salir del terminal silencioso");
         if (_modemCommandsAvailable) {
