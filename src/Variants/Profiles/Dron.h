@@ -14,6 +14,8 @@ namespace EoloConfig::Profile
 {
 inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Dron";
+// Dos bombas con orden debil->fuerte: prueba rapida de caudal al arrancar si no hay orden guardado.
+inline constexpr bool kPumpOrderTest = false;
 inline constexpr bool kUseCalibrationSeed = false;
 
 inline constexpr uint32_t kI2cClockHz = 100000UL;
@@ -40,7 +42,7 @@ inline constexpr const char kModemApn[] = "gigsky-02";
 inline constexpr const char kRtcTimeServerUrl[] = "http://time.cmasccp.cl/";
 inline constexpr bool kModemAllowHttpFallback = false;
 
-inline constexpr float kAfm07FlowDivisor = 10.0f;
+inline constexpr float kAfm07FlowDivisor = 100.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
 
 // Barrido de duty con tubo conectado (una bomba, 0..2047). Ver

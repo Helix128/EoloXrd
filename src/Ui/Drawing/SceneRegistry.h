@@ -6,6 +6,7 @@
 #include "../Scenes/InicioScene.h"
 #include "../Scenes/AcercaDeScene.h"
 #include "../Scenes/Setup/CalibrationScene.h"
+#include "../Scenes/Setup/PumpOrderScene.h"
 #include "../Scenes/Setup/ComponentTestScenes.h"
 #include "../Scenes/Setup/TimeScene.h"
 #include "../Scenes/Setup/RTCAdjustMenuScene.h"
@@ -28,6 +29,7 @@ namespace SceneName
     constexpr const char *Splash = LogoScene::Name;
     constexpr const char *Inicio = InicioScene::Name;
     constexpr const char *Calibration = CalibrationScene::Name;
+    constexpr const char *PumpOrder = PumpOrderScene::Name;
     constexpr const char *TestComponents = ComponentTestMenuScene::Name;
     constexpr const char *Flujo = FlujoScene::Name;
     constexpr const char *FlujoNow = InstantFlujoScene::Name;
@@ -52,6 +54,7 @@ inline void registerAllScenes()
     static LogoScene s_splash;
     static InicioScene s_inicio;
     static CalibrationScene s_calibration;
+    static PumpOrderScene s_pump_order;
     static ComponentTestMenuScene s_test_components;
     static ComponentSensorsScene s_test_sensors;
     static ComponentMotorsScene s_test_motors;
@@ -95,6 +98,7 @@ inline void registerAllScenes()
         makeScene(s_acerca_de),
         makeScene(s_opciones),
         makeScene(s_pantalla),
+        makeScene(s_pump_order),
     };
 
     SceneManager::setScenes(scenes, sizeof(scenes) / sizeof(scenes[0]));

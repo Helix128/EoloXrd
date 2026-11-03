@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <Eolo/Core/Calibration/CalibrationModel.h>
+#include <Eolo/Core/Calibration/PumpOrderModel.h>
 
 class CalibrationManager
 {
@@ -25,6 +26,71 @@ public:
 
     int weakMotor = 0; // Índice del motor más débil (determinado en discovery)
     bool isLoaded = false;
+
+    // Motor más débil según la prueba rápida de bombas (-1 = no definido).
+    // Es independiente de la curva: existe aunque el perfil no use calibración.
+    int pumpWeak = -1;
+
+    // Bomba que arranca primero. Una sola bomba: siempre la 0. Con dos, la
+    // prueba de bombas manda; sin ella, la curva solo si el perfil la usa.
+    int primaryMotor() const
+    {
+        if (EoloConfig::flowPid.motorCount < 2)
+            return 0;
+        if (pumpWeak >= 0)
+            return pumpWeak;
+        return (EoloConfig::useCalibrationSeed && isLoaded) ? weakMotor : 0;
+    }
+
+    bool pumpOrderKnown() const
+    {
+        return EoloConfig::flowPid.motorCount < 2 || pumpWeak >= 0 ||
+               (EoloConfig::useCalibrationSeed && isLoaded);
+    }
+
+    // Guarda el orden de bombas (flujos medidos a tope, solo informativos).
+    // Si no se pudo escribir, el orden queda en RAM hasta el próximo arranque.
+    bool savePumpOrder(int weak, float flow0, float flow1)
+    {
+        if (weak != 0 && weak != 1)
+            return false;
+        pumpWeak = weak;
+        const PumpOrderModel::Record record = PumpOrderModel::make(weak, flow0, flow1);
+        Preferences preferences;
+        if (!preferences.begin("eolo_calib", false))
+            return false;
+        const bool written = preferences.putBytes("pumpOrder", &record, sizeof(record)) == sizeof(record);
+        PumpOrderModel::Record verify = {};
+        const bool verified = written &&
+                              preferences.getBytes("pumpOrder", &verify, sizeof(verify)) == sizeof(verify) &&
+                              PumpOrderModel::valid(verify) && verify.weak == weak;
+        preferences.end();
+        if (!verified)
+            LOG_LN("No se pudo guardar el orden de bombas en flash");
+        return verified;
+    }
+
+    // Deja pumpWeak en -1 si el registro falta o está corrupto.
+    void loadPumpOrder()
+    {
+        pumpWeak = -1;
+        Preferences preferences;
+        if (!preferences.begin("eolo_calib", true))
+            return;
+        PumpOrderModel::Record record = {};
+        const bool read = preferences.getBytes("pumpOrder", &record, sizeof(record)) == sizeof(record);
+        preferences.end();
+        if (read && PumpOrderModel::valid(record))
+        {
+            pumpWeak = record.weak;
+            LOG_OUT(" Orden de bombas: motor débil ");
+            LOG_OUT_LN(pumpWeak);
+        }
+        else if (read)
+        {
+            LOG_LN("Orden de bombas corrupto en flash; se repetirá la prueba");
+        }
+    }
 
     // v4 usa dos registros completos. Se escribe primero el slot inactivo y
     // solo se considera válido si su checksum y curva pasan la validación.

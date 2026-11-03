@@ -32,6 +32,7 @@ La barra superior muestra la hora, la SD, las dos baterías, el módem y la alim
 | Captura rápida | Inicia una captura inmediata de 1 hora. |
 | Ajustar reloj | Cambia la hora a mano o la sincroniza por red. |
 | Control de flujo | Muestra el control automático por caudal. No ofrece barrido manual de bombas. |
+| Orden de bombas | Prueba cada bomba a tope unos segundos para saber cuál es la débil, que arranca primero. Corre sola al encender si el equipo no tiene el orden guardado. |
 | Componentes | Muestra los sensores y prueba cada motor. |
 
 ### Reloj

@@ -164,7 +164,7 @@ Para flashear, ver [compilacion.md](compilacion.md).
 | `cusumJumpFrac` | 0,55 | Fracción del salto estimado que se aplica |
 | `cusumHoldMs` | 2000 ms | Espera tras cada salto |
 
-`DronLegacy.h` define `motorCount = 1` y no configura CUSUM ni `smoothLaw`. Express y EOLO-MP no definen `motorCount`, así que usan el valor por defecto (2), sin CUSUM.
+`DronLegacy.h` define `motorCount = 1` y no configura CUSUM ni `smoothLaw`. Express Rev.2 y EOLO-MP (Standard) usan la configuración de dos bombas de la sección 9. Express Rev.1 (FS3000) sigue con la ley anterior de centro + trim.
 
 ## 5. Campos nuevos de FlowPidConfig
 
@@ -221,6 +221,29 @@ Prueba con filtro real y el prototipo sin amortiguamiento (`cusumJumpFrac` 1,0):
   4. Verificar que el flujo vuelva a ±1 %.
   5. Revisar el log `flow_unreachable` y que no aparezcan saltos repetidos.
 
+## 9. Dos bombas en serie (Express Rev.2 y EOLO-MP)
+
+`lib/EoloCore/include/Eolo/Core/Flow/DualPumpFlowConfig.h` define la configuración de estas dos variantes. Usa la ley suave de la sección 3.4 sobre el PWM virtual 0 a 2 × 2047: primero se llena la bomba débil y, con la débil saturada, entra la fuerte. Antes usaban la ley de centro + trim sin tabla, que se movía como máximo 24 cuentas por muestra y se quedaba corta cuando la planta cambiaba.
+
+**Orden de bombas.** La bomba débil es la de menor caudal a tope. La define la prueba de bombas («Orden de bombas» en el menú de inicio): cada bomba sola a tope unos 5,5 s, y la de menor caudal medio es la débil. Se guarda en flash (`pumpOrder`, con checksum). Se corre sola al arrancar si no hay orden guardado, si el registro está corrupto o si no hay curva medida; si falla (sin dato de flujo), el equipo usa el motor 0 primero y repite la prueba en el siguiente arranque. La curva opcional de Express Rev.2 también fija el orden; su semilla solo se usa si coincide con el de la prueba. Variantes de una bomba y Express Rev.1 no usan la prueba (`kPumpOrderTest`).
+
+**Tabla.** `kFeedForward` es el barrido de una bomba del Dron (hasta 6,58 L/min) más un tramo supuesto para la segunda bomba (hasta 9,58 L/min). No está medida en estas variantes. La ley corrige la ganancia en línea y en simulación aguanta ±30 %, pero el primer punto con caudal (umbral de arranque) conviene validarlo en cada bomba.
+
+**Simulación** (planta de dos bombas, ruido ±0,04 L/min, tiempo muerto 0,3 s, τ 0,4 s, muestras cada 250 ms; tests `test_dual_pump_*`):
+
+| Caso | Ley anterior | Ley actual |
+|---|---|---|
+| Arranque a 2 / 5 / 8 L/min | 6,4 / 8,5 / 23,9 s | 2,8 / 3,8 / 3,5 s |
+| Sobrepico a 2 L/min | +43 % | +1 % |
+| Ganancia -15 % a 5 L/min | -0,62 L/min fijo (sin corregir) | ±3 % en 2,6 s, error medio -0,01 |
+| Ganancia -40 % | -1,86 L/min fijo | ±3 % en 8,2 s |
+| Ganancia +15 % | +0,65 L/min fijo | ±3 % en 2,0 s |
+| Consigna 5 a 2 L/min | 9,7 s | 3,1 s |
+
+Los números son de simulación; falta medirlos en placa.
+
+**Ruido.** El término P de la ley suave actúa sobre la medición cruda: `filterAlpha` no interviene. El Dron usa `smoothKp` 0,40 porque su AFM07 tiene sigma <= 0,007 L/min. En dos bombas se usa 0,15: con ruido de ±0,10 L/min el PWM se mueve 25 cuentas/s a 5 L/min (38 con 0,40) y asienta en 3,1 s en vez de 3,9 s. A 8 L/min (tramo de la bomba fuerte, curva más plana) se mueve más por cuenta de caudal, unas 50 cuentas/s. Si el ruido real del equipo es menor, se puede subir `smoothKp`. Con ruido mayor que la zona muerta, esta no ayuda: lo que baja el movimiento es el P o un filtro en la medición.
+
 ## Archivos involucrados
 
 - `lib/EoloCore/include/Eolo/Core/Flow/SmartFlowController.h`: CUSUM, zona muerta relativa, integral congelado, tope de PWM y flag `unreachable`.
@@ -228,3 +251,5 @@ Prueba con filtro real y el prototipo sin amortiguamiento (`cusumJumpFrac` 1,0):
 - `lib/EoloCore/include/Eolo/Core/Flow/DualMotorFlowController.h`: máximo del PWM virtual según `motorCount`.
 - `src/Common/Data/MotorCaptureControl.h`: log `flow_unreachable`.
 - `src/Variants/Profiles/Dron.h` y `src/Variants/Profiles/DronLegacy.h`: constantes por variante.
+- `lib/EoloCore/include/Eolo/Core/Flow/DualPumpFlowConfig.h`: configuración de Express Rev.2 y EOLO-MP.
+- `lib/EoloCore/include/Eolo/Core/Calibration/PumpOrderModel.h`, `src/Ui/Scenes/Setup/PumpOrderScene.h` y `src/Common/Data/CalibrationManager.h`: prueba y registro del orden de bombas.

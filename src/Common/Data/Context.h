@@ -181,6 +181,7 @@ public:
         components.begin();
 
         calibration.load();
+        calibration.loadPumpOrder();
         startLogTask();
         updateUiSnapshot(true);
 #ifdef FEATURE_HEADLESS

@@ -14,6 +14,8 @@ namespace EoloConfig::Profile
 {
 inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Express FE"; // FE = FS3000 Edition
+// Dos bombas con orden debil->fuerte: prueba rapida de caudal al arrancar si no hay orden guardado.
+inline constexpr bool kPumpOrderTest = false;
 inline constexpr bool kUseCalibrationSeed = true;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;

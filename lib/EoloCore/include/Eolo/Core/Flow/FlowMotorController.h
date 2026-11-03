@@ -68,6 +68,8 @@ struct FlowPidConfig
     int cusumJumpMax = 0;
     float cusumJumpFrac = 1.0f; // Fracción del salto estimado que se aplica (0,3..1)
     uint32_t cusumHoldMs = 0;
+    // Ver SmartFlowTune::seekGain (cuentas por L/min de error en la búsqueda).
+    float seekGain = 30.0f;
     // Ley continua (ver SmartFlowTune::smoothLaw). false conserva la ley de
     // centro + trim; requiere feedForward.
     bool smoothLaw = false;
@@ -240,7 +242,8 @@ public:
             return false;
         if (config.sensorFaultStopMs < config.intervalMs || config.sensorFaultStopMs > FlowPidLimits::SENSOR_STALE_MAX_MS)
             return false;
-        if (config.feedForward.points != nullptr && !config.feedForward.valid(maxPwm))
+        if (config.feedForward.points != nullptr &&
+            !config.feedForward.valid(maxPwm * (config.motorCount >= 2 ? 2 : 1)))
             return false;
         if (isnan(config.rampCountsPerSecond) || config.rampCountsPerSecond < 0.0f)
             return false;
@@ -288,6 +291,7 @@ public:
         if (tune.slowAlpha < 0.05f) tune.slowAlpha = 0.05f;
         if (tune.slowAlpha > 0.35f) tune.slowAlpha = 0.35f;
         tune.seekStep = config.maxStep;
+        tune.seekGain = config.seekGain;
         tune.maxStep = config.maxStep;
         tune.softTrimMax = config.softTrimMax > 0 ? config.softTrimMax : 64;
         tune.softStepLimit = config.softMaxStep > 0 ? config.softMaxStep : 2;

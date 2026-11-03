@@ -58,6 +58,7 @@ inline constexpr float droneTargetFlowLpm = Profile::kDroneTargetFlowLpm;
 
 inline constexpr FlowPidConfig flowPid = Profile::kFlowPid;
 inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
+inline constexpr bool pumpOrderTest = Profile::kPumpOrderTest;
 }
 
 #include "VariantValidation.h"

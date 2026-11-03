@@ -2,7 +2,7 @@
 #define EOLO_CONFIG_PROFILE_EXPRESS_H
 
 #include "../Types.h"
-#include <Eolo/Core/Flow/FlowMotorController.h>
+#include <Eolo/Core/Flow/DualPumpFlowConfig.h>
 
 // Pantalla por defecto: SSD1309 NONAME0 por I2C, reloj SPI inactivo (0).
 // El mapa SPI heredado colisiona con RS485 y no se puede activar sin otro pinout.
@@ -13,6 +13,8 @@ namespace EoloConfig::Profile
 {
 inline constexpr DisplayKind kDefaultDisplay = static_cast<DisplayKind>(EOLO_DEFAULT_DISPLAY);
 inline constexpr const char kModelName[] = "EOLO Express";
+// Dos bombas con orden debil->fuerte: prueba rapida de caudal al arrancar si no hay orden guardado.
+inline constexpr bool kPumpOrderTest = true;
 inline constexpr bool kUseCalibrationSeed = true;
 
 inline constexpr uint32_t kI2cClockHz = 150000UL;
@@ -42,34 +44,11 @@ inline constexpr bool kModemAllowHttpFallback = false;
 inline constexpr float kAfm07FlowDivisor = 10.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
 
-constexpr FlowPidConfig makeFlowPidConfig()
-{
-    FlowPidConfig config{};
-    config.intervalMs = 100UL;
-    config.deadband = 0.08f;
-    config.kp = 20.0f;
-    config.ki = 0.8f;
-    config.integralLimit = 20.0f;
-    config.maxStep = 24;
-    config.filterAlpha = 0.30f;
-    config.minActive = 0.20f;
-    config.kd = 0.0f;
-    config.maxDtMs = 1000UL;
-    config.sensorStaleMs = 1200UL;
-    config.kickPwm = 800;
-    config.kickMs = 250UL;
-    config.stallFlowLpm = 0.10f;
-    config.restallCooldownMs = 8000UL;
-    config.stallConfirmMs = 1500UL;
-    config.softTrimMax = 80;
-    config.softMaxStep = 2;
-    config.sensitivity = 1.0f;
-    config.recenterDelayMs = 4000UL;
-    config.zeroFlowConfirmSamples = 5;
-    return config;
-}
-
-inline constexpr FlowPidConfig kFlowPid = makeFlowPidConfig();
+// Dos bombas en serie con la ley continua del Dron (ver DualPumpFlowConfig.h).
+inline constexpr FlowPidConfig kFlowPid =
+    DualPumpFlow::makeConfig(kMotorRampStep * 1000.0f / static_cast<float>(kMotorRampIntervalMs));
+static_assert(kFlowPid.feedForward.valid(2 * ((1 << kMotorPwmResolutionBits) - 1)),
+              "La tabla de dos bombas debe caber en el PWM virtual");
 }
 
 #endif

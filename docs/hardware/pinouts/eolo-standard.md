@@ -72,4 +72,4 @@ intentos, bytes tardíos, tramas inesperadas y recuperaciones del transceptor.
 - Los motores usan `GPIO14/25` con PWM directo (`duty 0 = apagado`), por lo que no comparten GPIO con el OLED.
 - Plantower mantiene `GPIO34/GPIO32`: `GPIO34` no se usa como ADC en EOLO-MP porque la batería es dual por I2C; `GPIO32` no se usa como switch en firmware no-headless.
 - El firmware EOLO-MP habilita módem, anemómetro, doble batería, AFM07 y Plantower mediante flags de `platformio.ini`.
-- AFM07: caudal = raw / 10 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Standard.h`. Todos los perfiles usan el mismo divisor.
+- AFM07: caudal = raw / 10 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Standard.h`. Igual que Express Rev.2. Los Mini usan `/100`: su sensor entrega otra escala.

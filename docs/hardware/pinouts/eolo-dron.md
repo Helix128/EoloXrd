@@ -38,7 +38,7 @@ OLED + encoder, una bomba, sin Plantower, módem ni anemómetro.
 
 - OLED: SH1106 128x64 por I2C hardware (`U8G2_SH1106_128X64_NONAME_F_HW_I2C`), 100 kHz. Con el driver SSD1306 aparece un borde blanco y texto cortado.
 - Encoder: ATmega328 esclavo, dirección `0x08`, mismo protocolo de 3 bytes (dirección, contador, botón) que las demás variantes con pantalla, pero en `Wire1` a 10 kHz (`kEncoderBusClockHz`).
-- AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro `0x0000`. Caudal = raw / 10 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Dron.h`. Todos los perfiles usan 10 (verificado en Express Rev.2; el Mini usó 100 entre 2026-06-12 y esta corrección, sin ensayo con caudal conocido). El comentario de la demo ("0x01, 9600, x10") difiere en ID y baudios del firmware, pero coincide en la escala.
+- AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro `0x0000`. Caudal = raw / 100 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Dron.h`. Los sensores del Mini entregan el raw en 0,01 L/min (resolución de lectura 0,01); Express y Standard lo entregan en 0,1 L/min y usan `/10`. Verificado en Express Rev.2 (sensor 5,6 L/min, raw 56). El Mini tiene `/100` desde 2026-06-12 y su tabla de caudal (6,58 L/min a PWM máximo) es coherente con esa escala. El comentario de la demo ("0x01, 9600, x10") difiere en ID y baudios del firmware.
 - Batería: pack 18650 2S, divisor R1=220k / R2=100k (3.2:1). A 8.4 V el pin recibe 2.625 V. Se lee con `analogReadMilliVolts` y la curva de descarga 2S de `BatteryMath`.
 - Bomba: N-FET low-side, PWM directo (duty 0 = apagado), 20 kHz. Requiere rampa: un salto brusco hunde el riel y resetea el ESP32 (brownout).
 

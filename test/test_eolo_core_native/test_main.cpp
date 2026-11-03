@@ -22,6 +22,8 @@
 #include <Eolo/Core/Ui/StatusLedPatterns.h>
 #include <Eolo/Core/Ui/DisplayPowerPolicy.h>
 #include <Eolo/Core/Ui/DisplayMirrorFrame.h>
+#include <Eolo/Core/Calibration/PumpOrderModel.h>
+#include <Eolo/Core/Flow/DualPumpFlowConfig.h>
 #include <Eolo/Core/Debug/ConsoleArgs.h>
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
@@ -48,6 +50,43 @@ static size_t unpackBitsForTest(const uint8_t *in, size_t size, uint8_t *out, si
             ++i;
     }
     return o;
+}
+
+static void test_pump_order_weak_is_the_lower_flow_and_tie_picks_motor_zero()
+{
+    int weak = -1;
+    TEST_ASSERT_TRUE(PumpOrderModel::decide(3.0f, 5.5f, weak));
+    TEST_ASSERT_EQUAL(0, weak);
+    TEST_ASSERT_TRUE(PumpOrderModel::decide(6.0f, 4.0f, weak));
+    TEST_ASSERT_EQUAL(1, weak);
+    TEST_ASSERT_TRUE(PumpOrderModel::decide(4.0f, 4.0f, weak));
+    TEST_ASSERT_EQUAL(0, weak);
+    TEST_ASSERT_TRUE(PumpOrderModel::decide(0.0f, 2.0f, weak)); // bomba muerta = la debil
+    TEST_ASSERT_EQUAL(0, weak);
+}
+
+static void test_pump_order_rejects_inconclusive_measurements()
+{
+    int weak = 7;
+    TEST_ASSERT_FALSE(PumpOrderModel::decide(0.05f, 0.1f, weak)); // sin caudal
+    TEST_ASSERT_FALSE(PumpOrderModel::decide(-1.0f, 3.0f, weak));
+    TEST_ASSERT_FALSE(PumpOrderModel::decide(NAN, 3.0f, weak));
+    TEST_ASSERT_FALSE(PumpOrderModel::decide(3.0f, INFINITY, weak));
+    TEST_ASSERT_EQUAL(7, weak); // no se toca si falla
+}
+
+static void test_pump_order_record_detects_corruption()
+{
+    PumpOrderModel::Record record = PumpOrderModel::make(1, 5.0f, 3.0f);
+    TEST_ASSERT_TRUE(PumpOrderModel::valid(record));
+    PumpOrderModel::Record flipped = record;
+    flipped.weak = 0; // cambia el orden sin recalcular el checksum
+    TEST_ASSERT_FALSE(PumpOrderModel::valid(flipped));
+    PumpOrderModel::Record badMagic = record;
+    badMagic.magic ^= 1;
+    TEST_ASSERT_FALSE(PumpOrderModel::valid(badMagic));
+    TEST_ASSERT_FALSE(PumpOrderModel::valid(PumpOrderModel::make(2, 5.0f, 3.0f)));
+    TEST_ASSERT_FALSE(PumpOrderModel::valid(PumpOrderModel::make(0, NAN, 3.0f)));
 }
 
 static void test_display_mirror_crc16_matches_ccitt_false_check_value()
@@ -2230,9 +2269,279 @@ static void test_flow_smooth_law_caps_single_motor_and_validates()
     TEST_ASSERT_FALSE(FlowMotorController::validateConfig(bad, 2047));
 }
 
+
+// ---- Dos bombas en serie (Express / Standard) --------------------------------
+// Planta: el PWM virtual llena la bomba débil (0..2047, curva medida del Dron)
+// y luego la fuerte (+3 L/min hasta 4094). Misma dinámica que PumpPlantSim.
+struct DualPumpSim
+{
+    float gainScale = 1.0f;
+    float deadTimeS = 0.30f;
+    float tauS = 0.40f;
+    float noiseLpm = 0.04f;
+    float resolutionLpm = 0.01f; // paso de lectura del AFM07 (raw / divisor)
+    int command0 = 0, command1 = 0;
+    float phys0 = 0.0f, phys1 = 0.0f;
+    float flow = 0.0f;
+    bool spinning = false;
+    bool strongSpinning = false;
+    // La bomba fuerte parada necesita este PWM para arrancar y se detiene bajo
+    // 184; mientras no gira no suma caudal (zona muerta al cruzar de una a otra).
+    float strongBreakaway = 350.0f;
+    float history0[160] = {};
+    float history1[160] = {};
+    uint8_t head = 0;
+    uint32_t noiseState = 777u;
+
+    static float staticFlow(float v)
+    {
+        if (v <= kTestFeedForward[0].pwm) return 0.0f;
+        for (int i = 1; i < 10; ++i)
+        {
+            if (v <= kTestFeedForward[i].pwm)
+            {
+                const FlowFeedForwardPoint &a = kTestFeedForward[i - 1];
+                const FlowFeedForwardPoint &b = kTestFeedForward[i];
+                return a.flowLpm + (v - a.pwm) / static_cast<float>(b.pwm - a.pwm) * (b.flowLpm - a.flowLpm);
+            }
+        }
+        return kTestFeedForward[9].flowLpm + (v - 2047.0f) / 2047.0f * 3.0f;
+    }
+
+    void step()
+    {
+        const float dt = 0.010f;
+        phys0 = phys0 < command0 ? fminf(phys0 + 10.0f, command0) : fmaxf(phys0 - 10.0f, command0);
+        phys1 = phys1 < command1 ? fminf(phys1 + 10.0f, command1) : fmaxf(phys1 - 10.0f, command1);
+        history0[head] = phys0;
+        history1[head] = phys1;
+        head = (head + 1) % 160;
+        const int delaySteps = static_cast<int>(deadTimeS / dt);
+        const uint8_t at = (head + 160 - 1 - delaySteps) % 160;
+        const float d0 = history0[at], d1 = history1[at];
+        if (d0 <= kTestFeedForward[0].pwm) spinning = false;
+        else if (d0 >= 350.0f) spinning = true;
+        if (d1 <= 184.0f) strongSpinning = false;
+        else if (d1 >= strongBreakaway) strongSpinning = true;
+        const float virt = (d1 > 0.0f && strongSpinning) ? 2047.0f + d1 : d0;
+        float base = spinning ? gainScale * staticFlow(fminf(virt, 2047.0f)) : 0.0f;
+        if (spinning && strongSpinning)
+            base += gainScale * 3.0f * fmaxf(0.0f, (d1 - 184.0f) / (2047.0f - 184.0f));
+        const float target = base;
+        flow += (target - flow) * (dt / tauS);
+    }
+
+    float reading()
+    {
+        noiseState = noiseState * 1664525u + 1013904223u;
+        const float unit = static_cast<float>(noiseState >> 8) / 16777216.0f;
+        const float y = flow > 0.005f ? flow + noiseLpm * (2.0f * unit - 1.0f) : 0.0f;
+        return roundf(fmaxf(y, 0.0f) / resolutionLpm) * resolutionLpm;
+    }
+};
+
+struct DualPumpRun
+{
+    DualMotorFlowController controller;
+    DualPumpSim plant;
+    uint32_t nowMs = 0;
+    uint32_t sampleId = 0;
+    float settleSeconds = -1.0f; // hasta quedar dentro de tolerancia 3 s seguidos
+    float peak = 0.0f;
+    float meanErrLast5s = 0.0f;
+    float pwmMoveLast20s = 0.0f; // suma de |ΔPWM virtual| por segundo en los últimos 20 s
+    float flowStdLast20s = 0.0f;
+    int ruleViolations = 0; // fuerte encendida sin la débil al máximo
+    bool trace = false;
+
+    // Corre `seconds` con consigna fija; mide desde el inicio de este tramo.
+    void run(const FlowPidConfig &config, float target, float seconds)
+    {
+        const float tol = fmaxf(0.03f * target, 0.12f);
+        const uint32_t start = nowMs;
+        const uint32_t end = start + static_cast<uint32_t>(seconds * 1000.0f);
+        settleSeconds = -1.0f;
+        peak = 0.0f;
+        uint32_t inBandSince = 0;
+        bool inBand = false;
+        float errSum = 0.0f;
+        int errCount = 0;
+        float moveSum = 0.0f, fSum = 0.0f, fSq = 0.0f;
+        int fCount = 0;
+        int lastVirtual = -1;
+        for (; nowMs < end; nowMs += 10)
+        {
+            plant.step();
+            const bool inLast5s = nowMs + 5000 >= end;
+            if ((nowMs % 250) == 0)
+            {
+                DualMotorFlowInput input;
+                input.nowMs = nowMs;
+                input.targetFlow = target;
+                input.measuredFlow = plant.reading();
+                input.flowValid = true;
+                input.flowFresh = true;
+                input.sampleId = ++sampleId;
+                input.maxPwm = 2047;
+                input.primaryMotor = 0;
+                const DualMotorFlowOutput out = controller.update(input, config);
+                plant.command0 = out.motor0Pwm;
+                plant.command1 = out.motor1Pwm;
+                if (out.motor1Pwm > 0 && out.motor0Pwm != 2047) ++ruleViolations;
+                const int virt = out.motor1Pwm > 0 ? 2047 + out.motor1Pwm : out.motor0Pwm;
+                if (nowMs + 20000 >= end)
+                {
+                    if (lastVirtual >= 0) moveSum += static_cast<float>(abs(virt - lastVirtual));
+                    lastVirtual = virt;
+                }
+                if (trace && nowMs - start < 14000 && (nowMs % 1000) == 0)
+                    printf("    t=%5.1f flow=%.2f cmd=%d+%d kick=%d centerFound=%d\n", (nowMs - start) / 1000.0f,
+                           plant.flow, out.motor0Pwm, out.motor1Pwm, out.kickActive, out.smartStatus.centerFound);
+            }
+            if (plant.flow > peak) peak = plant.flow;
+            const bool ok = fabsf(plant.flow - target) <= tol;
+            if (ok && !inBand) { inBand = true; inBandSince = nowMs; }
+            if (!ok) inBand = false;
+            if (settleSeconds < 0.0f && inBand && nowMs - inBandSince >= 3000)
+                settleSeconds = (inBandSince - start) / 1000.0f;
+            if (inLast5s) { errSum += plant.flow - target; ++errCount; }
+            if (nowMs + 20000 >= end) { fSum += plant.flow; fSq += plant.flow * plant.flow; ++fCount; }
+        }
+        meanErrLast5s = errCount ? errSum / errCount : 0.0f;
+        pwmMoveLast20s = moveSum / 20.0f;
+        if (fCount)
+        {
+            const float mean = fSum / fCount;
+            flowStdLast20s = sqrtf(fmaxf(fSq / fCount - mean * mean, 0.0f));
+        }
+    }
+};
+
+static FlowPidConfig dual_pump_config() { return DualPumpFlow::makeConfig(0.0f); }
+
+// Sensor ruidoso (+-0,10 L/min, 10 veces el del Dron): el PWM no debe seguir el
+// ruido. Con smoothKp 0,40 se movía 38 cuentas/s a 5 L/min y 78 a 8 L/min.
+static void test_dual_pump_pwm_does_not_chase_measurement_noise()
+{
+    const float targets[] = {2.0f, 5.0f, 8.0f};
+    for (float target : targets)
+    {
+        DualPumpRun r;
+        r.plant.noiseLpm = 0.10f;
+        r.plant.resolutionLpm = 0.1f; // AFM07 con divisor 10
+        r.run(dual_pump_config(), target, 60.0f);
+        printf("  [dual] ruido 0.10 a %.0f L/min: mueve %.1f cuentas/s, asienta %.1f s\n", target,
+               r.pwmMoveLast20s, r.settleSeconds);
+        // En el tramo de la bomba fuerte la curva es más plana: más cuentas por L/min.
+        TEST_ASSERT_TRUE(r.pwmMoveLast20s <= (target > 6.6f ? 55.0f : 30.0f));
+        TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 6.0f);
+    }
+}
+
+// Regla de arranque: primero una bomba entera y recién después la otra (0 0,
+// 0 100, 100 100). Cruza de una a otra aunque la bomba fuerte tenga zona
+// muerta (necesita ~350 cuentas para girar) sin sobrepico ni oscilación.
+static void test_dual_pump_runs_one_pump_fully_before_the_other()
+{
+    const float targets[] = {2.0f, 6.0f, 6.7f, 7.0f, 7.4f, 8.5f};
+    const float gains[] = {1.0f, 0.85f, 1.15f};
+    for (float gain : gains)
+        for (float target : targets)
+        {
+            DualPumpRun r;
+            r.plant.gainScale = gain;
+            r.plant.noiseLpm = 0.02f;
+            r.run(dual_pump_config(), target, 40.0f);
+            r.run(dual_pump_config(), 9.0f - target, 30.0f); // y de vuelta en el sentido contrario
+            TEST_ASSERT_EQUAL(0, r.ruleViolations);
+        }
+    for (float target : targets)
+    {
+        DualPumpRun r;
+        r.plant.noiseLpm = 0.02f;
+        r.run(dual_pump_config(), target, 40.0f);
+        TEST_ASSERT_EQUAL(0, r.ruleViolations);
+        TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 5.0f);
+        TEST_ASSERT_TRUE(r.peak <= target * 1.05f + 0.05f);
+        TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, r.meanErrLast5s);
+    }
+}
+
+static void test_dual_pump_config_is_valid_for_two_pumps()
+{
+    const FlowPidConfig config = dual_pump_config();
+    TEST_ASSERT_TRUE(FlowMotorController::validateConfig(config, 2047));
+    TEST_ASSERT_TRUE(config.feedForward.valid(4094));
+    TEST_ASSERT_FALSE(config.feedForward.valid(2047)); // la tabla cubre el PWM virtual
+}
+
+// Arranque en frío: llega a la banda sin sobrepico aunque la planta difiera de
+// la tabla nominal en +-30 %. La ley por rampa anterior tardaba 6-24 s con
+// sobrepico de +43 % a 2 L/min.
+static void test_dual_pump_reaches_target_fast_without_overshoot()
+{
+    const float gains[] = {1.00f, 0.75f, 1.30f};
+    const float targets[] = {2.0f, 5.0f};
+    for (float gain : gains)
+        for (float target : targets)
+        {
+            DualPumpRun r;
+            r.plant.gainScale = gain;
+            r.run(dual_pump_config(), target, 40.0f);
+            printf("  [dual] x%.2f a %.0f L/min: asienta %.1f s pico %.2f error final %+.3f\n", gain, target,
+                   r.settleSeconds, r.peak, r.meanErrLast5s);
+            TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 6.0f);
+            TEST_ASSERT_TRUE(r.peak <= target * 1.20f + 0.1f);
+            TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, r.meanErrLast5s);
+        }
+}
+
+// Un factor externo (filtro, batería, desgaste) cambia la ganancia de la
+// planta: debe volver a la consigna y quedarse dentro de la banda. La ley
+// anterior se quedaba 0,6 L/min (12 %) fuera, sin corregir.
+static void test_dual_pump_recovers_from_external_gain_change()
+{
+    const float gains[] = {0.85f, 0.60f, 1.15f};
+    for (float gain : gains)
+    {
+        DualPumpRun r;
+        r.run(dual_pump_config(), 5.0f, 40.0f);
+        r.plant.gainScale = gain;
+        r.run(dual_pump_config(), 5.0f, 40.0f);
+        printf("  [dual] perturbacion x%.2f: recupera %.1f s error final %+.3f\n", gain, r.settleSeconds,
+               r.meanErrLast5s);
+        TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 10.0f);
+        TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, r.meanErrLast5s);
+    }
+}
+
+static void test_dual_pump_follows_setpoint_changes_across_both_pumps()
+{
+    DualPumpRun r;
+    r.run(dual_pump_config(), 5.0f, 30.0f);
+    r.run(dual_pump_config(), 2.0f, 30.0f);
+    printf("  [dual] 5->2: asienta %.1f s error %+.3f\n", r.settleSeconds, r.meanErrLast5s);
+    TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 8.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, r.meanErrLast5s);
+    r.run(dual_pump_config(), 8.5f, 30.0f); // exige la bomba fuerte (>6,6 L/min)
+    printf("  [dual] 2->8.5: asienta %.1f s error %+.3f\n", r.settleSeconds, r.meanErrLast5s);
+    TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 8.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, r.meanErrLast5s);
+    TEST_ASSERT_GREATER_THAN(0, r.plant.command1); // la fuerte entró
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_dual_pump_pwm_does_not_chase_measurement_noise);
+    RUN_TEST(test_dual_pump_runs_one_pump_fully_before_the_other);
+    RUN_TEST(test_dual_pump_config_is_valid_for_two_pumps);
+    RUN_TEST(test_dual_pump_reaches_target_fast_without_overshoot);
+    RUN_TEST(test_dual_pump_recovers_from_external_gain_change);
+    RUN_TEST(test_dual_pump_follows_setpoint_changes_across_both_pumps);
+    RUN_TEST(test_pump_order_weak_is_the_lower_flow_and_tie_picks_motor_zero);
+    RUN_TEST(test_pump_order_rejects_inconclusive_measurements);
+    RUN_TEST(test_pump_order_record_detects_corruption);
     RUN_TEST(test_display_mirror_crc16_matches_ccitt_false_check_value);
     RUN_TEST(test_display_mirror_frame_roundtrips_sparse_and_noisy_buffers);
     RUN_TEST(test_display_mirror_delta_sends_only_changed_pages);

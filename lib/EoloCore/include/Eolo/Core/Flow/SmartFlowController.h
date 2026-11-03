@@ -17,6 +17,7 @@ struct SmartFlowTune
     float fastAlpha = 0.35f;        // Fast EMA filter alpha
     float slowAlpha = 0.15f;        // Slow EMA filter alpha
     int seekStep = 16;              // Max PWM step during initial center seek
+    float seekGain = 30.0f;         // Cuentas por L/min de error y por muestra en la búsqueda de centro
     int softTrimMax = 64;           // Max +- PWM excursion from centerPwm
     int softStepLimit = 2;          // Max PWM change per cycle in soft trim
     float sensitivity = 1.0f;       // Post-center sensitivity multiplier
@@ -767,7 +768,7 @@ public:
                 // Rampa proporcional continua y amortiguada (Anti-hunting):
                 // A gran distancia acelera el acercamiento; cerca del setpoint atenúa el paso
                 // proporcionalmente al error para entrar suavemente sin sobrepicos ni oscilaciones.
-                int stepSize = static_cast<int>(absErr * 30.0f);
+                int stepSize = static_cast<int>(absErr * tune.seekGain);
                 if (stepSize < 2) stepSize = 2;
                 if (stepSize > activeSeekStep) stepSize = activeSeekStep;
 

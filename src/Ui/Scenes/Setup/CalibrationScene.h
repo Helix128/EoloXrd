@@ -823,6 +823,10 @@ public:
                 break;
             }
 
+            // El descubrimiento ya midió ambas bombas: la prueba de orden queda
+            // al día para que primaria y semilla de la curva coincidan.
+            ctx.calibration.savePumpOrder(ctx.calibration.weakMotor, discoveryFlow[0], discoveryFlow[1]);
+
             scanStarted = false;
             state = COMPLETE;
             stateStartTime = millis();

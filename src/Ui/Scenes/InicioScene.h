@@ -29,6 +29,8 @@ public:
             SceneManager::setScene("opciones", ctx);
         });
         addOption("Control de flujo", [](Context& ctx) { SceneManager::setScene("calibration", ctx); });
+        if (EoloConfig::pumpOrderTest)
+            addOption("Orden de bombas", [](Context& ctx) { SceneManager::setScene("pump_order", ctx); });
         addOption("Componentes", [](Context& ctx) { SceneManager::setScene("test_components", ctx); });
        // addOption("Acerca de", [](Context& ctx) { SceneManager::setScene("acerca_de", ctx); });
     }

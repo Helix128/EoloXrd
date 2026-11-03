@@ -185,7 +185,9 @@ public:
             return;
         }
 
-        SceneManager::setScene("inicio", ctx);
+        // Sin orden de bombas definido (o con datos corruptos) se prueba una vez.
+        const bool needsPumpTest = EoloConfig::pumpOrderTest && !ctx.calibration.pumpOrderKnown();
+        SceneManager::setScene(needsPumpTest ? "pump_order" : "inicio", ctx);
     }
 };
 

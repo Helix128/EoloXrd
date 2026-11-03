@@ -288,8 +288,11 @@ inline void MotorCaptureControl::updatePidMotors(MotorManager &motor,
 
     int seed0 = 0, seed1 = 0;
     bool hasSeed = calibration.getMotorPwms(targetFlow, seed0, seed1);
-    const bool useCalibrationSeed = EoloConfig::useCalibrationSeed && hasSeed;
-    const int primaryMotor = useCalibrationSeed ? calibration.weakMotor : 0;
+    // La bomba débil arranca primero (la prueba de bombas o la curva la definen).
+    // La semilla de la curva solo vale si la curva se midió con ese mismo orden.
+    const int primaryMotor = calibration.primaryMotor();
+    const bool useCalibrationSeed =
+        EoloConfig::useCalibrationSeed && hasSeed && calibration.weakMotor == primaryMotor;
 
     DualMotorFlowInput input;
     input.nowMs = nowMs;

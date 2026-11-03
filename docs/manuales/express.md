@@ -28,6 +28,7 @@ La barra superior muestra la hora, el estado de la SD y el porcentaje de baterí
 | Captura rápida | Inicia una captura inmediata de 1 hora. |
 | Ajustar reloj | Cambia la hora a mano. |
 | Control de flujo | Muestra el control automático y permite medir una curva opcional de arranque. |
+| Orden de bombas | Prueba cada bomba a tope unos segundos para saber cuál es la débil, que arranca primero. Corre sola al encender si el equipo no tiene el orden guardado. |
 | Componentes | Muestra los sensores y prueba cada motor. |
 
 ### Reloj
