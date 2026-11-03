@@ -14,6 +14,7 @@
 #endif
 #include "../Common/Board/I2CBus.h"
 #include "../Common/Board/SPIBus.h"
+#include "../Common/Board/DisplayMirror.h"
 #include "../Common/Data/Context.h"
 #include "Drawing/SceneManager.h"
 #include "Drawing/SceneRegistry.h"
@@ -75,6 +76,7 @@ public:
 
         _context.components.motor.begin(); // apagar motores
 
+        Serial.setTxBufferSize(DisplayMirror::kTxBufferBytes); // antes de begin: logs y espejo no bloquean
         Serial.begin(115200);
 
 #ifdef FEATURE_MODEM
@@ -161,7 +163,7 @@ private:
 
     // Keep this declaration order: display must outlive Context, and the
     // console is constructed after the application collaborators it attaches.
-    EOLO_DISPLAY_MODEL _display;
+    EoloDisplay _display;
     Context _context;
     DebugConsole _debugConsole;
     unsigned long _lastFrameMs = 0;

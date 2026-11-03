@@ -12,6 +12,18 @@ ROOT_DIR = Path(__file__).resolve().parent
 SCRIPTS_DIR = ROOT_DIR / "scripts"
 BACKUP_SCRIPT = SCRIPTS_DIR / "firmware_backup.py"
 DEMO_SCRIPT = SCRIPTS_DIR / "demo.py"
+MIRROR_SCRIPT = SCRIPTS_DIR / "eolo_mirror.py"
+MIRROR_VENV = ROOT_DIR / ".pio" / "mirror-venv"
+
+
+def run_mirror(args):
+    """Abre el espejo de pantalla; crea un venv con pyserial/pygame la primera vez."""
+    python = MIRROR_VENV / "bin" / "python"
+    if not python.exists():
+        print("Preparando entorno del visor (pyserial, pygame)...")
+        subprocess.check_call([sys.executable, "-m", "venv", str(MIRROR_VENV)])
+        subprocess.check_call([str(python), "-m", "pip", "install", "-q", "pyserial", "pygame"])
+    return subprocess.call([str(python), str(MIRROR_SCRIPT), *args])
 
 
 def print_help():
@@ -31,6 +43,9 @@ Comandos de Compilación y Flasheo:
   ./eolo flash <target> [--port port] Flashear último respaldo de un dispositivo
   ./eolo demo <subcomando> [...]      Gestión de demos (list, build, upload, monitor)
 
+Depuración:
+  ./eolo mirror [--port p] [--zoom n] Ver la pantalla del EOLO en una ventana del PC (por USB)
+
 Ejemplos:
   ./eolo tag "calibracion_afm07"
   ./eolo build express
@@ -48,6 +63,9 @@ def main():
 
     command = sys.argv[1]
     args = sys.argv[2:]
+
+    if command == "mirror":
+        return run_mirror(args)
 
     # Si es comando demo -> redirigir a demo.py
     if command == "demo":

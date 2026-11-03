@@ -8,6 +8,9 @@
 #include "SerialOutput.h"
 #include "SystemDebugCommands.h"
 #include "../Board/RTCManager.h"
+#ifndef FEATURE_HEADLESS
+#include "../Board/DisplayMirror.h"
+#endif
 #if defined(FEATURE_HEADLESS) && defined(EOLO_TARGET_DRON_LEGACY)
 #include "../../Headless/CaptureSwitchDebugCommands.h"
 #include "../../Headless/DroneDebugCommands.h"
@@ -60,6 +63,12 @@ private:
                 _router.route(String(c));
             } else if (c == '!') {
                 enterTerminal();
+#ifndef FEATURE_HEADLESS
+            } else if (c == 'D') {
+                DisplayMirror::keepAlive(); // 'D' es el latido del visor; sin respuesta de texto
+            } else if (c == 'd') {
+                DisplayMirror::stop();
+#endif
             }
         }
     }

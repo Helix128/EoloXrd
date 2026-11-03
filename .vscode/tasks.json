@@ -65,6 +65,18 @@
       }
     },
     {
+      "label": "EOLO: Ver pantalla del EOLO",
+      "type": "shell",
+      "command": "${workspaceFolder}/eolo mirror",
+      "problemMatcher": [],
+      "isBackground": true,}
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    },
+    {
       "label": "EOLO: Compilar demo",
       "type": "shell",
       "command": "${workspaceFolder}/eolo demo build ${input:demoChoice} ${input:modelChoice}",

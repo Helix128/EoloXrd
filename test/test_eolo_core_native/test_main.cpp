@@ -21,6 +21,7 @@
 #include <Eolo/Core/Communication/SignalQuality.h>
 #include <Eolo/Core/Ui/StatusLedPatterns.h>
 #include <Eolo/Core/Ui/DisplayPowerPolicy.h>
+#include <Eolo/Core/Ui/DisplayMirrorFrame.h>
 #include <Eolo/Core/Debug/ConsoleArgs.h>
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
@@ -31,6 +32,86 @@
 #include <Eolo/Types/ModemHttpContract.h>
 #include "../../src/Common/Board/I2CRetryPolicy.h"
 #include "../../src/Variants/Profiles/DronLegacy.h"
+
+static size_t unpackBitsForTest(const uint8_t *in, size_t size, uint8_t *out, size_t capacity)
+{
+    size_t i = 0, o = 0;
+    while (i < size)
+    {
+        const uint8_t c = in[i++];
+        const size_t n = c < 128 ? c + 1 : c - 126;
+        if (o + n > capacity)
+            return 0;
+        for (size_t k = 0; k < n; ++k)
+            out[o++] = c < 128 ? in[i++] : in[i];
+        if (c >= 128)
+            ++i;
+    }
+    return o;
+}
+
+static void test_display_mirror_crc16_matches_ccitt_false_check_value()
+{
+    const uint8_t text[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    TEST_ASSERT_EQUAL_HEX16(0x29B1, DisplayMirrorFrame::crc16(text, sizeof(text)));
+}
+
+static void test_display_mirror_frame_roundtrips_sparse_and_noisy_buffers()
+{
+    uint8_t raw[1024];
+    uint8_t frame[DisplayMirrorFrame::maxFrameSize(1024)];
+    uint8_t decoded[1024];
+    for (int noisy = 0; noisy < 2; ++noisy)
+    {
+        uint32_t seed = 12345;
+        for (size_t i = 0; i < sizeof(raw); ++i)
+        {
+            seed = seed * 1664525u + 1013904223u;
+            raw[i] = noisy ? static_cast<uint8_t>(seed >> 24) : (i % 200 < 20 ? 0xAA : 0x00);
+        }
+        const size_t size = DisplayMirrorFrame::encode(raw, 16, 8, frame);
+        TEST_ASSERT_LESS_OR_EQUAL(sizeof(frame), size);
+        TEST_ASSERT_EQUAL_MEMORY(DisplayMirrorFrame::Magic, frame, 4);
+        TEST_ASSERT_EQUAL_UINT8(16, frame[4]);
+        TEST_ASSERT_EQUAL_UINT8(8, frame[5]);
+        const size_t len = frame[6] | (frame[7] << 8);
+        TEST_ASSERT_EQUAL(size, DisplayMirrorFrame::HeaderSize + len + DisplayMirrorFrame::CrcSize);
+        const uint16_t crc = frame[size - 2] | (frame[size - 1] << 8);
+        TEST_ASSERT_EQUAL_HEX16(DisplayMirrorFrame::crc16(frame + 4, 4 + len), crc);
+        if (noisy)
+        {
+            TEST_ASSERT_EQUAL(1024, len); // sin ganancia: va crudo
+            TEST_ASSERT_EQUAL_MEMORY(raw, frame + DisplayMirrorFrame::HeaderSize, 1024);
+        }
+        else
+        {
+            TEST_ASSERT_LESS_THAN(1024, len);
+            TEST_ASSERT_EQUAL(1024, unpackBitsForTest(frame + DisplayMirrorFrame::HeaderSize, len, decoded, sizeof(decoded)));
+            TEST_ASSERT_EQUAL_MEMORY(raw, decoded, 1024);
+        }
+    }
+}
+
+static void test_display_mirror_delta_sends_only_changed_pages()
+{
+    uint8_t prev[1024] = {};
+    uint8_t raw[1024] = {};
+    uint8_t frame[DisplayMirrorFrame::maxFrameSize(1024)];
+    TEST_ASSERT_EQUAL(0, DisplayMirrorFrame::encodeDelta(raw, prev, 16, 8, frame)); // sin cambios
+
+    raw[128 * 2 + 5] = 0x04; // pagina 2
+    raw[128 * 6 + 127] = 0x80; // pagina 6
+    const size_t size = DisplayMirrorFrame::encodeDelta(raw, prev, 16, 8, frame);
+    TEST_ASSERT_EQUAL_MEMORY(DisplayMirrorFrame::DeltaMagic, frame, 4);
+    const size_t len = frame[6] | (frame[7] << 8);
+    TEST_ASSERT_EQUAL(1 + 2 * 128, len);
+    TEST_ASSERT_EQUAL(size, DisplayMirrorFrame::HeaderSize + len + DisplayMirrorFrame::CrcSize);
+    TEST_ASSERT_EQUAL_HEX8(0x44, frame[DisplayMirrorFrame::HeaderSize]); // paginas 2 y 6
+    TEST_ASSERT_EQUAL_MEMORY(raw + 128 * 2, frame + DisplayMirrorFrame::HeaderSize + 1, 128);
+    TEST_ASSERT_EQUAL_MEMORY(raw + 128 * 6, frame + DisplayMirrorFrame::HeaderSize + 1 + 128, 128);
+    const uint16_t crc = frame[size - 2] | (frame[size - 1] << 8);
+    TEST_ASSERT_EQUAL_HEX16(DisplayMirrorFrame::crc16(frame + 4, 4 + len), crc);
+}
 
 static void test_battery_2s_pct_follows_discharge_curve()
 {
@@ -2152,6 +2233,9 @@ static void test_flow_smooth_law_caps_single_motor_and_validates()
 int main(int, char **)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_display_mirror_crc16_matches_ccitt_false_check_value);
+    RUN_TEST(test_display_mirror_frame_roundtrips_sparse_and_noisy_buffers);
+    RUN_TEST(test_display_mirror_delta_sends_only_changed_pages);
     RUN_TEST(test_battery_2s_pct_follows_discharge_curve);
     RUN_TEST(test_battery_2s_voltage_uses_divider_ratio);
     RUN_TEST(test_rtc_parser_is_calendar_aware);

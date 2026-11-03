@@ -160,7 +160,7 @@ struct Context
     enum class BootPhase : uint8_t { Idle, StartingServices, InitSD, WaitingI2C, Ready };
     using RTCNetworkSyncStatus = ::RTCNetworkSyncStatus;
 
-    EOLO_DISPLAY_MODEL u8g2;
+    EoloDisplay u8g2;
     Components components;
     Session session;
     CalibrationManager calibration;

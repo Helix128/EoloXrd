@@ -39,7 +39,7 @@ inline constexpr const char kModemApn[] = "gigsky-02";
 inline constexpr const char kRtcTimeServerUrl[] = "http://time.cmasccp.cl/";
 inline constexpr bool kModemAllowHttpFallback = false;
 
-inline constexpr float kAfm07FlowDivisor = 100.0f;
+inline constexpr float kAfm07FlowDivisor = 10.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
 
 constexpr FlowPidConfig makeFlowPidConfig()

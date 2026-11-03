@@ -28,7 +28,7 @@ Referencia: este mapa proviene de la demo secuencial oficial de EOLO Express Rev
 | Módem | PWR/RX/TX | `EOLO_PIN_UNUSED` | `MODEM_*_PIN` |
 | LED estado | NeoPixel | `EOLO_PIN_UNUSED` | `NEOPIXEL_PIN` |
 
-AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro de flujo instantáneo `0x0000`. Caudal = raw / 100 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Express.h`. Esa escala aún no tiene ensayo con caudal conocido; ver [Discrepancias](../discrepancias-pines.md). El firmware usa `SoftwareSerial` sobre GPIO27/25; la demo usa `Serial1` sobre los mismos pines.
+AFM07: Modbus RTU, ID esclavo 2, 4800 8N1, registro de flujo instantáneo `0x0000`. Caudal = raw / 10 (L/min), según `kAfm07FlowDivisor` en `src/Variants/Profiles/Express.h`. Verificado en equipo: el sensor entrega 5.6 L/min y con `/100` el firmware mostraba 0.56. El firmware usa `SoftwareSerial` sobre GPIO27/25; la demo usa `Serial1` sobre los mismos pines.
 
 ## Pantalla
 

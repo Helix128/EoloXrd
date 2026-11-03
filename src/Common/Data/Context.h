@@ -27,6 +27,7 @@
 #ifndef FEATURE_HEADLESS
 #include <U8g2lib.h>
 #include <SPI.h>
+#include "../Board/DisplayMirror.h"
 #include "../../Ui/Drawing/Logos.h"
 #endif
 #include <math.h>
@@ -43,7 +44,7 @@
 typedef struct Context
 {
 #ifndef FEATURE_HEADLESS
-    EOLO_DISPLAY_MODEL &u8g2;
+    EoloDisplay &u8g2;
 #endif
     bool isDisplayOn = true;
     bool isDisplayReady = false;
@@ -101,7 +102,7 @@ typedef struct Context
 
 public:
 #ifndef FEATURE_HEADLESS
-    Context(EOLO_DISPLAY_MODEL &display) : u8g2(display) {}
+    Context(EoloDisplay &display) : u8g2(display) {}
 #else
     Context() {}
 #endif
@@ -320,14 +321,7 @@ public:
 #if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
     static constexpr uint8_t DisplayI2cInitAttempts = 3;
     static constexpr uint32_t DisplayI2cProbeIntervalMs = 1000UL;
-    // Tras el arranque se reinicializa el panel a intervalos aunque todo haya
-    // dado ACK: algunas OLED I2C desaparecen del bus un rato y vuelven sin
-    // configuración, sin que ninguna transferencia falle.
-    static constexpr uint32_t DisplayI2cWarmupMs = 10000UL;
-    static constexpr uint32_t DisplayI2cWarmupIntervalMs = 2000UL;
     uint32_t lastDisplayProbeMs = 0;
-    uint32_t displayInitMs = 0;
-    uint32_t lastWarmupReinitMs = 0;
     uint32_t seenI2cRecoveries = 0;
 #endif
 
@@ -359,45 +353,6 @@ public:
 #endif
     }
 
-    // Init con reintentos: con OLED I2C, una transferencia descartada (bus
-    // ocupado) o sin ACK deja el panel a medias, así que se repite la secuencia
-    // completa, incluido `apply` (brillo y encendido), hasta que ninguna
-    // transferencia se pierda. El bus se toma por intento para no dejar sin
-    // turno a los sensores durante la espera.
-    template <typename Apply>
-    bool beginDisplayRetrying(Apply &&apply)
-    {
-#if !defined(FEATURE_HEADLESS) && !EOLO_DISPLAY_SPI
-        for (uint8_t attempt = 1;; ++attempt)
-        {
-            bool ok;
-            {
-                I2CBus::Guard i2cGuard;
-                const uint32_t dropsBefore = I2CDisplayTransport::dropCount;
-                ok = beginDisplayController();
-                apply();
-                ok = ok && I2CDisplayTransport::dropCount == dropsBefore;
-            }
-            if (ok)
-                return true;
-            if (attempt >= DisplayI2cInitAttempts)
-                return false;
-            LOG_F("Pantalla I2C sin ACK; reintentando init (%u)\n", attempt);
-            delay(50);
-        }
-#else
-        const bool ok = beginDisplayController();
-        apply();
-        return ok;
-#endif
-    }
-
-    void applyBaseContrast()
-    {
-        appliedContrast = displayPower.baseContrast();
-        u8g2.setContrast(appliedContrast);
-    }
-
     void initDisplay()
     {
 #ifndef FEATURE_HEADLESS
@@ -406,7 +361,15 @@ public:
         // Antes de begin(): la init del panel ya usa reloj, pines y timeout
         // del bus compartido.
         I2CDisplayTransport::install(u8g2.getU8x8());
-        if (!beginDisplayRetrying([&] { applyBaseContrast(); }))
+        I2CBus::Guard i2cGuard;
+        bool acked = beginDisplayController();
+        for (uint8_t attempt = 1; attempt < DisplayI2cInitAttempts && !acked; ++attempt)
+        {
+            LOG_F("Pantalla I2C sin ACK; reintentando init (%u)\n", attempt);
+            delay(50);
+            acked = beginDisplayController();
+        }
+        if (!acked)
         {
             // La UI arranca igual; serviceDisplayLink() la reinicializa
             // cuando el panel responda.
@@ -414,17 +377,18 @@ public:
             I2CDisplayTransport::lost = true;
         }
         seenI2cRecoveries = I2CBus::getInstance().getStats().recoveries;
-        displayInitMs = lastWarmupReinitMs = millis();
 #else
 #if !EOLO_DISPLAY_HW_SPI
         SoftSpiDisplayTransport::install(u8g2.getU8x8());
 #endif
-        if (!beginDisplayRetrying([&] { applyBaseContrast(); }))
+        if (!beginDisplayController())
         {
             LOG_LN("Fallo al iniciar pantalla");
             return;
         }
 #endif
+        appliedContrast = displayPower.baseContrast();
+        u8g2.setContrast(appliedContrast);
         u8g2.clearBuffer();
         u8g2.setBitmapMode(1);
         u8g2.drawXBM(0, 0, 128, 64, cmas);
@@ -444,10 +408,9 @@ public:
 #if EOLO_DISPLAY_SPI
             SPIBus::Guard spiGuard;
 #endif
-            ok = beginDisplayRetrying([&] {
-                u8g2.setPowerSave(isDisplayOn ? 0 : 1);
-                u8g2.setContrast(appliedContrast);
-            });
+            ok = beginDisplayController();
+            u8g2.setPowerSave(isDisplayOn ? 0 : 1);
+            u8g2.setContrast(appliedContrast);
         }
         markUiDirty();
         LOG_F("Pantalla reinicializada: %s\n", ok ? "OK" : "sin confirmar");
@@ -475,18 +438,9 @@ public:
                 I2CDisplayTransport::lost = true;
             return;
         }
-        const uint32_t now = millis();
         if (!I2CDisplayTransport::lost)
-        {
-            if (now - displayInitMs < DisplayI2cWarmupMs &&
-                now - lastWarmupReinitMs >= DisplayI2cWarmupIntervalMs)
-            {
-                lastWarmupReinitMs = now;
-                if (!reinitDisplay())
-                    I2CDisplayTransport::lost = true;
-            }
             return;
-        }
+        const uint32_t now = millis();
         if (now - lastDisplayProbeMs < DisplayI2cProbeIntervalMs)
             return;
         lastDisplayProbeMs = now;

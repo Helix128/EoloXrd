@@ -5,29 +5,30 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include "../../Variants/Legacy.h"
+#include "../../Common/Board/DisplayMirror.h"
 #include "Layout.h"
 
 class Renderer
 {
 public:
-    static void beginFrame(EOLO_DISPLAY_MODEL &display)
+    static void beginFrame(EoloDisplay &display)
     {
         display.clearBuffer();
     }
 
-    static void endFrame(EOLO_DISPLAY_MODEL &display)
+    static void endFrame(EoloDisplay &display)
     {
         display.sendBuffer();
     }
 
-    static void centeredText(EOLO_DISPLAY_MODEL &display, const char *text, int centerX, int baselineY, const uint8_t *font)
+    static void centeredText(EoloDisplay &display, const char *text, int centerX, int baselineY, const uint8_t *font)
     {
         display.setFont(font);
         int width = display.getStrWidth(text);
         display.drawStr(centerX - width / 2, baselineY, text);
     }
 
-    static void metricCell(EOLO_DISPLAY_MODEL &display,
+    static void metricCell(EoloDisplay &display,
                            int x,
                            int width,
                            const char *label,
@@ -58,7 +59,7 @@ public:
         }
     }
 
-    static void metricRow(EOLO_DISPLAY_MODEL &display,
+    static void metricRow(EoloDisplay &display,
                           const char *label1,
                           const char *value1,
                           const char *unit1,
@@ -102,7 +103,7 @@ public:
     }
 
     // Flechas laterales animadas que indican que el valor se ajusta con el encoder.
-    static void adjustChevrons(EOLO_DISPLAY_MODEL &display, int leftX, int rightX, int midY, int animationStep,
+    static void adjustChevrons(EoloDisplay &display, int leftX, int rightX, int midY, int animationStep,
                                int spacing = 8, int tip = 3)
     {
         const int cycle = (animationStep / 4) % 3;
@@ -114,7 +115,7 @@ public:
     }
 
     // Titulo pequeno en negrita y valor grande con flechas.
-    static void valueSelector(EOLO_DISPLAY_MODEL &display,
+    static void valueSelector(EoloDisplay &display,
                               const char *title,
                               const char *value,
                               int animationStep)
@@ -129,7 +130,7 @@ public:
 
     // Selector de hora: titulo, HH:MM grande con flechas, dia relativo y,
     // si durationMinutes >= 0, la duracion de la captura.
-    static void timeSelector(EOLO_DISPLAY_MODEL &display,
+    static void timeSelector(EoloDisplay &display,
                              const char *title,
                              int hour,
                              int minute,
@@ -168,7 +169,7 @@ public:
 
     // Reduce una region de un bitmap 1bpp (XBM, ancho srcStride px) a destW x destH.
     // El OR de los cuatro vecinos evita perder trazos finos al reducir.
-    static void scaledBitmap(EOLO_DISPLAY_MODEL &display, const unsigned char *bitmap, int srcStride,
+    static void scaledBitmap(EoloDisplay &display, const unsigned char *bitmap, int srcStride,
                              int srcX, int srcY, int srcW, int srcH,
                              int destX, int destY, int destW, int destH)
     {
@@ -193,7 +194,7 @@ public:
     }
 
     // Espiral de 5 puntos alrededor de (cx, cy); head 0..7 avanza la cabeza.
-    static void spinner(EOLO_DISPLAY_MODEL &display, int cx, int cy, uint8_t head)
+    static void spinner(EoloDisplay &display, int cx, int cy, uint8_t head)
     {
         static const int8_t points[8][2] = {
             {0, -5}, {4, -4}, {6, 0}, {4, 4},
@@ -212,7 +213,7 @@ public:
     }
 
     // Barra cuadrada: marco de 1 px, 1 px de aire y relleno solido.
-    static void progressBar(EOLO_DISPLAY_MODEL &display, int x, int y, int width, int height, int pct)
+    static void progressBar(EoloDisplay &display, int x, int y, int width, int height, int pct)
     {
         pct = constrain(pct, 0, 100);
         display.drawFrame(x, y, width, height);
@@ -221,13 +222,13 @@ public:
             display.drawBox(x + 2, y + 2, fillW, height - 4);
     }
 
-    static void separatorLine(EOLO_DISPLAY_MODEL &display, int y)
+    static void separatorLine(EoloDisplay &display, int y)
     {
         display.drawHLine(0, y, Layout::ScreenW);
     }
 
     // Indicador de pagina: un punto por pagina y uno alargado para la activa.
-    static void pageDots(EOLO_DISPLAY_MODEL &display, int count, int index, int y)
+    static void pageDots(EoloDisplay &display, int count, int index, int y)
     {
         if (count <= 1)
             return;
@@ -245,7 +246,7 @@ public:
     }
 
     // Lista de menu: ventana de 3 filas, texto centrado, fila activa invertida.
-    static void menuList(EOLO_DISPLAY_MODEL &display, const char *const *labels, int count, int selectIndex)
+    static void menuList(EoloDisplay &display, const char *const *labels, int count, int selectIndex)
     {
         if (count <= 0)
             return;
@@ -309,7 +310,7 @@ public:
 
     // Variante para arrays de structs con miembro `label` (p.ej. MenuOptionAction).
     template <typename T>
-    static void menuListOf(EOLO_DISPLAY_MODEL &display, const T *items, int count, int selectIndex)
+    static void menuListOf(EoloDisplay &display, const T *items, int count, int selectIndex)
     {
         const char *labels[16];
         if (count > 16)
@@ -327,7 +328,7 @@ public:
 
     // Filas clave/valor: etiqueta a la derecha hasta x=63, valor en negrita desde x=66.
     // firstBaselineIndex: 0..Layout::KvMaxRows-1 (baseline = KvFirstY + idx * KvPitch).
-    static void keyValueRows(EOLO_DISPLAY_MODEL &display, const KeyValue *rows, int count, int firstBaselineIndex = 0)
+    static void keyValueRows(EoloDisplay &display, const KeyValue *rows, int count, int firstBaselineIndex = 0)
     {
         for (int i = 0; i < count && firstBaselineIndex + i < Layout::KvMaxRows; i++)
         {
@@ -340,7 +341,7 @@ public:
     }
 
     // Eleccion Si/No (o dos etiquetas): titulo, dos cajas 48x15 (la activa invertida) y pista.
-    static void yesNoChoice(EOLO_DISPLAY_MODEL &display, const char *title, bool yesSelected, const char *hint,
+    static void yesNoChoice(EoloDisplay &display, const char *title, bool yesSelected, const char *hint,
                             const char *yesLabel = "S\xED", const char *noLabel = "No")
     {
         centeredText(display, title, Layout::CenterX, 28, FONT_MENU_SEL);
@@ -381,7 +382,7 @@ public:
     }
 
     // Dos valores grandes lado a lado con etiqueta pequena encima (Inicio / Restante).
-    static void heroPair(EOLO_DISPLAY_MODEL &display,
+    static void heroPair(EoloDisplay &display,
                          const char *label1, const char *value1,
                          const char *label2, const char *value2)
     {

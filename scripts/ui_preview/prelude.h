@@ -24,5 +24,8 @@ struct PreviewDisplay : public U8G2
     }
 };
 #define EOLO_DISPLAY_MODEL PreviewDisplay
+// El espejo serie no existe en el PC: la pantalla de escenas es el stub tal cual.
+#define EOLO_BOARD_DISPLAY_MIRROR_H
+using EoloDisplay = PreviewDisplay;
 
 #endif
