@@ -28,7 +28,7 @@ public:
             ctx.optionsReturnScene = InicioScene::Name;
             SceneManager::setScene("opciones", ctx);
         });
-        addOption("Calibrar bombas", [](Context& ctx) { SceneManager::setScene("calibration", ctx); });
+        addOption("Control de flujo", [](Context& ctx) { SceneManager::setScene("calibration", ctx); });
         addOption("Componentes", [](Context& ctx) { SceneManager::setScene("test_components", ctx); });
        // addOption("Acerca de", [](Context& ctx) { SceneManager::setScene("acerca_de", ctx); });
     }

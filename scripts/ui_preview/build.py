@@ -6,7 +6,8 @@ compilador de `ziglang` (pip install ziglang) y la libreria U8g2 de .pio/libdeps
 ejecuta preview.cpp y convierte cada buffer de 128x64 a PNG (x4).
 
 Uso:
-    python scripts/ui_preview/build.py [--variant express|standard|dron] [--out DIR] [--scale N]
+    python scripts/ui_preview/build.py [--variant express|express_legacy|standard|dron] [--out DIR] [--scale N]
+    python scripts/ui_preview/build.py --variant express_legacy --check-calibration
 
 Salida (por defecto build/ui_preview/<variant>/): <pantalla>.png, sheet_header.png,
 sheet_screens.png e index.txt con el orden de las hojas.
@@ -14,6 +15,7 @@ Los datos de sensores son ficticios; sirve para revisar layout, no mediciones.
 """
 import argparse
 import glob
+import importlib.util
 import os
 import shutil
 import struct
@@ -27,13 +29,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Features y numero de motores de cada variante (ver platformio.ini).
 VARIANTS = {
     "express": (["FEATURE_PLANTOWER", "FEATURE_FLOW_AFM07"], 2),
+    "express_legacy": (["FEATURE_PLANTOWER", "FEATURE_FLOW_FS3000", "FEATURE_FLOW_CALIBRATION", "FEATURE_MOTOR_PWM"], 2),
     "standard": (["FEATURE_PLANTOWER", "FEATURE_MODEM", "FEATURE_ANEMOMETER", "FEATURE_DUAL_BATTERY", "FEATURE_FLOW_AFM07"], 2),
     "dron": (["FEATURE_FLOW_AFM07"], 1),
 }
 
 
 def zig(*args):
-    return [sys.executable, "-m", "ziglang", *args]
+    if importlib.util.find_spec("ziglang") is not None:
+        return [sys.executable, "-m", "ziglang", *args]
+    compiler = shutil.which("cc" if args[0] == "cc" else "c++")
+    if compiler is None:
+        sys.exit("No se encontró ziglang ni un compilador cc/c++ instalado.")
+    return [compiler, *args[1:]]
 
 
 def find_u8g2():
@@ -122,6 +130,8 @@ def main():
     ap.add_argument("--variant", choices=sorted(VARIANTS), default="express")
     ap.add_argument("--out", default=None)
     ap.add_argument("--scale", type=int, default=4)
+    ap.add_argument("--check-calibration", action="store_true",
+                     help="ejecuta y renderiza solo la máquina real de CalibrationScene")
     args = ap.parse_args()
 
     features, motors = VARIANTS[args.variant]
@@ -145,7 +155,7 @@ def main():
 
     for old in glob.glob(os.path.join(out, "*")):
         os.remove(old)
-    run([exe, out])
+    run([exe, out, "--check-calibration"] if args.check_calibration else [exe, out])
 
     names = []
     images = []

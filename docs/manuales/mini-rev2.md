@@ -29,7 +29,7 @@ La barra superior muestra la hora, el estado de la SD y el nivel de batería.
 - «Continuar sesión»: reanuda la sesión guardada. Aparece solo si existe una sesión guardada.
 - «Captura rápida»: inicia de inmediato una captura de 1 hora.
 - «Ajustar reloj»: cambia la hora del RTC.
-- «Calibrar bombas»: ejecuta el barrido de calibración de la bomba.
+- «Control de flujo»: informa del control automático y la tabla del modelo. No ejecuta un barrido de calibración.
 - «Componentes»: muestra los sensores y permite probar el motor.
 
 ### Ajustar reloj
@@ -56,13 +56,13 @@ Pulsar el botón mientras espera, con «Pulsar: volver», guarda la sesión y re
 
 Elige «Captura rápida», ajusta el «Flujo objetivo» y confirma. La captura empieza de inmediato y dura 1 hora.
 
-### Calibrar bombas
+<a id="calibrar-bombas"></a>
 
-1. Arma el circuito de aire como lo usarás en terreno.
-2. Elige «Calibrar bombas». La pantalla muestra «Calibrando», la fase y el «Avance» con el tiempo «Restante».
-3. Presiona el botón para pausar. La pantalla muestra «Calibración pausada» con «Continuar» y «Cancelar». «Cancelar» conserva la curva anterior y vuelve al menú principal.
-4. Al terminar, presiona el botón para volver al menú principal. La pantalla no muestra si la curva fue aceptada. Si no cumple los mínimos, el firmware conserva la curva anterior.
-5. Haz una captura corta de prueba antes de una campaña.
+### Control de flujo
+
+Elige «Control de flujo» para ver «Control automatico», «Tabla del modelo», «Sin barrido manual» y «Volver». Este Mini usa una tabla estática de 10 puntos integrada en el perfil del firmware (`kFlowFeedForward`); no es una curva personalizada guardada por el usuario. El controlador la combina con el ajuste en lazo cerrado a partir del caudal del AFM07.
+
+Esta pantalla no acciona las bombas ni crea una curva de calibración. Para probar el motor, usa Componentes > Motor. Si cambias componentes del circuito de aire o parámetros del control, valida su comportamiento en hardware antes de una campaña. La tabla estática no se modifica desde la pantalla.
 
 ## Durante la captura
 

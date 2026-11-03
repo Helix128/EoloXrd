@@ -27,7 +27,7 @@ La barra superior muestra la hora, el estado de la SD y el porcentaje de baterí
 | Continuar sesión | Reanuda la sesión guardada. Aparece solo si existe. |
 | Captura rápida | Inicia una captura inmediata de 1 hora. |
 | Ajustar reloj | Cambia la hora a mano. |
-| Calibrar bombas | Ejecuta la calibración guiada de bombas. |
+| Control de flujo | Muestra el control automático y permite medir una curva opcional de arranque. |
 | Componentes | Muestra los sensores y prueba cada motor. |
 
 ### Reloj
@@ -91,19 +91,19 @@ El formato de los CSV, incluido el nombre de cada archivo y las columnas de cada
 
 ## Calibración
 
-Usa Calibrar bombas cuando cambies bombas, mangueras o parte del circuito de aire, cuando el flujo real no siga al objetivo o antes de una campaña crítica.
+La pantalla Control de flujo informa que el control es automático. Medir una curva de bombas es opcional: puede ayudar al arranque después de cambiar bombas, mangueras o parte del circuito de aire, o cuando el flujo real no siga al objetivo. Este procedimiento también aplica a Express Rev.1.
 
-1. Arma el circuito de aire como lo usarás en terreno.
-2. Elige Calibrar bombas.
-3. El equipo mide cada motor y genera las rampas de calibración, primero para el motor débil y luego para el fuerte.
-4. Espera a que termine y pulsa el botón para volver al menú principal. La pantalla no muestra si la curva es válida.
-5. Revisa el resultado en la consola serie. Si la curva no cumple los mínimos, aparece «Calibración NO válida» y el equipo conserva la curva anterior. Después haz una captura corta de prueba.
+1. Arma el circuito de aire como lo usarás en terreno y comprueba que haya una lectura de flujo.
+2. Elige Control de flujo. En la pantalla «Control automatico», gira el encoder hasta «Medir» y confirma. «Volver» aparece seleccionado inicialmente; confirmar esa opción regresa al menú sin tocar la curva anterior.
+3. Durante la medición, el equipo barre ambos motores y muestra la fase, el avance y el tiempo restante.
+4. Para pausar, presiona el botón. La pantalla «Pausa segura» apaga las bombas y ofrece «Seguir» y «Salir»; gira el encoder para elegir y presiona para confirmar. «Salir» aparece seleccionado inicialmente y conserva la curva anterior.
+5. Al terminar, la pantalla indica «Curva guardada» y el número de puntos, o «Error de curva» con el motivo. Si hay un error, la curva anterior permanece intacta.
 
-Durante el barrido, el botón pausa la calibración y apaga las bombas. El encoder alterna entre Continuar y Cancelar, y el botón confirma. Cancelar vuelve al menú principal y conserva la curva anterior.
+La curva medida se guarda en la memoria Flash, no en la SD. El controlador la usa como punto de partida y sigue ajustando el caudal en lazo cerrado. Sin curva guardada, el control automático también regula el flujo; medirla no es requisito para capturar. Esta curva de bombas es distinta de la conversión del FS3000 a L/min: la pantalla no recalibra el sensor.
 
-No obstruyas el flujo ni desconectes sensores o bombas durante el proceso. Si falla o el flujo queda inestable, revisa fugas, filtros, mangueras y alimentación antes de repetir.
+No obstruyas el flujo ni desconectes sensores o bombas durante la medición. Si aparece «Sin dato de flujo» o «Curva no guardada», revisa fugas, filtros, mangueras, conexiones y alimentación antes de intentarlo de nuevo. Tras cambiar componentes del circuito, valida el control con una prueba en el equipo antes de una campaña.
 
-La calibración es opcional. Sin curva guardada, el control arranca con el Motor 1 y ajusta el caudal en lazo cerrado. Una curva válida solo acelera la llegada al objetivo. La curva se guarda en la memoria Flash, no en la SD. La relación entre flujo y bombas está en [Calibración de flujo y bombas](../hardware/calibracion/README.md).
+La curva debe cumplir los mínimos de puntos y rango de flujo para guardarse. Los detalles de ambas calibraciones están en [Calibración de flujo y bombas](../hardware/calibracion/README.md).
 
 ## Problemas comunes
 
@@ -115,12 +115,12 @@ Los comandos de la consola serie se escriben a 115200 baudios. Si falta la SD, l
 | El ícono de SD muestra `!` durante la captura | Error de escritura. El equipo no vuelve a intentar la SD hasta reiniciarse. Revisa la tarjeta y reinicia antes de la siguiente captura. |
 | No hay CSV después de una captura | La SD faltaba o tenía error. La consola muestra «SD no disponible; se omite log local». |
 | El flujo muestra `--` o «Sin dato» en Componentes > Sensores | El AFM07 no responde. Revisa cableado y alimentación. |
-| El flujo es inestable | Revisa mangueras, filtros y fugas. Repite Calibrar bombas si el circuito cambió. |
+| El flujo es inestable | Revisa mangueras, filtros y fugas. Si cambió el circuito, valida el control con una prueba en el equipo; la curva opcional se mide en Control de flujo > Medir. |
 | La captura termina con «Falla bomba» | El AFM07 marcó caudal cero con la bomba encendida, así que el equipo detuvo la captura. Revisa bombas, mangueras, filtros y alimentación. Prueba cada motor en Componentes > Motores antes de iniciar otra captura. |
 | El PM muestra 0 o no cambia | El Plantower no responde. Sin lectura válida, la pantalla muestra 0 y el CSV guarda `-1`. Revisa su conexión y alimentación. |
 | La batería muestra «Sin dato» | No hay lectura válida de la batería. Revisa la conexión. El CSV guarda `-1`. |
 | La hora del archivo es incorrecta | Ajusta la hora con Ajustar reloj > Cambiar hora. Sincronizar no funciona en Express. |
-| «Calibración NO válida» en la consola | La curva no cumplió los mínimos: al menos 6 puntos y un rango de flujo de 0.25 L/min. Revisa el circuito y repite. |
+| «Error de curva» | Lee el motivo en pantalla. «Sin dato de flujo» requiere revisar el sensor y sus conexiones; «Curva no guardada» puede indicar una medición que no cumple los mínimos o un fallo al guardar en Flash. La curva anterior se conserva. |
 
 ## Más información
 

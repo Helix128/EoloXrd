@@ -164,6 +164,12 @@ inline void CaptureController::end(Context &ctx, CaptureEndReason reason)
     if (isEnd)
         return;
 
+    // Congelar el tiempo real antes de crear la fila final y el resumen.
+    // duration conserva la duración programada, incluso en un cierre manual.
+    const uint32_t now = ctx.getUnixTime();
+    if (now >= ctx.session.startUnix)
+        ctx.session.elapsedTime = now - ctx.session.startUnix;
+
     // Los cierres manual y temporizado usan una lectura RTC nueva. El trabajo
     // final permanece en la cola SD hasta que el mismo worker escribe de forma
     // segura la fila de captura y la entrada del índice maestro.
@@ -192,6 +198,10 @@ inline void CaptureController::abort(Context &ctx, CaptureEndReason reason,
 {
     if (isEnd && !isCapturing)
         return;
+
+    const uint32_t now = ctx.getUnixTime();
+    if (now >= ctx.session.startUnix)
+        ctx.session.elapsedTime = now - ctx.session.startUnix;
 
     isCapturing = false;
     isPaused = false;

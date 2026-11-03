@@ -14,13 +14,15 @@ Sirve para entender qué datos hay en esta carpeta y cuándo hay que recalibrar.
 
 Los 12 puntos de `FS3000Cal.csv` son los mismos que usa el firmware en `lib/EoloCore/include/Eolo/Core/Sensors/FS3000FlowModel.h`. Si cambias uno, cambia el otro.
 
-## Dos calibraciones distintas
+## Calibraciones y tablas de control
 
-EOLO tiene dos calibraciones que no hay que confundir.
+Hay que distinguir la curva de conversión del FS3000, la tabla estática del modelo y una curva de bombas medida para un equipo.
 
-La primera convierte la lectura de un sensor en caudal. Solo aplica al FS3000, que mide velocidad de aire. Las variantes con AFM07 la omiten, porque el AFM07 entrega L/min directamente.
+La curva del FS3000 convierte velocidad de aire a caudal. Solo aplica al FS3000; el AFM07 entrega L/min directamente y no requiere esa conversión.
 
-La segunda relaciona el caudal con la potencia de las bombas. Aplica a todas las variantes que tienen el menú de calibración de bombas y sirve para que el control de flujo llegue al objetivo más rápido.
+Mini Rev.2 usa una tabla estática de 10 puntos (`kFlowFeedForward` en `src/Variants/Profiles/Dron.h`), integrada en el firmware. No es una calibración individual ni se genera desde la pantalla. MP usa control por caudal sin una curva personalizada de bombas.
+
+Express Rev.2 y Express Rev.1 (Legacy) permiten medir una curva opcional de bombas desde «Control de flujo» > «Medir». Esa curva relaciona PWM y flujo para ese equipo y sirve como semilla de arranque; el controlador sigue ajustando el caudal en lazo cerrado. Sin curva guardada el control automático también funciona. El proceso no cambia la curva del sensor FS3000.
 
 ## Del FS3000 al caudal
 
@@ -32,22 +34,23 @@ La curva se obtuvo el 2025-12-19, según la fecha del PDF y del primer commit de
 
 `FS3000FlowModel::flowFromVelocity` interpola linealmente entre esos puntos. Devuelve `-1` si la velocidad no es válida o no es positiva y `0` bajo `0.06 m/s`. Sobre `3.33 m/s` extrapola con el último tramo.
 
-## Bombas y flujo objetivo
+## Curva de usuario para Express
 
-La calibración de bombas recorre la potencia de los motores y registra qué caudal produce cada nivel. El resultado es una tabla de puntos con el PWM de cada motor y el flujo medido. El equipo la ordena por flujo y la usa para estimar el PWM que corresponde a un caudal objetivo.
+La medición recorre la potencia de los motores y registra qué caudal produce cada nivel. El resultado es una tabla de puntos con el PWM de cada motor y el flujo medido. El controlador la usa como punto de partida para un objetivo de flujo, no como sustituto del control en lazo cerrado.
 
 Los límites de la tabla están en `lib/EoloCore/include/Eolo/Core/Calibration/CalibrationModel.h`: mínimo 6 puntos, máximo 200, y un rango de flujo de al menos 0.25 L/min. El control de flujo en lazo cerrado se describe en [Control de flujo](../../firmware/control-de-flujo.md).
 
 La tabla se guarda en la Flash del ESP32 con `Preferences` (namespace `eolo_calib`), sin usar la SD. `src/Common/Data/CalibrationManager.h` la escribe en dos registros alternados con checksum. Si un corte de energía interrumpe el guardado, se conserva la última curva válida. Una calibración guardada con una versión anterior del formato se descarta y hay que repetirla.
 
-Con la calibración se llega antes al objetivo, pero no es obligatoria: sin curva guardada el control ajusta el caudal en lazo cerrado desde el inicio. Los pasos para ejecutarla están en el manual de cada variante:
+Medir esta curva es opcional. Los controles de flujo por modelo y el proceso de Express están descritos aquí:
 
-- [EOLO Express Rev.2](../../manuales/express.md#calibración)
-- [EOLO-MP](../../manuales/mp.md#calibración)
-- [EOLO Mini Rev.1](../../manuales/mini-rev1.md#calibración)
+- [EOLO Express Rev.1 y Rev.2](../../manuales/express.md#calibración) — «Medir» crea una curva opcional de arranque.
+- [EOLO-MP](../../manuales/mp.md#calibración) — control por caudal, sin barrido manual de bombas.
+- [EOLO Mini Rev.2](../../manuales/mini-rev2.md#calibrar-bombas) — tabla estática del modelo, sin curva de usuario.
+- [EOLO Mini Rev.1](../../manuales/mini-rev1.md#calibración) — control cerrado headless, sin barrido de bombas desde la pantalla.
 
 ## Cuándo recalibrar
 
-Recalibra al cambiar bombas, mangueras, filtros o cualquier parte del circuito de aire, y cuando el flujo real no siga al objetivo. Hazlo también antes de una campaña crítica. Si cambias la pieza que aloja al FS3000, hay que repetir la curva del sensor y actualizar `FS3000FlowModel.h`.
+En Express, vuelve a medir la curva de bombas si cambias bombas, mangueras, filtros o el circuito de aire, o si el flujo real no sigue al objetivo. Después, valida el comportamiento con una prueba en el equipo antes de una campaña. Cambiar la pieza que aloja al FS3000 requiere repetir su curva de conversión y actualizar `FS3000FlowModel.h`. Los cambios a tablas estáticas o parámetros del control requieren validación en hardware.
 
-Por la misma razón, los valores de `flow` del CSV dependen de esta calibración. El [formato de los datos](../../datos/README.md) describe esa columna.
+En FS3000, los valores de `flow` del CSV dependen de la curva de conversión del sensor. La curva de bombas afecta al PWM aplicado, no a la conversión de la lectura a L/min. El [formato de los datos](../../datos/README.md) describe esa columna.

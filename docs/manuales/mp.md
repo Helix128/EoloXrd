@@ -31,7 +31,7 @@ La barra superior muestra la hora, la SD, las dos baterías, el módem y la alim
 | Continuar sesión | Reanuda la sesión guardada. Aparece solo si existe. |
 | Captura rápida | Inicia una captura inmediata de 1 hora. |
 | Ajustar reloj | Cambia la hora a mano o la sincroniza por red. |
-| Calibrar bombas | Ejecuta la calibración guiada de bombas. |
+| Control de flujo | Muestra el control automático por caudal. No ofrece barrido manual de bombas. |
 | Componentes | Muestra los sensores y prueba cada motor. |
 
 ### Reloj
@@ -112,19 +112,9 @@ m status    # estado del módem, trabajo activo, last_error
 
 ## Calibración
 
-Usa Calibrar bombas cuando cambies bombas, mangueras o parte del circuito de aire, cuando el flujo real no siga al objetivo o antes de una campaña crítica.
+EOLO-MP Rev.1 no ofrece un barrido manual en esta pantalla ni utiliza una curva de bombas por equipo. La pantalla Control de flujo muestra «Control automatico», «Ajuste por caudal» y «Sin barrido manual»; confirma «Volver» para regresar al menú. El control ajusta el PWM según el caudal medido por el AFM07, sin una curva de usuario como semilla. Las curvas guardadas con versiones anteriores no se borran.
 
-1. Arma el circuito de aire como lo usarás en terreno.
-2. Elige Calibrar bombas.
-3. El equipo mide cada motor y genera las rampas de calibración, primero para el motor débil y luego para el fuerte.
-4. Espera a que termine y pulsa el botón para volver al menú principal. La pantalla no muestra si la curva es válida.
-5. Revisa el resultado en la consola serie. Si la curva no cumple los mínimos, aparece «Calibración NO válida» y el equipo conserva la curva anterior. Después haz una captura corta de prueba.
-
-Durante el barrido, el botón pausa la calibración y apaga ambas bombas. El encoder alterna entre Continuar y Cancelar, y el botón confirma. Cancelar vuelve al menú principal y conserva la curva anterior.
-
-No obstruyas el flujo ni desconectes sensores o bombas durante el proceso. Si falla o el flujo queda inestable, revisa fugas, filtros, mangueras y alimentación antes de repetir.
-
-La calibración es opcional. Sin curva guardada, el control arranca con el Motor 1 y ajusta el caudal en lazo cerrado. Una curva válida solo acelera la llegada al objetivo. La curva se guarda en la memoria Flash, no en la SD. La relación entre flujo y bombas está en [Calibración de flujo y bombas](../hardware/calibracion/README.md).
+Si cambias bombas, mangueras o el circuito de aire, revisa su montaje y valida el control con una prueba en el equipo antes de una campaña. Cualquier cambio de parámetros del control debe comprobarse en hardware; no se sustituye con una curva de bombas generada desde la pantalla. La calibración del FS3000 descrita en [Calibración de flujo y bombas](../hardware/calibracion/README.md) no aplica a MP: el AFM07 entrega L/min directamente.
 
 ## Problemas comunes
 
@@ -138,7 +128,7 @@ Los comandos `m` y `rs485` se escriben en la consola serie a 115200 baudios.
 | El ícono de SD muestra `!` durante la captura | Error de escritura. El equipo no vuelve a intentar la SD hasta reiniciarse. Revisa la tarjeta y reinicia antes de la siguiente captura. |
 | No hay CSV después de una captura | La SD faltaba o tenía error. La consola muestra «SD no disponible; se omite log local». |
 | El flujo muestra `--` o «Sin dato» en Componentes > Sensores | El AFM07 no responde. Revisa cableado, alimentación y el ID `0x02` a 4800 baudios. Usa `rs485 status`. |
-| El flujo es inestable | Revisa mangueras, filtros y fugas. Repite Calibrar bombas si el circuito cambió. |
+| El flujo es inestable | Revisa mangueras, filtros y fugas. MP no tiene barrido de bombas; valida el control con una prueba en el equipo después de cualquier cambio del circuito. |
 | La captura termina con «Falla bomba» | El AFM07 marcó caudal cero con la bomba encendida, así que el equipo detuvo la captura. Revisa bombas, mangueras, filtros y alimentación. Prueba cada motor en Componentes > Motores antes de iniciar otra captura. |
 | El viento muestra `--` o «Sin conexión» | El anemómetro no responde en el ID `0x01`. Revisa el cableado del bus RS485. Cuando no responde, el equipo reintenta cada 5 segundos. |
 | El PM muestra 0 o no cambia | El Plantower no responde. Sin lectura válida, la pantalla muestra 0 y el CSV guarda `-1`. Revisa su conexión y alimentación. |
@@ -147,7 +137,6 @@ Los comandos `m` y `rs485` se escriben en la consola serie a 115200 baudios.
 | `dropped` sube en `m status` | No hay SD, o la cola de envío se llenó con 8640 muestras. Revisa la tarjeta. |
 | Los datos no llegan al servidor | Revisa la señal del módem y la línea `telemetry` de `m status`. Si `pending` es mayor que 0, las muestras siguen en la SD. Se envían solo durante una captura. |
 | La hora del archivo es incorrecta | Ajusta la hora con Ajustar reloj > Cambiar hora. Si Sincronizar muestra «Fallo sincroniz.», el módem no obtuvo respuesta. |
-| «Calibración NO válida» en la consola | La curva no cumplió los mínimos: al menos 6 puntos y un rango de flujo de 0.25 L/min. Revisa el circuito y repite. |
 
 ## Más información
 

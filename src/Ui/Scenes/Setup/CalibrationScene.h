@@ -15,6 +15,7 @@ class CalibrationScene : public IScene
 private:
     enum CalibrationState
     {
+        INTRO,
         INIT,
         DISCOVERY_STABILIZE,
         DISCOVERY_SAMPLE,
@@ -28,6 +29,7 @@ private:
     };
 
     CalibrationState state = INIT;
+    CalibrationState pausedFromState = INIT;
 
     // Discovery: medir cada motor por separado para determinar cuál es más débil
     int discoveryMotor = 0;       // 0 o 1: cuál motor se está probando
@@ -54,6 +56,9 @@ private:
     int rejectedPoints = 0;
     int plateauCount = 0;
     bool pauseCancelSelected = false;
+    bool introMeasureSelected = false;
+    bool scanStarted = false;
+    const char *failureMessage = "Curva no guardada";
     CalibrationManager previousCalibration;
     unsigned long lastStabCheckTime = 0;
 
@@ -130,6 +135,21 @@ private:
         }
         lastFreshSourceTime = sourceTime;
         return true;
+    }
+
+    bool hasInitialFlow(Context &ctx)
+    {
+        FlowData fd;
+#ifdef FEATURE_FLOW_FS3000
+        ctx.components.flowSensor.getData(fd);
+        return fd.sampleId != 0 && !fd.stale &&
+               fd.ageMs <= EoloConfig::flowPid.sensorStaleMs &&
+               isfinite(fd.velocity) && fd.velocity >= 0.0f;
+#else
+        const bool dataAvailable = ctx.components.flowSensor.getData(fd);
+        return dataAvailable && fd.valid && !fd.stale &&
+               fd.ageMs <= EoloConfig::flowPid.sensorStaleMs;
+#endif
     }
 
     void applyMotorsForCurrentPoint(Context &ctx)
@@ -293,6 +313,145 @@ private:
         return points;
     }
 
+    void failCalibration(Context &ctx, const char *message)
+    {
+        ctx.components.motor.setPwmImmediate(0);
+        ctx.calibration = previousCalibration;
+        scanStarted = false;
+        failureMessage = message;
+        state = FAILED;
+    }
+
+    void startCalibration(Context &ctx)
+    {
+        if (!hasInitialFlow(ctx))
+        {
+            ctx.components.motor.setPwmImmediate(0);
+            ctx.calibration = previousCalibration;
+            failureMessage = "Sin dato de flujo";
+            state = FAILED;
+            return;
+        }
+
+        unstablePoints = 0;
+        rejectedPoints = 0;
+        lastAcceptedRampFlow = -1.0f;
+        discoveryMotor = 0;
+        discoveryFlow[0] = discoveryFlow[1] = 0.0f;
+        rampingStrong = false;
+        currentPwm = 0;
+        plateauCount = 0;
+        scanStarted = true;
+        failureMessage = "Curva no guardada";
+        ctx.calibration.isLoaded = false;
+        ctx.calibration.numPoints = 0;
+        ctx.components.motor.setPwmImmediate(0);
+        state = INIT;
+        LOG_LN("Iniciando calibración: discovery + rampa continua");
+    }
+
+    void renderIntro(Context &ctx)
+    {
+        Renderer::beginFrame(ctx.u8g2);
+        GUI::displayHeader(ctx);
+
+        Renderer::centeredText(ctx.u8g2, "Control automatico", Layout::CenterX, 24, FONT_VALUE);
+        if (!EoloConfig::useCalibrationSeed)
+        {
+            Renderer::centeredText(ctx.u8g2,
+                                   EoloConfig::flowPid.feedForward.available() ? "Tabla del modelo" : "Ajuste por caudal",
+                                   Layout::CenterX, 38, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Sin barrido manual", Layout::CenterX, 49, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Volver", Layout::CenterX, Layout::FooterValueY, FONT_VALUE);
+        }
+        else
+        {
+            Renderer::centeredText(ctx.u8g2, "Curva opcional de arranque", Layout::CenterX, 35, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Curva anterior intacta", Layout::CenterX, 44, FONT_VALUE);
+
+            constexpr int boxY = 47;
+            constexpr int boxH = 13;
+            constexpr int boxW = 48;
+            constexpr int gap = 8;
+            const int startX = (Layout::ScreenW - 2 * boxW - gap) / 2;
+            const char *labels[] = {"Medir", "Volver"};
+            for (int i = 0; i < 2; ++i)
+            {
+                const bool selected = (i == 0) == introMeasureSelected;
+                const int x = startX + i * (boxW + gap);
+                ctx.u8g2.setDrawColor(1);
+                if (selected)
+                {
+                    ctx.u8g2.drawBox(x, boxY, boxW, boxH);
+                    ctx.u8g2.setDrawColor(0);
+                }
+                else
+                {
+                    ctx.u8g2.drawFrame(x, boxY, boxW, boxH);
+                }
+                ctx.u8g2.setFont(selected ? FONT_LABEL : FONT_VALUE);
+                ctx.u8g2.drawStr(x + (boxW - ctx.u8g2.getStrWidth(labels[i])) / 2, 57, labels[i]);
+                ctx.u8g2.setDrawColor(1);
+            }
+        }
+        Renderer::endFrame(ctx.u8g2);
+    }
+
+    void renderPaused(Context &ctx)
+    {
+        ctx.u8g2.clearBuffer();
+        GUI::displayHeader(ctx);
+        Renderer::yesNoChoice(ctx.u8g2, "Pausa segura", !pauseCancelSelected,
+                              "Curva anterior se conserva", "Seguir", "Salir");
+        ctx.u8g2.sendBuffer();
+    }
+
+    void renderTerminal(Context &ctx)
+    {
+        Renderer::beginFrame(ctx.u8g2);
+        GUI::displayHeader(ctx);
+        if (state == COMPLETE)
+        {
+            Renderer::centeredText(ctx.u8g2, "Curva guardada", Layout::CenterX, 24, FONT_TITLE);
+            char pointCount[20];
+            snprintf(pointCount, sizeof(pointCount), "%d puntos", ctx.calibration.numPoints);
+            Renderer::centeredText(ctx.u8g2, pointCount, Layout::CenterX, 42, FONT_VALUE);
+        }
+        else
+        {
+            Renderer::centeredText(ctx.u8g2, "Error de curva", Layout::CenterX, 24, FONT_TITLE);
+            Renderer::centeredText(ctx.u8g2, failureMessage, Layout::CenterX, 38, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Curva anterior intacta", Layout::CenterX, 48, FONT_VALUE);
+        }
+        Renderer::centeredText(ctx.u8g2, "Volver", Layout::CenterX, Layout::FooterValueY, FONT_VALUE);
+        Renderer::endFrame(ctx.u8g2);
+    }
+
+    void resumePaused(Context &ctx)
+    {
+        switch (pausedFromState)
+        {
+        case DISCOVERY_STABILIZE:
+        case DISCOVERY_SAMPLE:
+            ctx.components.motor.setMotorPwm(0, discoveryMotor == 0 ? DISCOVERY_PWM : 0);
+            ctx.components.motor.setMotorPwm(1, discoveryMotor == 1 ? DISCOVERY_PWM : 0);
+            resetSampling();
+            state = DISCOVERY_STABILIZE;
+            break;
+        case RAMP_KICK:
+        case RAMP_STABILIZE:
+        case RAMP_SAMPLE:
+            startRampPoint(ctx);
+            break;
+        case SAVING:
+            state = SAVING;
+            break;
+        default:
+            state = INIT;
+            break;
+        }
+    }
+
 public:
     static constexpr const char *Name = "calibration";
 
@@ -301,39 +460,57 @@ public:
     void exit(Context &ctx) override
     {
         ctx.components.motor.setPwmImmediate(0);
+        if (scanStarted && state != COMPLETE && state != FAILED)
+            ctx.calibration = previousCalibration;
+        scanStarted = false;
     }
 
     void enter(Context &ctx) override
     {
-        unstablePoints = 0;
-        rejectedPoints = 0;
-        lastAcceptedRampFlow = -1.0f;
-        discoveryMotor = 0;
-        discoveryFlow[0] = discoveryFlow[1] = 0;
-        rampingStrong = false;
-        currentPwm = 0;
-        plateauCount = 0;
-        pauseCancelSelected = false;
         previousCalibration = ctx.calibration;
-
-        LOG_LN("Iniciando calibración: discovery + rampa continua");
-        ctx.calibration.isLoaded = false;
-        ctx.calibration.numPoints = 0;
-        ctx.components.motor.setPwm(0);
-        delay(1000);
-
-        state = INIT;
+        introMeasureSelected = false;
+        pauseCancelSelected = true;
+        scanStarted = false;
+        failureMessage = "Curva no guardada";
+        state = INTRO;
     }
 
     void update(Context &ctx) override
     {
+        if (state == INTRO)
+        {
+            if (EoloConfig::useCalibrationSeed && ctx.components.input.getEncoderDelta() != 0)
+                introMeasureSelected = !introMeasureSelected;
+            if (ctx.components.input.isButtonPressed())
+            {
+                if (EoloConfig::useCalibrationSeed && introMeasureSelected)
+                {
+                    startCalibration(ctx);
+                    return;
+                }
+                else
+                {
+                    SceneManager::setScene("inicio", ctx);
+                    return;
+                }
+            }
+            else
+            {
+                renderIntro(ctx);
+                return;
+            }
+        }
+
         // El botón durante el barrido siempre corta las bombas de inmediato.
         // El siguiente toque confirma continuar/cancelar en vez de perder una
         // curva previamente guardada.
         if (state != COMPLETE && state != PAUSED && state != FAILED && ctx.components.input.isButtonPressed())
         {
+            pausedFromState = state;
             ctx.components.motor.setPwmImmediate(0);
+            pauseCancelSelected = true;
             state = PAUSED;
+            renderPaused(ctx);
             return;
         }
         if (state == PAUSED)
@@ -344,61 +521,77 @@ public:
                 if (pauseCancelSelected)
                 {
                     ctx.calibration = previousCalibration;
+                    scanStarted = false;
                     SceneManager::setScene("inicio", ctx);
+                    return;
                 }
                 else
                 {
-                    applyMotorsForCurrentPoint(ctx);
-                    resetSampling();
-                    state = RAMP_STABILIZE;
+                    resumePaused(ctx);
                 }
+                return;
             }
-            ctx.u8g2.clearBuffer(); GUI::displayHeader(ctx);
-            Renderer::yesNoChoice(ctx.u8g2, "Calibraci\xF3n pausada", !pauseCancelSelected, nullptr, "Continuar", "Cancelar");
-            ctx.u8g2.sendBuffer();
+            renderPaused(ctx);
             return;
         }
+        if (state == COMPLETE || state == FAILED)
+        {
+            if (ctx.components.input.isButtonPressed())
+            {
+                SceneManager::setScene("inicio", ctx);
+                return;
+            }
+            renderTerminal(ctx);
+            return;
+        }
+        if (state == SAVING)
+            ctx.components.motor.setPwmImmediate(0);
+
         // === RENDER ===
         Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
-        ctx.u8g2.setFont(FONT_LABEL);
-        const char *title = "Calibrando";
-        int dotCount = (millis() / 500) % 3 + 1;
-        char titleBuf[32];
-        strcpy(titleBuf, title);
-        for (int i = 0; i < dotCount; i++)
-            strcat(titleBuf, ".");
-        Renderer::centeredText(ctx.u8g2, titleBuf, Layout::CenterX, Layout::KvFirstY - 2, FONT_LABEL);
-
-        ctx.u8g2.setFont(FONT_VALUE);
-        const char *phaseLabel;
-        if (state <= DISCOVERY_SAMPLE)
-            phaseLabel = "Descubrimiento";
-        else if (!rampingStrong)
-            phaseLabel = "Rampa motor debil";
+        if (state == SAVING)
+        {
+            Renderer::centeredText(ctx.u8g2, "Guardando curva", Layout::CenterX, 24, FONT_TITLE);
+            Renderer::centeredText(ctx.u8g2, "Bombas apagadas", Layout::CenterX, 39, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "No apagues EOLO", Layout::CenterX, 53, FONT_VALUE);
+        }
         else
-            phaseLabel = "Rampa motor fuerte";
+        {
+            Renderer::centeredText(ctx.u8g2, "Calibrando", Layout::CenterX, 24, FONT_TITLE);
 
-        Renderer::centeredText(ctx.u8g2, phaseLabel, Layout::CenterX, Layout::SelectorTitleY, FONT_VALUE);
+            ctx.u8g2.setFont(FONT_VALUE);
+            const char *phaseLabel;
+            if (state <= DISCOVERY_SAMPLE)
+                phaseLabel = "Descubrimiento";
+            else if (!rampingStrong)
+                phaseLabel = "Rampa motor debil";
+            else
+                phaseLabel = "Rampa motor fuerte";
 
-        // Progress bar
-        int progress = constrain((int)getOverallProgress(), 0, 100);
-        int barW = 100, barH = 12;
-        int barX = (Layout::ScreenW - barW) / 2, barY = 34;
-        Renderer::progressBar(ctx.u8g2, barX, barY, barW, barH, progress);
+            Renderer::centeredText(ctx.u8g2, phaseLabel, Layout::CenterX, 35, FONT_VALUE);
 
-        // Progress text + ETA
-        char progressText[8];
-        sprintf(progressText, "%d%%", progress);
+            int progress = constrain((int)getOverallProgress(), 0, 100);
+            constexpr int barW = 100;
+            constexpr int barH = 7;
+            constexpr int barX = (Layout::ScreenW - barW) / 2;
+            constexpr int barY = 39;
+            Renderer::progressBar(ctx.u8g2, barX, barY, barW, barH, progress);
 
-        int remaining = estimateRemainingPoints();
-        unsigned long perPointMs = MAX_STABILIZE_TIME_MS + SAMPLES_PER_POINT * SAMPLE_INTERVAL_MS;
-        unsigned long remainSec = ((unsigned long)remaining * perPointMs + 999) / 1000;
-        char etaText[24];
-        sprintf(etaText, "~%lu:%02lu", remainSec / 60, remainSec % 60);
+            char progressText[8];
+            snprintf(progressText, sizeof(progressText), "%d%%", progress);
 
-        Renderer::metricRow(ctx.u8g2, "Avance", progressText, nullptr, "Restante", etaText, nullptr);
+            int remaining = estimateRemainingPoints();
+            unsigned long perPointMs = MAX_STABILIZE_TIME_MS + SAMPLES_PER_POINT * SAMPLE_INTERVAL_MS;
+            unsigned long remainSec = ((unsigned long)remaining * perPointMs + 999) / 1000;
+            char etaText[24];
+            snprintf(etaText, sizeof(etaText), "~%lu:%02lu", remainSec / 60, remainSec % 60);
+
+            char footer[24];
+            snprintf(footer, sizeof(footer), "%s  %s", progressText, etaText);
+            Renderer::centeredText(ctx.u8g2, footer, Layout::CenterX, 60, FONT_VALUE);
+        }
 
         Renderer::endFrame(ctx.u8g2);
 
@@ -464,6 +657,12 @@ public:
 
                 if (sampleCount >= SAMPLES_PER_POINT || sampleAttempts >= MAX_SAMPLE_ATTEMPTS)
                 {
+                    if (sampleCount == 0)
+                    {
+                        failCalibration(ctx, "Sin dato de flujo");
+                        break;
+                    }
+
                     float avgFlow = (sampleCount > 0) ? (sumFlow / sampleCount) : 0.0f;
                     discoveryFlow[discoveryMotor] = avgFlow;
                     LOG_F("Discovery motor %d: %.3f L/min\n", discoveryMotor, avgFlow);
@@ -555,6 +754,12 @@ public:
 
                 if (sampleCount >= SAMPLES_PER_POINT || sampleAttempts >= MAX_SAMPLE_ATTEMPTS)
                 {
+                    if (sampleCount == 0)
+                    {
+                        failCalibration(ctx, "Sin dato de flujo");
+                        break;
+                    }
+
                     float flowDelta = -1.0f;
                     if (sampleCount > 0)
                     {
@@ -604,7 +809,6 @@ public:
 
         case SAVING:
         {
-            ctx.components.motor.setPwm(0);
             ctx.calibration.sortByFlow();
             compactCalibration(ctx);
             ctx.calibration.isLoaded = ctx.calibration.validate() && ctx.calibration.save();
@@ -615,11 +819,11 @@ public:
             if (!ctx.calibration.isLoaded)
             {
                 LOG_LN("Calibración NO válida (curva no cumple mínimos).");
-                ctx.calibration = previousCalibration;
-                state = FAILED;
+                failCalibration(ctx, "Curva no guardada");
                 break;
             }
 
+            scanStarted = false;
             state = COMPLETE;
             stateStartTime = millis();
             break;

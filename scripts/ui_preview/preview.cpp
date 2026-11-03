@@ -3,6 +3,7 @@
 // Uso: preview <directorio_salida>   (build.py lo compila y convierte a PNG)
 #include "prelude.h"
 #include <assert.h>
+#include <string.h>
 
 #include <Eolo/Types/FlowData.h>
 #include <Eolo/Types/BME280Data.h>
@@ -10,13 +11,31 @@
 #include <Eolo/Types/AnemometerData.h>
 #include <Eolo/Types/Session.h>
 #include <RTClib.h>
+#include <Eolo/Core/Calibration/CalibrationModel.h>
 
 unsigned long previewMillis = 0;
-constexpr int MAX_PWM = 1023;
 
 #ifndef PREVIEW_MOTORS
 #define PREVIEW_MOTORS 2
 #endif
+
+#if defined(FEATURE_FLOW_FS3000)
+  #include "Variants/Profiles/ExpressLegacy.h"
+#elif PREVIEW_MOTORS == 1
+  #include "Variants/Profiles/Dron.h"
+#elif defined(FEATURE_DUAL_BATTERY)
+  #include "Variants/Profiles/Standard.h"
+#else
+  #include "Variants/Profiles/Express.h"
+#endif
+
+namespace EoloConfig
+{
+inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
+inline constexpr auto flowPid = Profile::kFlowPid;
+}
+
+constexpr int MAX_PWM = (1 << EoloConfig::Profile::kMotorPwmResolutionBits) - 1;
 
 enum SDStatus { SD_OK, SD_MISSING, SD_ERROR, SD_WRITING };
 enum class CaptureEndReason : uint8_t { None, Completed, PumpFailureZeroFlow, SdUnavailable, AfmInvalid };
@@ -50,6 +69,28 @@ template <typename T> struct PreviewSensor
     bool ok = true;
     bool getData(T &out) { out = data; return ok; }
 };
+inline bool previewCalibrationSaveSucceeds = true;
+inline unsigned previewCalibrationSaveCalls = 0;
+class CalibrationManager
+{
+public:
+    static constexpr int MAX_POINTS = CalibrationModel::MaxPoints;
+    static constexpr int MIN_POINTS = CalibrationModel::MinPoints;
+    int numPoints = 0;
+    int pwm0[MAX_POINTS] = {};
+    int pwm1[MAX_POINTS] = {};
+    float flows[MAX_POINTS] = {};
+    int weakMotor = 0;
+    bool isLoaded = false;
+
+    void sortByFlow() { CalibrationModel::sortByFlow(numPoints, pwm0, pwm1, flows); }
+    bool validate() const { return CalibrationModel::validate(numPoints, flows); }
+    bool save() { ++previewCalibrationSaveCalls; return previewCalibrationSaveSucceeds && validate(); }
+    bool getMotorPwms(float flow, int &out0, int &out1) const
+    {
+        return CalibrationModel::getMotorPwms(isLoaded, numPoints, pwm0, pwm1, flows, flow, out0, out1);
+    }
+};
 struct PreviewBattery
 {
     bool hasValidData() { return true; }
@@ -62,11 +103,40 @@ struct MotorManager
 {
     static constexpr int motorCount = PREVIEW_MOTORS;
     int pwmValues[2] = {512, 300};
-    void setMotorPwm(int, int) {}
-    void setMotorPwmImmediate(int, int) {}
-    void setPwmImmediate(int) {}
-    void setPwm(int) {}
+    int maxObservedPwm = 0;
+    unsigned pwmCommands = 0;
+    unsigned stopCommands = 0;
+    bool withinPwmLimits = true;
+    void setMotorPwm(int motor, int pwm)
+    {
+        if (motor < 0 || motor >= motorCount) return;
+        record(motor, pwm);
+    }
+    void setMotorPwmImmediate(int motor, int pwm) { setMotorPwm(motor, pwm); }
+    void setPwmImmediate(int pwm)
+    {
+        record(0, pwm);
+        record(1, pwm);
+        if (pwm == 0) ++stopCommands;
+    }
+    void setPwm(int pwm)
+    {
+        record(0, pwm);
+        record(1, pwm);
+        if (pwm == 0) ++stopCommands;
+    }
     void setPowerPct(int) {}
+
+    bool isOff() const { return pwmValues[0] == 0 && pwmValues[1] == 0; }
+
+private:
+    void record(int motor, int pwm)
+    {
+        if (pwm < 0 || pwm > MAX_PWM) withinPwmLimits = false;
+        if (pwm > maxObservedPwm) maxObservedPwm = pwm;
+        pwmValues[motor] = pwm;
+        ++pwmCommands;
+    }
 };
 class I2CBus
 {
@@ -93,6 +163,7 @@ struct Context
     EOLO_DISPLAY_MODEL u8g2;
     Components components;
     Session session;
+    CalibrationManager calibration;
     UiSnapshot snapshot;
     std::atomic<BootPhase> bootPhase{BootPhase::Idle};
     std::atomic_bool bootInitComplete{false};
@@ -116,13 +187,15 @@ struct Context
     bool canLoadSession() { return true; }
     void saveSession() {}
     void loadSession() {}
-    void clearSession() {}
+    unsigned clearSessionCalls = 0;
+    unsigned resetCaptureCalls = 0;
+    void clearSession() { ++clearSessionCalls; }
     void beginCapture() {}
     void updateCapture() {}
     void pauseCapture() {}
     void resumeCapture() {}
     void endCapture() {}
-    void resetCapture() {}
+    void resetCapture() { ++resetCaptureCalls; session = Session(); }
     bool isCaptureActive() { return true; }
     bool isCapturePaused() { return false; }
     void startBootInitTask() {}
@@ -132,7 +205,8 @@ struct Context
 class SceneManager
 {
 public:
-    static void setScene(const char *, Context &) {}
+    inline static const char *destination = nullptr;
+    static void setScene(const char *name, Context &) { destination = name; }
 };
 
 #include "Ui/Scenes/IScene.h"
@@ -155,6 +229,7 @@ public:
 #include "Ui/Scenes/Captura/HoraFinScene.h"
 #include "Ui/Scenes/Captura/MenuCapturaScene.h"
 #include "Ui/Scenes/Captura/MenuFinScene.h"
+#include "Ui/Scenes/Setup/CalibrationScene.h"
 
 static const char *outDir = ".";
 
@@ -281,10 +356,423 @@ static void checkCapturePages()
 #endif
 }
 
+static bool sameSession(const Session &a, const Session &b)
+{
+    if (a.startUnix != b.startUnix || a.duration != b.duration ||
+        a.elapsedTime != b.elapsedTime || a.lastLog != b.lastLog ||
+        a.targetFlow != b.targetFlow || a.usePlantower != b.usePlantower ||
+        a.capturedVolume != b.capturedVolume ||
+        a.flowSectionCount != b.flowSectionCount)
+        return false;
+
+    for (int i = 0; i < MaxFlowSections; ++i)
+        if (a.flowSections[i].durationSeconds != b.flowSections[i].durationSeconds ||
+            a.flowSections[i].targetFlow != b.flowSections[i].targetFlow)
+            return false;
+    return true;
+}
+
+static void checkFinishedCaptureReturn()
+{
+    Context ctx;
+    fillDefaults(ctx);
+    ctx.session.lastLog = 123456;
+    ctx.session.usePlantower = false;
+    ctx.session.flowSectionCount = 1;
+    ctx.session.flowSections[0] = {900, 4.5f};
+    const Session original = ctx.session;
+
+    ctx.u8g2.setFont(FONT_VALUE);
+    assert(ctx.u8g2.getStrWidth("Inicio 14:05") <= Layout::HalfColumnW);
+    assert(ctx.u8g2.getStrWidth("Fin 14:35") <= Layout::HalfColumnW);
+    for (const char *label : {"Tiempo:", "Objetivo:", "Volumen:"})
+        assert(ctx.u8g2.getStrWidth(label) <= Layout::KvLabelRightX);
+    ctx.u8g2.setFont(FONT_LABEL);
+    for (const char *value : {"00:30:00", "5.0 " UNIT_FLOW, "0.142 " UNIT_VOLUME})
+        assert(ctx.u8g2.getStrWidth(value) <= Layout::ScreenW - Layout::KvValueX);
+
+    FinScene fin;
+    fin.enter(ctx);
+    SceneManager::destination = nullptr;
+    fin.update(ctx);
+    uint8_t firstRender[1024];
+    memcpy(firstRender, ctx.u8g2.getBufferPtr(), sizeof(firstRender));
+
+    ctx.session.duration += 3600;
+    fin.update(ctx);
+    assert(memcmp(firstRender, ctx.u8g2.getBufferPtr(), sizeof(firstRender)) == 0);
+    ctx.session.duration = original.duration;
+
+    ctx.components.input.pressed = true;
+    fin.update(ctx);
+    assert(SceneManager::destination && strcmp(SceneManager::destination, "end_menu") == 0);
+    assert(ctx.clearSessionCalls == 1);
+    assert(ctx.resetCaptureCalls == 0);
+    assert(sameSession(ctx.session, original));
+
+    EndMenuScene menu;
+    menu.enter(ctx);
+    ctx.components.input.delta = 2;
+    menu.update(ctx);
+    ctx.components.input.pressed = true;
+    menu.update(ctx);
+    assert(SceneManager::destination && strcmp(SceneManager::destination, "end") == 0);
+    assert(sameSession(ctx.session, original));
+
+    // Simula que el reloj avanza mientras se está en el menú. Solo cambia el
+    // encabezado; el resumen de la captura debe renderizar idéntico.
+    ctx.components.rtc.current = DateTime(2026, 10, 22, 18, 47, 12);
+    ctx.snapshot.status.hour = 18;
+    ctx.snapshot.status.minute = 47;
+    fin.enter(ctx);
+    fin.update(ctx);
+    const uint8_t *returnedRender = ctx.u8g2.getBufferPtr();
+    assert(memcmp(firstRender + 2 * 128, returnedRender + 2 * 128,
+                  sizeof(firstRender) - 2 * 128) == 0);
+    assert(memcmp(firstRender, returnedRender, 2 * 128) != 0);
+    assert(sameSession(ctx.session, original));
+}
+
+static void seedCalibration(CalibrationManager &calibration)
+{
+    calibration.isLoaded = true;
+    calibration.weakMotor = 1;
+    calibration.numPoints = CalibrationManager::MIN_POINTS;
+    for (int i = 0; i < calibration.numPoints; ++i)
+    {
+        calibration.pwm0[i] = (i + 1) * (MAX_PWM / 8);
+        calibration.pwm1[i] = 0;
+        calibration.flows[i] = 0.5f + i * 0.5f;
+    }
+    assert(calibration.validate());
+}
+
+static bool sameCalibration(const CalibrationManager &a, const CalibrationManager &b)
+{
+    if (a.numPoints != b.numPoints || a.weakMotor != b.weakMotor || a.isLoaded != b.isLoaded)
+        return false;
+    for (int i = 0; i < CalibrationManager::MAX_POINTS; ++i)
+        if (a.pwm0[i] != b.pwm0[i] || a.pwm1[i] != b.pwm1[i] || a.flows[i] != b.flows[i])
+            return false;
+    return true;
+}
+
+static void updateCalibrationFlow(Context &ctx)
+{
+    FlowData flow;
+    flow.valid = true;
+    flow.fresh = true;
+    flow.stale = false;
+    flow.ageMs = 0;
+    flow.sampleId++;
+    flow.flow = 4.0f * ctx.components.motor.pwmValues[0] / MAX_PWM +
+                4.5f * ctx.components.motor.pwmValues[1] / MAX_PWM;
+    ctx.components.flowSensor.data = flow;
+}
+
+static void tickCalibration(CalibrationScene &scene, Context &ctx, unsigned long elapsedMs = 100)
+{
+    previewMillis += elapsedMs;
+    updateCalibrationFlow(ctx);
+    scene.update(ctx);
+}
+
+static void assertCalibrationIntroLayout(Context &ctx)
+{
+    ctx.u8g2.setFont(FONT_VALUE);
+    for (const char *label : {"Control automatico", "Volver"})
+        assert(ctx.u8g2.getStrWidth(label) <= Layout::ScreenW - 4);
+    if (EoloConfig::useCalibrationSeed)
+    {
+        assert(ctx.u8g2.getStrWidth("Curva opcional de arranque") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Curva anterior intacta") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Medir") <= 48);
+        assert(ctx.u8g2.getStrWidth("Volver") <= 48);
+    }
+    else
+    {
+        const char *mode = EoloConfig::flowPid.feedForward.available()
+                               ? "Tabla del modelo"
+                               : "Ajuste por caudal";
+        assert(ctx.u8g2.getStrWidth(mode) <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Sin barrido manual") <= Layout::ScreenW - 4);
+    }
+}
+
+static void assertCalibrationSceneLayout(Context &ctx)
+{
+    assertCalibrationIntroLayout(ctx);
+    assert(Layout::BodyTop < 24 && 60 + Layout::FontDescent <= Layout::BodyBottom);
+    assert(47 + 13 <= Layout::ScreenH && 57 <= Layout::ScreenH);
+
+    ctx.u8g2.setFont(FONT_TITLE);
+    for (const char *label : {"Calibrando", "Curva guardada", "Error de curva"})
+        assert(ctx.u8g2.getStrWidth(label) <= Layout::ScreenW - 4);
+
+    ctx.u8g2.setFont(FONT_VALUE);
+    for (const char *label : {"Descubrimiento", "Rampa motor debil", "Rampa motor fuerte",
+                              "Guardando curva", "Bombas apagadas", "No apagues EOLO",
+                              "Pausa segura", "Curva anterior se conserva", "Curva anterior intacta",
+                              "Curva no guardada", "Sin dato de flujo", "Volver", "84 puntos"})
+        assert(ctx.u8g2.getStrWidth(label) <= Layout::ScreenW - 4);
+
+    ctx.u8g2.setFont(FONT_MENU_SEL);
+    assert(ctx.u8g2.getStrWidth("Pausa segura") <= Layout::ScreenW - 4);
+    ctx.u8g2.setFont(FONT_LABEL);
+    assert(ctx.u8g2.getStrWidth("Seguir") <= 48);
+    ctx.u8g2.setFont(FONT_VALUE);
+    assert(ctx.u8g2.getStrWidth("Salir") <= 48);
+}
+
+static void enterCalibrationIntro(CalibrationScene &scene, Context &ctx, const char *shotName)
+{
+    scene.enter(ctx);
+    const unsigned commandsBeforeIntro = ctx.components.motor.pwmCommands;
+    const CalibrationManager calibrationBeforeIntro = ctx.calibration;
+    scene.update(ctx);
+    dump(ctx, shotName);
+    assert(ctx.components.motor.pwmCommands == commandsBeforeIntro);
+    assert(ctx.components.motor.isOff());
+    assert(sameCalibration(ctx.calibration, calibrationBeforeIntro));
+}
+
+static void confirmCalibrationMeasure(CalibrationScene &scene, Context &ctx)
+{
+    assert(EoloConfig::useCalibrationSeed);
+    // Entra con Volver seleccionado; el encoder debe elegir Medir antes de
+    // confirmar. No cambia la curva ni energiza bombas durante la navegación.
+    ctx.components.input.delta = 1;
+    updateCalibrationFlow(ctx);
+    scene.update(ctx);
+    dump(ctx, "calibration_intro_medir");
+    assert(ctx.components.motor.isOff());
+    assert(ctx.calibration.numPoints == CalibrationManager::MIN_POINTS);
+
+    ctx.components.input.pressed = true;
+    updateCalibrationFlow(ctx);
+    scene.update(ctx);
+    assert(ctx.components.motor.isOff());
+    assert(ctx.calibration.numPoints == 0);
+    assert(!ctx.calibration.isLoaded);
+    assert(previewCalibrationSaveCalls == 0);
+}
+
+static void checkCalibrationNoSeed(Context &ctx)
+{
+    assert(!EoloConfig::useCalibrationSeed);
+    seedCalibration(ctx.calibration);
+    const CalibrationManager previous = ctx.calibration;
+    ctx.components.motor.setPwmImmediate(0);
+    CalibrationScene scene;
+    enterCalibrationIntro(scene, ctx, "calibration_intro");
+    assertCalibrationSceneLayout(ctx);
+    SceneManager::destination = nullptr;
+    ctx.components.input.pressed = true;
+    scene.update(ctx);
+    assert(SceneManager::destination && strcmp(SceneManager::destination, "inicio") == 0);
+    assert(ctx.components.motor.isOff());
+    assert(sameCalibration(ctx.calibration, previous));
+    assert(previewCalibrationSaveCalls == 0);
+}
+
+static void checkCalibrationSeedIntroCancel()
+{
+    Context ctx;
+    fillDefaults(ctx);
+    seedCalibration(ctx.calibration);
+    const CalibrationManager previous = ctx.calibration;
+    ctx.components.motor.setPwmImmediate(0);
+    CalibrationScene scene;
+    enterCalibrationIntro(scene, ctx, "calibration_intro");
+    assertCalibrationSceneLayout(ctx);
+    SceneManager::destination = nullptr;
+    ctx.components.input.pressed = true; // default Volver.
+    scene.update(ctx);
+    assert(SceneManager::destination && strcmp(SceneManager::destination, "inicio") == 0);
+    assert(ctx.components.motor.isOff());
+    assert(sameCalibration(ctx.calibration, previous));
+}
+
+static void checkCalibrationPauseContinueCancel()
+{
+    Context ctx;
+    fillDefaults(ctx);
+    ctx.components.motor.setPwmImmediate(0);
+    seedCalibration(ctx.calibration);
+    const CalibrationManager previous = ctx.calibration;
+    previewMillis = 0;
+    previewCalibrationSaveCalls = 0;
+    previewCalibrationSaveSucceeds = true;
+    SceneManager::destination = nullptr;
+
+    CalibrationScene scene;
+    enterCalibrationIntro(scene, ctx, "calibration_intro");
+    confirmCalibrationMeasure(scene, ctx);
+    tickCalibration(scene, ctx); // INIT -> descubre motor 0.
+    assert(ctx.components.motor.pwmValues[0] == MAX_PWM / 2);
+    assert(ctx.components.motor.pwmValues[1] == 0);
+    assert(ctx.calibration.numPoints == 0);
+
+    ctx.components.input.pressed = true;
+    tickCalibration(scene, ctx);
+    assert(ctx.components.motor.isOff());
+    dump(ctx, "calibration_paused");
+
+    ctx.components.input.delta = 1; // default Salir -> Seguir.
+    tickCalibration(scene, ctx);
+    dump(ctx, "calibration_paused_continue");
+    ctx.components.input.pressed = true;
+    tickCalibration(scene, ctx);
+    assert(ctx.components.motor.pwmValues[0] == MAX_PWM / 2);
+    assert(ctx.components.motor.pwmValues[1] == 0);
+    assert(ctx.calibration.numPoints == 0);
+    assert(ctx.components.motor.withinPwmLimits);
+    tickCalibration(scene, ctx);
+    dump(ctx, "calibration_descubrimiento_reanudado");
+
+    ctx.components.input.pressed = true;
+    tickCalibration(scene, ctx);
+    assert(ctx.components.motor.isOff());
+    ctx.components.input.pressed = true; // default Salir cancels the sweep.
+    tickCalibration(scene, ctx);
+    assert(SceneManager::destination && strcmp(SceneManager::destination, "inicio") == 0);
+    assert(ctx.components.motor.isOff());
+    assert(sameCalibration(ctx.calibration, previous));
+}
+
+static void runCalibrationToTerminal(bool saveSucceeds, const char *terminalShot)
+{
+    Context ctx;
+    fillDefaults(ctx);
+    ctx.components.motor.setPwmImmediate(0);
+    seedCalibration(ctx.calibration);
+    const CalibrationManager previous = ctx.calibration;
+    previewMillis = 0;
+    previewCalibrationSaveCalls = 0;
+    previewCalibrationSaveSucceeds = saveSucceeds;
+    SceneManager::destination = nullptr;
+
+    CalibrationScene scene;
+    enterCalibrationIntro(scene, ctx, "calibration_intro");
+    confirmCalibrationMeasure(scene, ctx);
+    tickCalibration(scene, ctx); // INIT -> discovery motor 0.
+
+    bool capturedDiscovery0 = false;
+    bool capturedDiscovery1 = false;
+    bool capturedWeakRamp = false;
+    bool capturedStrongRamp = false;
+    bool capturedKick = false;
+    bool capturedSaving = false;
+    unsigned ticks = 0;
+    while (previewCalibrationSaveCalls == 0 && ticks++ < 50000)
+    {
+        const int pwm0 = ctx.components.motor.pwmValues[0];
+        const int pwm1 = ctx.components.motor.pwmValues[1];
+        const bool discovery0 = ctx.calibration.numPoints == 0 && pwm0 == MAX_PWM / 2 && pwm1 == 0;
+        const bool discovery1 = ctx.calibration.numPoints == 0 && pwm0 == 0 && pwm1 == MAX_PWM / 2;
+        const bool foundWeakMotor = ctx.calibration.weakMotor == 0 || ctx.calibration.weakMotor == 1;
+        const int weak = ctx.calibration.weakMotor;
+        const int strong = 1 - weak;
+        const bool weakRamp = foundWeakMotor && ctx.calibration.numPoints > 0 &&
+                              ctx.components.motor.pwmValues[weak] > 0 &&
+                              ctx.components.motor.pwmValues[strong] == 0;
+        const bool strongRamp = foundWeakMotor &&
+                                ctx.components.motor.pwmValues[weak] == MAX_PWM &&
+                                ctx.components.motor.pwmValues[strong] > 0;
+        const bool kick = foundWeakMotor && ctx.calibration.numPoints > 0 &&
+                          ctx.components.motor.pwmValues[weak] == MAX_PWM &&
+                          ctx.components.motor.pwmValues[strong] == 0;
+
+        const unsigned stopsBeforeTick = ctx.components.motor.stopCommands;
+        tickCalibration(scene, ctx);
+        if (discovery0 && !capturedDiscovery0)
+        {
+            dump(ctx, "calibration_descubrimiento_motor0");
+            capturedDiscovery0 = true;
+        }
+        if (discovery1 && !capturedDiscovery1)
+        {
+            dump(ctx, "calibration_descubrimiento_motor1");
+            capturedDiscovery1 = true;
+        }
+        if (weakRamp && !capturedWeakRamp)
+        {
+            dump(ctx, "calibration_rampa_debil");
+            capturedWeakRamp = true;
+        }
+        if (strongRamp && !capturedStrongRamp)
+        {
+            dump(ctx, "calibration_rampa_fuerte");
+            capturedStrongRamp = true;
+        }
+        if (kick && !capturedKick)
+        {
+            dump(ctx, "calibration_impulso_inicio");
+            capturedKick = true;
+        }
+        if (previewCalibrationSaveCalls > 0 && !capturedSaving &&
+            ctx.components.motor.stopCommands > stopsBeforeTick)
+        {
+            dump(ctx, "calibration_guardando");
+            capturedSaving = true;
+        }
+    }
+
+    assert(ticks < 50000);
+    assert(capturedDiscovery0 && capturedDiscovery1 && capturedWeakRamp && capturedStrongRamp);
+    assert(capturedKick && capturedSaving);
+    assert(ctx.components.motor.withinPwmLimits);
+    assert(ctx.components.motor.maxObservedPwm == MAX_PWM);
+    assert(ctx.components.motor.isOff());
+    assert(ctx.components.motor.stopCommands > 0);
+    assert(previewCalibrationSaveCalls == 1);
+
+    const bool completed = saveSucceeds;
+    if (completed)
+    {
+        assert(ctx.calibration.isLoaded);
+        assert(ctx.calibration.validate());
+        assert(ctx.calibration.numPoints >= CalibrationManager::MIN_POINTS);
+    }
+    else
+    {
+        assert(ctx.calibration.isLoaded);
+        assert(sameCalibration(ctx.calibration, previous));
+    }
+    tickCalibration(scene, ctx);
+    assert(ctx.components.motor.isOff());
+    dump(ctx, terminalShot);
+}
+
+static void checkCalibrationPreview()
+{
+    Context ctx;
+    fillDefaults(ctx);
+    assertCalibrationSceneLayout(ctx);
+    checkFinishedCaptureReturn();
+
+    if (!EoloConfig::useCalibrationSeed)
+    {
+        checkCalibrationNoSeed(ctx);
+        return;
+    }
+
+    checkCalibrationSeedIntroCancel();
+    checkCalibrationPauseContinueCancel();
+    runCalibrationToTerminal(true, "calibration_completada");
+    runCalibrationToTerminal(false, "calibration_error_guardada");
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1) outDir = argv[1];
+    if (argc > 2 && strcmp(argv[2], "--check-calibration") == 0)
+    {
+        checkCalibrationPreview();
+        return 0;
+    }
     checkCapturePages();
+    checkFinishedCaptureReturn();
 
     headerShot("header_ok", nullptr);
     headerShot("header_sd_writing", [](UiSnapshot &s) { s.status.sdStatus = SD_WRITING; });
