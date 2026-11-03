@@ -408,9 +408,30 @@ static void test_i2c_retry_policy_matches_historical_backoff()
     TEST_ASSERT_EQUAL_UINT32(5000UL, I2CRetryPolicy::delayForFailures(255));
 }
 
+static void test_fs3000_frame_separa_fallo_de_sin_flujo()
+{
+    uint16_t raw = 0;
+    // Reposo (raw 409 = 0x199): trama válida, sin flujo.
+    const uint8_t idle[5] = {0x00, 0x01, 0x99, 0x00, 0x00};
+    uint8_t sum = static_cast<uint8_t>(idle[1] + idle[2] + idle[3] + idle[4]);
+    uint8_t good[5] = {static_cast<uint8_t>(-sum), idle[1], idle[2], idle[3], idle[4]};
+    TEST_ASSERT_TRUE(FS3000FlowModel::parseFrame(good, raw));
+    TEST_ASSERT_EQUAL_UINT16(409, raw);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, FS3000FlowModel::velocityFromRaw(raw));
+    // Checksum roto: fallo de lectura.
+    uint8_t bad[5] = {good[0], good[1], good[2], good[3], static_cast<uint8_t>(good[4] + 1)};
+    TEST_ASSERT_FALSE(FS3000FlowModel::parseFrame(bad, raw));
+    // Trama de ceros (bus sin respuesta): checksum "válido" pero fallo.
+    const uint8_t zeros[5] = {0, 0, 0, 0, 0};
+    TEST_ASSERT_FALSE(FS3000FlowModel::parseFrame(zeros, raw));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, FS3000FlowModel::velocityFromRaw(1203));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 15.0f, FS3000FlowModel::velocityFromRaw(4000));
+}
+
 static void test_fs3000_conversion_boundaries()
 {
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, FS3000FlowModel::flowFromVelocity(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, FS3000FlowModel::flowFromVelocity(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, FS3000FlowModel::flowFromVelocity(-0.1f));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, FS3000FlowModel::flowFromVelocity(0.05f));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, FS3000FlowModel::flowFromVelocity(1.74f));
     TEST_ASSERT_GREATER_THAN_FLOAT(11.0f, FS3000FlowModel::flowFromVelocity(3.5f));
@@ -2280,6 +2301,7 @@ struct DualPumpSim
     float tauS = 0.40f;
     float noiseLpm = 0.04f;
     float resolutionLpm = 0.01f; // paso de lectura del AFM07 (raw / divisor)
+    float rampPerStep = 10.0f; // cuentas por paso de 10 ms (1000 cuentas/s)
     int command0 = 0, command1 = 0;
     float phys0 = 0.0f, phys1 = 0.0f;
     float flow = 0.0f;
@@ -2311,8 +2333,8 @@ struct DualPumpSim
     void step()
     {
         const float dt = 0.010f;
-        phys0 = phys0 < command0 ? fminf(phys0 + 10.0f, command0) : fmaxf(phys0 - 10.0f, command0);
-        phys1 = phys1 < command1 ? fminf(phys1 + 10.0f, command1) : fmaxf(phys1 - 10.0f, command1);
+        phys0 = phys0 < command0 ? fminf(phys0 + rampPerStep, command0) : fmaxf(phys0 - rampPerStep, command0);
+        phys1 = phys1 < command1 ? fminf(phys1 + rampPerStep, command1) : fmaxf(phys1 - rampPerStep, command1);
         history0[head] = phys0;
         history1[head] = phys1;
         head = (head + 1) % 160;
@@ -2353,6 +2375,30 @@ struct DualPumpRun
     float flowStdLast20s = 0.0f;
     int ruleViolations = 0; // fuerte encendida sin la débil al máximo
     bool trace = false;
+    // Cadencia de lectura al controlador. 250 ms = AFM07; 10 ms con media de 16
+    // = FS3000 (misma ventana que FS3K::readData).
+    uint32_t sampleMs = 250;
+    uint32_t zeroFlowLatchMs = 0; // instante (desde el inicio de run) en que se enclavó el fallo; 0 = nunca
+    bool average16 = false;
+    float avgBuf[16] = {};
+    uint8_t avgIdx = 0;
+    bool avgSeeded = false;
+
+    float sensorReading()
+    {
+        const float v = plant.reading();
+        if (!average16) return v;
+        if (!avgSeeded)
+        {
+            for (float &a : avgBuf) a = v;
+            avgSeeded = true;
+        }
+        avgBuf[avgIdx] = v;
+        avgIdx = (avgIdx + 1) % 16;
+        float sum = 0.0f;
+        for (float a : avgBuf) sum += a;
+        return sum / 16.0f;
+    }
 
     // Corre `seconds` con consigna fija; mide desde el inicio de este tramo.
     void run(const FlowPidConfig &config, float target, float seconds)
@@ -2373,18 +2419,19 @@ struct DualPumpRun
         {
             plant.step();
             const bool inLast5s = nowMs + 5000 >= end;
-            if ((nowMs % 250) == 0)
+            if ((nowMs % sampleMs) == 0)
             {
                 DualMotorFlowInput input;
                 input.nowMs = nowMs;
                 input.targetFlow = target;
-                input.measuredFlow = plant.reading();
+                input.measuredFlow = sensorReading();
                 input.flowValid = true;
                 input.flowFresh = true;
                 input.sampleId = ++sampleId;
                 input.maxPwm = 2047;
                 input.primaryMotor = 0;
                 const DualMotorFlowOutput out = controller.update(input, config);
+                if (out.zeroFlowFailureLatched && zeroFlowLatchMs == 0) zeroFlowLatchMs = nowMs - start + 1;
                 plant.command0 = out.motor0Pwm;
                 plant.command1 = out.motor1Pwm;
                 if (out.motor1Pwm > 0 && out.motor0Pwm != 2047) ++ruleViolations;
@@ -2530,6 +2577,103 @@ static void test_dual_pump_follows_setpoint_changes_across_both_pumps()
     TEST_ASSERT_GREATER_THAN(0, r.plant.command1); // la fuerte entró
 }
 
+// ---- Express Rev.1 (FS3000) ----
+// Planta medida en placa: retardo 40 ms, tau 65 ms, ruido instantáneo hasta
+// 0,10 L/min (aquí uniforme +-0,15), lectura cada 10 ms con media de 16.
+static FlowPidConfig fs3000_config() { return DualPumpFlow::makeFs3000Config(0.0f); }
+
+static DualPumpRun fs3000_run()
+{
+    DualPumpRun r;
+    r.sampleMs = 10;
+    r.average16 = true;
+    r.plant.deadTimeS = 0.04f;
+    r.plant.tauS = 0.065f;
+    r.plant.noiseLpm = 0.15f;
+    r.plant.rampPerStep = 4094.0f; // Express Rev.1: kMotorRampStep = 0, el PWM cambia de golpe
+    return r;
+}
+
+static void test_fs3000_dual_pump_config_is_valid()
+{
+    const FlowPidConfig config = fs3000_config();
+    TEST_ASSERT_TRUE(FlowMotorController::validateConfig(config, 2047));
+    TEST_ASSERT_TRUE(config.smoothLaw);
+    TEST_ASSERT_EQUAL_UINT8(2, config.motorCount);
+}
+
+// Con la planta rápida del FS3000 asienta en 2 s o menos aunque la ganancia
+// difiera +-25 % de la tabla. Con los valores de Rev.2 tardaba ~2,5 s o más.
+static void test_fs3000_dual_pump_settles_fast_with_gain_error()
+{
+    const float gains[] = {1.00f, 0.75f, 1.25f};
+    const float targets[] = {2.0f, 4.0f};
+    for (float gain : gains)
+        for (float target : targets)
+        {
+            DualPumpRun r = fs3000_run();
+            r.plant.gainScale = gain;
+            r.run(fs3000_config(), target, 25.0f);
+            printf("  [fs3000] x%.2f a %.0f L/min: asienta %.1f s pico %.2f error final %+.3f\n", gain, target,
+                   r.settleSeconds, r.peak, r.meanErrLast5s);
+            TEST_ASSERT_EQUAL_UINT32(0, r.zeroFlowLatchMs); // una bomba sana no dispara el fallo
+            TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 2.0f);
+            TEST_ASSERT_TRUE(r.peak <= target * 1.25f + 0.1f);
+            TEST_ASSERT_FLOAT_WITHIN(0.06f, 0.0f, r.meanErrLast5s);
+        }
+}
+
+// El ruido de la lectura no debe mover el PWM de forma apreciable en régimen.
+static void test_fs3000_dual_pump_pwm_does_not_chase_noise()
+{
+    const float targets[] = {2.0f, 4.0f};
+    for (float target : targets)
+    {
+        DualPumpRun r = fs3000_run();
+        r.run(fs3000_config(), target, 40.0f);
+        printf("  [fs3000] ruido a %.0f L/min: PWM se mueve %.1f cuentas/s, sigma de flujo %.3f\n", target,
+               r.pwmMoveLast20s, r.flowStdLast20s);
+        TEST_ASSERT_TRUE(r.pwmMoveLast20s <= 60.0f);
+        TEST_ASSERT_TRUE(r.flowStdLast20s <= 0.06f);
+    }
+}
+
+static void test_fs3000_dual_pump_follows_setpoint_changes()
+{
+    DualPumpRun r = fs3000_run();
+    r.run(fs3000_config(), 4.0f, 20.0f);
+    r.run(fs3000_config(), 2.0f, 20.0f);
+    printf("  [fs3000] 4->2: asienta %.1f s error %+.3f\n", r.settleSeconds, r.meanErrLast5s);
+    TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 2.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.06f, 0.0f, r.meanErrLast5s);
+    r.run(fs3000_config(), 4.0f, 20.0f);
+    printf("  [fs3000] 2->4: asienta %.1f s error %+.3f\n", r.settleSeconds, r.meanErrLast5s);
+    TEST_ASSERT_TRUE(r.settleSeconds >= 0.0f && r.settleSeconds <= 2.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.06f, 0.0f, r.meanErrLast5s);
+}
+
+// Bomba sin caudal (p. ej. la débil rota): debe enclavar el fallo, pero no antes
+// de 1,2 s desde el arranque. Con la cuenta heredada de Rev.2 (5 pasos de 100 ms)
+// confirmaba en ~0,75 s (1751 ms con 15 pasos menos 1 s), demasiado pronto para el arranque de una bomba lenta.
+static void test_fs3000_dead_pump_latches_failure_after_confirmation_window()
+{
+    DualPumpRun r = fs3000_run();
+    r.plant.gainScale = 0.0f;
+    r.run(fs3000_config(), 4.0f, 6.0f);
+    printf("  [fs3000] bomba muerta: fallo enclavado a los %u ms\n", static_cast<unsigned>(r.zeroFlowLatchMs));
+    TEST_ASSERT_TRUE(r.zeroFlowLatchMs >= 1200 && r.zeroFlowLatchMs <= 3000);
+}
+
+// Un arranque lento no debe contar como fallo: la planta tarda 0,6 s en dar caudal.
+static void test_fs3000_slow_start_does_not_latch_failure()
+{
+    DualPumpRun r = fs3000_run();
+    r.plant.deadTimeS = 0.60f;
+    r.plant.tauS = 0.20f;
+    r.run(fs3000_config(), 4.0f, 12.0f);
+    TEST_ASSERT_EQUAL_UINT32(0, r.zeroFlowLatchMs);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -2539,6 +2683,12 @@ int main(int, char **)
     RUN_TEST(test_dual_pump_reaches_target_fast_without_overshoot);
     RUN_TEST(test_dual_pump_recovers_from_external_gain_change);
     RUN_TEST(test_dual_pump_follows_setpoint_changes_across_both_pumps);
+    RUN_TEST(test_fs3000_dual_pump_config_is_valid);
+    RUN_TEST(test_fs3000_dual_pump_settles_fast_with_gain_error);
+    RUN_TEST(test_fs3000_dual_pump_pwm_does_not_chase_noise);
+    RUN_TEST(test_fs3000_dual_pump_follows_setpoint_changes);
+    RUN_TEST(test_fs3000_dead_pump_latches_failure_after_confirmation_window);
+    RUN_TEST(test_fs3000_slow_start_does_not_latch_failure);
     RUN_TEST(test_pump_order_weak_is_the_lower_flow_and_tie_picks_motor_zero);
     RUN_TEST(test_pump_order_rejects_inconclusive_measurements);
     RUN_TEST(test_pump_order_record_detects_corruption);
@@ -2571,6 +2721,7 @@ int main(int, char **)
     RUN_TEST(test_rs485_stats_exceptions_and_timing);
     RUN_TEST(test_i2c_retry_policy_matches_historical_backoff);
     RUN_TEST(test_fs3000_conversion_boundaries);
+    RUN_TEST(test_fs3000_frame_separa_fallo_de_sin_flujo);
     RUN_TEST(test_afm07_fresh_stale_contract);
     RUN_TEST(test_afm07_sample_at_millis_zero_and_wraparound);
     RUN_TEST(test_flow_volume_integrates_each_physical_sample);

@@ -2,7 +2,6 @@
 #define FS3K_HPP
 
 #include <math.h>
-#include <SparkFun_FS3000_Arduino_Library.h>
 #include "../../Variants/Legacy.h"
 #include "../Board/I2CBus.h"
 #include <Eolo/Core/Sensors/FS3000FlowModel.h>
@@ -22,60 +21,32 @@ public:
     
     bool begin()
     {
-        if (isReady.load()) {
-            LOG_LN("FS3000 ya inicializado, skipping...");
+        if (isReady.load())
             return true;
-        }
 
-        bool sensorReady = false;
+        I2CBus &bus = I2CBus::getInstance();
+        if (bus.probe(FS3000FlowModel::I2cAddress, true) != I2CBus::Result::Ok)
         {
-            I2CBus::Guard guard;
-            sensorReady = guard.acquired() && sensor.begin();
-        }
-        I2CBus::getInstance().applyProfile();
-        if(!sensorReady)
-        {
-            LOG_LN("Fallo al inicializar FS3000");
-            isReady = false;
+            LOG_LN("FS3000 no responde");
             return false;
         }
-        else
-        {
-            LOG_LN("FS3000 inicializado");
-            bool isConnected = false;
-            {
-                I2CBus::Guard guard;
-                isConnected = guard.acquired() && sensor.isConnected();
-            }
-            if (!isConnected)
-            {
-                LOG_LN("FS3000 no conectado");
-                isReady = false;
-                return false;
-            }
-            
-            {
-                I2CBus::Guard guard;
-                if (guard.acquired())
-                    sensor.setRange(AIRFLOW_RANGE_15_MPS);
-            }
-            isReady = true;
-            return true;
-        }
+        LOG_LN("FS3000 inicializado");
+        isReady = true;
+        return true;
     }
-    
+
+    // false = fallo de lectura (I2C, trama corrupta). Sin flujo no es fallo:
+    // devuelve true con flow 0.
     bool readData()
-    {      
+    {
         if(!isReady.load())
             return false;
-        I2CBus::Guard guard;
-        if (!guard.acquired())
+        uint8_t frame[FS3000FlowModel::FrameSize];
+        uint16_t raw = 0;
+        if (!I2CBus::getInstance().readBytes(FS3000FlowModel::I2cAddress, frame, sizeof(frame)) ||
+            !FS3000FlowModel::parseFrame(frame, raw))
             return false;
-        float nextVelocity = sensor.readMetersPerSecond();
-        if (!isfinite(nextVelocity) || nextVelocity < 0.0f) {
-            isReady = false;
-            return false;
-        }
+        float nextVelocity = FS3000FlowModel::velocityFromRaw(raw);
         float nextCurrentFlow = FS3000FlowModel::flowFromVelocity(nextVelocity);
 
         // Guardar en el buffer circular
@@ -100,7 +71,7 @@ public:
         ++_sampleId;
         if (_dataMutex)
             xSemaphoreGive(_dataMutex);
-        return isfinite(nextFlow) && nextFlow >= 0.0f;
+        return true;
     }
 
     bool poll() { return readData(); }
@@ -131,8 +102,6 @@ private:
     bool _hasData = false;
     uint32_t _lastSuccessMs = 0;
     uint32_t _sampleId = 0;
-    
-    FS3000 sensor;
 };
 
 #endif

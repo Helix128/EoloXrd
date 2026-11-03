@@ -68,6 +68,29 @@ constexpr FlowPidConfig makeConfig(float rampCountsPerSecond)
     config.smoothHoldMs = 1500UL;
     return config;
 }
+// Variante para el FS3000 (Express Rev.1). Parte de makeConfig y ajusta lo que
+// depende del sensor, con datos medidos en placa (docs/datos/fs3000-express-rev1):
+//  - planta mucho más rápida que con el AFM07: retardo ~40 ms, tau ~65 ms
+//    (con la media de 16 muestras del sensor, t63 ~200 ms);
+//  - ruido de 0,04 a 0,10 L/min en la lectura instantánea y de 0,02 a 0,08 con
+//    la media de 16, creciendo con el caudal.
+// Una ley más rápida asienta en ~1 s en vez de ~2,5 s; la zona muerta mayor
+// evita que el ruido mueva el PWM (a 4 L/min baja de ~30 a ~20 cuentas/s).
+constexpr FlowPidConfig makeFs3000Config(float rampCountsPerSecond)
+{
+    FlowPidConfig config = makeConfig(rampCountsPerSecond);
+    config.deadband = 0.05f;
+    config.smoothKi = 1.5f;
+    config.smoothKiStart = 2.8f; // conserva la razón 1,86 entre arranque y régimen
+    config.smoothKp = 0.05f;
+    config.smoothHoldMs = 300UL; // retardo + 2 tau + media de 16 muestras
+    // La protección de flujo cero cuenta pasos del lazo (intervalMs = 100 ms),
+    // no tiempo: con 5 pasos confirmaba en 0,5 s, menos de la mitad de los
+    // 1,25 s de las variantes AFM07 (5 x 250 ms). 15 pasos = 1,5 s, varias veces
+    // el t90 de la planta con la media de 16 muestras (~0,3 s).
+    config.zeroFlowConfirmSamples = 15;
+    return config;
+}
 } // namespace DualPumpFlow
 
 #endif

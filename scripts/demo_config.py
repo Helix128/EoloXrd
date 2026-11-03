@@ -32,6 +32,9 @@ DEMO_CONFIG = {
         "models": ["dron_legacy", "standard", "express", "express_legacy"],
         "lib_deps": ["sparkfun/SparkFun_FS3000_Arduino_Library@^1.0.5"],
     },
+    # Curva PWM->caudal, ruido y escalón del FS3000 con las dos bombas de
+    # Express Rev.1, para afinar DualPumpFlow en ExpressLegacy.h.
+    "FS3000FlowTune": {"models": ["express_legacy"], "lib_deps": []},
     "Plantower": {
         "models": ["standard", "express", "express_legacy"],
         "lib_deps": [],

@@ -164,7 +164,7 @@ Para flashear, ver [compilacion.md](compilacion.md).
 | `cusumJumpFrac` | 0,55 | Fracción del salto estimado que se aplica |
 | `cusumHoldMs` | 2000 ms | Espera tras cada salto |
 
-`DronLegacy.h` define `motorCount = 1` y no configura CUSUM ni `smoothLaw`. Express Rev.2 y EOLO-MP (Standard) usan la configuración de dos bombas de la sección 9. Express Rev.1 (FS3000) sigue con la ley anterior de centro + trim.
+`DronLegacy.h` define `motorCount = 1` y no configura CUSUM ni `smoothLaw`. Express Rev.1 (FS3000), Express Rev.2 y EOLO-MP (Standard) usan la configuración de dos bombas de la sección 9.
 
 ## 5. Campos nuevos de FlowPidConfig
 
@@ -221,11 +221,13 @@ Prueba con filtro real y el prototipo sin amortiguamiento (`cusumJumpFrac` 1,0):
   4. Verificar que el flujo vuelva a ±1 %.
   5. Revisar el log `flow_unreachable` y que no aparezcan saltos repetidos.
 
-## 9. Dos bombas en serie (Express Rev.2 y EOLO-MP)
+## 9. Dos bombas en serie (Express Rev.1, Express Rev.2 y EOLO-MP)
 
 `lib/EoloCore/include/Eolo/Core/Flow/DualPumpFlowConfig.h` define la configuración de estas dos variantes. Usa la ley suave de la sección 3.4 sobre el PWM virtual 0 a 2 × 2047: primero se llena la bomba débil y, con la débil saturada, entra la fuerte. Antes usaban la ley de centro + trim sin tabla, que se movía como máximo 24 cuentas por muestra y se quedaba corta cuando la planta cambiaba.
 
-**Orden de bombas.** La bomba débil es la de menor caudal a tope. La define la prueba de bombas («Orden de bombas» en el menú de inicio): cada bomba sola a tope unos 5,5 s, y la de menor caudal medio es la débil. Se guarda en flash (`pumpOrder`, con checksum). Se corre sola al arrancar si no hay orden guardado, si el registro está corrupto o si no hay curva medida; si falla (sin dato de flujo), el equipo usa el motor 0 primero y repite la prueba en el siguiente arranque. La curva opcional de Express Rev.2 también fija el orden; su semilla solo se usa si coincide con el de la prueba. Variantes de una bomba y Express Rev.1 no usan la prueba (`kPumpOrderTest`).
+**Orden de bombas.** La bomba débil es la de menor caudal a tope. La define la prueba de bombas («Orden de bombas» en el menú de inicio): cada bomba sola a tope unos 5,5 s, y la de menor caudal medio es la débil. Se guarda en flash (`pumpOrder`, con checksum). Se corre sola al arrancar si no hay orden guardado, si el registro está corrupto o si no hay curva medida; si falla (sin dato de flujo), el equipo usa el motor 0 primero y repite la prueba en el siguiente arranque. La curva opcional de Express Rev.2 también fija el orden; su semilla solo se usa si coincide con el de la prueba. Las variantes de una bomba no usan la prueba (`kPumpOrderTest`); Express Rev.1 sí.
+
+**Express Rev.1 (FS3000).** Usa `makeFs3000Config`: la ley de Rev.2 con `smoothKi` 1,5, `smoothKiStart` 2,8, `smoothKp` 0,05, `smoothHoldMs` 300, `deadband` 0,05 y `zeroFlowConfirmSamples` 15 (1,5 s: la cuenta es en pasos del lazo de 100 ms, no en tiempo), ajustados con datos medidos y simulación (planta con retardo 40 ms y tau 65 ms, ruido hasta 0,10 L/min). En simulación asienta en ~1 s. La tabla sigue siendo la nominal de dos bombas. Datos, análisis y hallazgos (incluida una bomba A casi sin caudal en el equipo medido) en [docs/datos/fs3000-express-rev1](../datos/fs3000-express-rev1/README.md). Falta probar el lazo cerrado en placa.
 
 **Tabla.** `kFeedForward` es el barrido de una bomba del Dron (hasta 6,58 L/min) más un tramo supuesto para la segunda bomba (hasta 9,58 L/min). No está medida en estas variantes. La ley corrige la ganancia en línea y en simulación aguanta ±30 %, pero el primer punto con caudal (umbral de arranque) conviene validarlo en cada bomba.
 

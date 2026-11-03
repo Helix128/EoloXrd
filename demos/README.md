@@ -22,6 +22,7 @@ No son un segundo firmware: reutilizan los modelos de `EoloCore` y los pines de 
 | `DronSdDiag` | microSD por SPI: niveles de MISO, CMD0/CMD8 manuales y montaje a varias frecuencias | `dron` |
 | `DynamicMotorCalibration` | Calibración dinámica interactiva de motor en lazo cerrado con AFM07, sin guardar en flash | `dron_legacy` |
 | `FS3000` | Sensor de flujo FS3000 por I²C | `dron_legacy`, `standard`, `express`, `express_legacy` |
+| `FS3000FlowTune` | Curva PWM→caudal de cada bomba y en serie, ruido y respuesta a escalón del FS3000, en CSV por serial | `express_legacy` |
 | `I2CDisplayDiag` | Escaneo I²C y patrón de prueba en pantallas SSD1306 y SSD1309 | `express` |
 | `MotorDirDiag` | Dirección del PWM de las bombas, con control por serial; arranca siempre en 0 | `express` |
 | `Plantower` | Sensor de partículas PMS por UART | `standard`, `express`, `express_legacy` |
