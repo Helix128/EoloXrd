@@ -11,6 +11,8 @@ class DirectDS3231 {
 public:
     static constexpr uint8_t Address = 0x68;
 
+    enum class TimeReadResult : uint8_t { Ok, Invalid, TransportError };
+
     bool begin(bool &lostPower, DateTime &time, bool &timeValid) {
         if (I2CBus::getInstance().probe(Address) != I2CBus::Result::Ok)
             return false;
@@ -18,26 +20,31 @@ public:
         if (!readRegister(0x0F, &status, 1))
             return false;
         lostPower = (status & 0x80U) != 0;
-        if (!readTime(time))
+        const TimeReadResult result = readTimeResult(time);
+        if (result == TimeReadResult::TransportError)
             return false;
-        timeValid = isCalendarValid(time);
+        timeValid = result == TimeReadResult::Ok;
         return true;
     }
 
     bool readTime(DateTime &time) const {
+        return readTimeResult(time) == TimeReadResult::Ok;
+    }
+
+    TimeReadResult readTimeResult(DateTime &time) const {
         uint8_t reg = 0x00;
         uint8_t raw[7] = {};
         if (!I2CBus::getInstance().writeThenRead(Address, &reg, 1, raw, sizeof(raw), false))
-            return false;
+            return TimeReadResult::TransportError;
 
         uint8_t second = 0, minute = 0, hour = 0, day = 0, month = 0, year = 0;
         if (!decodeBcd(raw[0] & 0x7F, second) || !decodeBcd(raw[1] & 0x7F, minute) ||
             !decodeHour(raw[2], hour) || !decodeBcd(raw[4] & 0x3F, day) ||
             !decodeBcd(raw[5] & 0x1F, month) || !decodeBcd(raw[6], year))
-            return false;
+            return TimeReadResult::Invalid;
 
         time = DateTime(2000U + year, month, day, hour, minute, second);
-        return isCalendarValid(time);
+        return isCalendarValid(time) ? TimeReadResult::Ok : TimeReadResult::Invalid;
     }
 
     bool adjust(const DateTime &time) const {

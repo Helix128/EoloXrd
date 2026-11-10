@@ -14,11 +14,10 @@
 #include <atomic>
 
 
-// Manejo del RTC (DS3231 via RTClib)
+// Manejo del RTC DS3231 con lecturas y escrituras I2C verificables.
 class RTCManager
 {
 private:
-    RTC_DS3231 rtc;
     DirectDS3231 directRtc;
     SemaphoreHandle_t _cacheMutex = nullptr;
     SemaphoreHandle_t _requestMutex = nullptr;
@@ -30,6 +29,8 @@ private:
     bool _temperatureCacheValid = false;
     bool _adjustPending = false;
     DateTime _pendingAdjust;
+    uint32_t _pendingAdjustAtMs = 0;
+    uint32_t _adjustRevision = 0;
 
     void updateCache(const DateTime &value) {
         if (_cacheMutex)
@@ -89,31 +90,14 @@ public:
         bool rtcReady = false;
         bool timeValid = false;
         DateTime initial;
-        I2CBus &bus = I2CBus::getInstance();
-#if EOLO_I2C_DIRECT_DRIVERS
         bool initialPowerLost = false;
         rtcReady = directRtc.begin(initialPowerLost, initial, timeValid);
         powerLost = initialPowerLost;
-#else
-        // RTClib/Adafruit BusIO vuelve a ejecutar Wire.begin() y realiza su
-        // propio sondeo. Primero registramos el ACK/NACK mediante I2CBus;
-        // así un DS3231 ausente no genera warnings repetidos ni queda fuera
-        // de las estadísticas del worker.
-        if (bus.probe(0x68) == I2CBus::Result::Ok) {
-            I2CBus::Guard guard;
-            if (guard.acquired()) {
-                rtcReady = rtc.begin(&Wire);
-                if (rtcReady)
-                    powerLost = rtc.lostPower();
-            }
-        }
-        bus.applyProfile();
-#endif
         ok = rtcReady;
 
-        // Si el DS3231 responde con hora válida, inicializamos la caché.
-        // Si responde pero con fecha inválida/OSF, recuperamos el chip físico
-        // escribiendo el fallbackTime para que oscile en fecha moderna.
+        // Una hora válida se conserva incluso con OSF: la advertencia sigue
+        // activa hasta un ajuste explícito, pero no se reemplaza por la fecha
+        // de compilación. Una fecha inválida sí necesita recuperación.
         if (rtcReady && timeValid && isValid(initial))
         {
             updateCache(initial);
@@ -121,17 +105,15 @@ public:
         else if (rtcReady)
         {
             DateTime recovered = fallbackTime();
-            LOG_F("RTC perdió la memoria/hora al arrancar; recuperando chip físico con %s\n",
+            LOG_F("RTC con fecha inválida al arrancar; recuperando chip físico con %s\n",
                   recovered.timestamp().c_str());
-            adjustHardware(recovered);
+            if (!adjustHardware(recovered)) {
+                LOG_LN("No se pudo recuperar el RTC; se reintentará la inicialización");
+                ok = false;
+                return false;
+            }
             powerLost = true;
         }
-#if !EOLO_I2C_DIRECT_DRIVERS
-        if (rtcReady)
-            poll();
-#endif
-
-    
         return ok.load();
     }
 
@@ -202,47 +184,55 @@ public:
 
         bool hasPendingAdjust = false;
         DateTime pendingAdjust;
+        uint32_t pendingAdjustAtMs = 0;
+        uint32_t pendingRevision = 0;
         if (_requestMutex &&
             xSemaphoreTake(_requestMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
             hasPendingAdjust = _adjustPending;
             pendingAdjust = _pendingAdjust;
-            _adjustPending = false;
+            pendingAdjustAtMs = _pendingAdjustAtMs;
+            pendingRevision = _adjustRevision;
             xSemaphoreGive(_requestMutex);
         }
-        if (hasPendingAdjust && !adjustHardware(pendingAdjust))
-            LOG_LN("No se pudo aplicar el ajuste RTC encolado");
+        if (hasPendingAdjust) {
+            // Mantener vigente la hora solicitada aunque un fallo requiera
+            // varios intentos, sin bloquear a quien encola un ajuste nuevo.
+            DateTime target(pendingAdjust.unixtime() + (millis() - pendingAdjustAtMs) / 1000UL);
+            if (adjustHardware(target)) {
+                if (_requestMutex && xSemaphoreTake(_requestMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                    if (_adjustRevision == pendingRevision)
+                        _adjustPending = false;
+                    xSemaphoreGive(_requestMutex);
+                }
+            } else {
+                LOG_LN("No se pudo aplicar el ajuste RTC encolado; se reintentará");
+            }
+        }
 
         DateTime current;
         float temperatureC = -1.0f;
         bool temperatureValid = false;
-#if EOLO_I2C_DIRECT_DRIVERS
-        if (!directRtc.readTime(current)) {
+        const DirectDS3231::TimeReadResult readResult = directRtc.readTimeResult(current);
+        if (readResult == DirectDS3231::TimeReadResult::TransportError) {
             ok = false;
             return false;
         }
         temperatureValid = directRtc.readTemperature(temperatureC);
-#else
-        I2CBus::Guard guard;
-        if (!guard.acquired())
-            return false;
-        current = rtc.now();
-        temperatureC = rtc.getTemperature();
-        temperatureValid = isfinite(temperatureC) && temperatureC >= -55.0f && temperatureC <= 125.0f;
-#endif
         if (temperatureValid)
             updateTemperatureCache(temperatureC);
 
-        // Hora inválida (por ejemplo 2000-01-01 tras OSF o pérdida de batería).
-        // Si el chip físico perdió la hora, se auto-recupera escribiendo inmediatamente
-        // la fecha corregida (fallbackTime = compileTime + uptime) en los registros del chip
-        // para que empiece a oscilar en una fecha moderna, y se mantiene el aviso powerLost
-        // para que los diagnósticos y pantallas indiquen que la pila debe ser revisada.
-        if (!isValid(current))
+        // Un calendario inválido no identifica su causa. Se usa la fecha de
+        // compilación como referencia aproximada y se deja activa la advertencia.
+        if (readResult == DirectDS3231::TimeReadResult::Invalid || !isValid(current))
         {
             DateTime recovered = fallbackTime();
-            LOG_F("RTC perdió la memoria/hora (OSF detectado); recuperando chip físico con %s\n",
+            LOG_F("RTC con fecha inválida; recuperando chip físico con %s\n",
                   recovered.timestamp().c_str());
-            adjustHardware(recovered);
+            if (!adjustHardware(recovered)) {
+                LOG_LN("No se pudo recuperar el RTC; se reintentará la inicialización");
+                ok = false;
+                return false;
+            }
             powerLost = true;
             return true;
         }
@@ -265,6 +255,8 @@ public:
             xSemaphoreTake(_requestMutex, 0) != pdTRUE)
             return false;
         _pendingAdjust = time;
+        _pendingAdjustAtMs = millis();
+        ++_adjustRevision;
         _adjustPending = true;
         xSemaphoreGive(_requestMutex);
         return true;
@@ -279,20 +271,11 @@ private:
             return false;
 
         DateTime written;
-#if EOLO_I2C_DIRECT_DRIVERS
         if (!directRtc.adjust(time))
             return false;
         delay(5);
         if (!directRtc.readTime(written))
             return false;
-#else
-        I2CBus::Guard guard;
-        if (!guard.acquired())
-            return false;
-        rtc.adjust(time);
-        delay(5);
-        written = rtc.now();
-#endif
         uint32_t targetUnix = time.unixtime();
         uint32_t writtenUnix = written.unixtime();
         uint32_t diff = targetUnix > writtenUnix ? targetUnix - writtenUnix : writtenUnix - targetUnix;
