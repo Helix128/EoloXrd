@@ -41,10 +41,13 @@ public:
 #else
         {
             I2CBus::Guard guard;
-            if (guard.acquired())
+            if (guard.acquired()) {
                 sensorReady = bme.begin(0x76) || bme.begin(0x77);
+                // La biblioteca puede modificar Wire. Restaurar el perfil antes
+                // de soltar el mutex impide que otro sensor use el bus entre ambos pasos.
+                I2CBus::getInstance().applyProfile();
+            }
         }
-        I2CBus::getInstance().applyProfile();
         if (!sensorReady) {
             I2CBus::AddressStats a76 = I2CBus::getInstance().getAddressStats(0x76);
             I2CBus::AddressStats a77 = I2CBus::getInstance().getAddressStats(0x77);

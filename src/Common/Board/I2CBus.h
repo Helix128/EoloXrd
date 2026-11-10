@@ -27,6 +27,8 @@ public:
         Reset
     };
 
+    enum class Operation : uint8_t { Unknown, Probe, Write, Read, WriteRead };
+
     struct AddressStats {
         uint8_t address = 0;
         // Evita informar "OK" para una dirección que aún no tuvo ninguna
@@ -53,6 +55,16 @@ public:
         uint32_t lastTransactionMs = 0;
         uint8_t lastAddress = 0;
         Result lastResult = Result::Ok;
+        Operation lastOperation = Operation::Unknown;
+        uint32_t lastFailureMs = 0;
+        uint32_t lastFailureDurationMs = 0;
+        uint8_t lastFailureAddress = 0;
+        Result lastFailureResult = Result::Ok;
+        Operation lastFailureOperation = Operation::Unknown;
+        uint8_t maxTransactionAddress = 0;
+        Result maxTransactionResult = Result::Ok;
+        Operation maxTransactionOperation = Operation::Unknown;
+        uint32_t maxTransactionAtMs = 0;
     };
 
 private:
@@ -219,6 +231,16 @@ public:
         return "DESCONOCIDO";
     }
 
+    static const char* operationName(Operation operation) {
+        switch (operation) {
+            case Operation::Probe: return "sondeo";
+            case Operation::Write: return "escritura";
+            case Operation::Read: return "lectura";
+            case Operation::WriteRead: return "escritura_lectura";
+            default: return "transferencia";
+        }
+    }
+
     void setWarmupFromNow(uint32_t warmupMs = EoloConfig::i2cWarmupMs) {
         _warmupUntilMs = millis() + warmupMs;
     }
@@ -241,6 +263,18 @@ public:
         Stats copy = _stats;
         portEXIT_CRITICAL(&_statsMux);
         return copy;
+    }
+
+    // Un éxito de otra tarea no debe borrar un fallo reciente antes de que el
+    // worker pueda comprobar si el bus quedó trabado.
+    bool recentTransportFailure(uint32_t windowMs = 1000UL) const {
+        const Stats stats = getStats();
+        if (stats.failures == 0 || (uint32_t)(millis() - stats.lastFailureMs) > windowMs)
+            return false;
+        return stats.lastFailureResult == Result::Timeout ||
+               stats.lastFailureResult == Result::ShortRead ||
+               stats.lastFailureResult == Result::Nack ||
+               stats.lastFailureResult == Result::BusError;
     }
 
     AddressStats getAddressStats(uint8_t addr) const {
@@ -334,15 +368,22 @@ public:
     }
 
     void recordResult(uint8_t addr, Result result, uint32_t elapsedMs,
-                      size_t expected = 0, size_t received = 0) {
+                      size_t expected = 0, size_t received = 0,
+                      Operation operation = Operation::Unknown) {
         const uint32_t now = millis();
         portENTER_CRITICAL(&_statsMux);
         _stats.transactions++;
         _stats.lastAddress = addr;
         _stats.lastResult = result;
+        _stats.lastOperation = operation;
         _stats.lastTransactionMs = elapsedMs;
-        if (elapsedMs > _stats.maxTransactionMs)
+        if (elapsedMs > _stats.maxTransactionMs) {
             _stats.maxTransactionMs = elapsedMs;
+            _stats.maxTransactionAddress = addr;
+            _stats.maxTransactionResult = result;
+            _stats.maxTransactionOperation = operation;
+            _stats.maxTransactionAtMs = now;
+        }
 
         if (result == Result::Ok) {
             _stats.successes++;
@@ -359,6 +400,11 @@ public:
             }
         } else {
             _stats.failures++;
+            _stats.lastFailureMs = now;
+            _stats.lastFailureAddress = addr;
+            _stats.lastFailureResult = result;
+            _stats.lastFailureOperation = operation;
+            _stats.lastFailureDurationMs = elapsedMs;
             if (result == Result::Nack)
                 _stats.nacks++;
             if (result == Result::Timeout)
@@ -451,7 +497,7 @@ public:
         uint8_t error = Wire.endTransmission();
         uint32_t elapsedMs = millis() - startMs;
         Result result = resultFromTransmissionError(error, elapsedMs);
-        recordResult(addr, result, elapsedMs);
+        recordResult(addr, result, elapsedMs, 0, 0, Operation::Probe);
         if (result != Result::Ok && logError) {
             LOG_F("I2C probe fallo: addr=0x%02X, error=%u, resultado=%s\n",
                   addr, error, resultName(result));
@@ -554,7 +600,7 @@ public:
         uint32_t elapsedMs = millis() - startMs;
         if (error != 0) {
             Result result = resultFromTransmissionError(error, elapsedMs);
-            recordResult(addr, result, elapsedMs);
+            recordResult(addr, result, elapsedMs, 0, 0, Operation::Write);
             if (logError) {
                 LOG_F("I2C write fallo: addr=0x%02X, len=%u, error=%u\n",
                       addr, (unsigned int)len, error);
@@ -562,7 +608,7 @@ public:
             return false;
         }
 
-        recordResult(addr, Result::Ok, elapsedMs);
+        recordResult(addr, Result::Ok, elapsedMs, 0, 0, Operation::Write);
         return true;
     }
 
@@ -586,7 +632,7 @@ public:
             Result result = (elapsedMs >= TRANSACTION_TIMEOUT_MS && readCount == 0)
                                 ? Result::Timeout
                                 : (readCount == 0 ? Result::Nack : Result::ShortRead);
-            recordResult(addr, result, elapsedMs, len, readCount);
+            recordResult(addr, result, elapsedMs, len, readCount, Operation::Read);
             if (logError) {
                 LOG_F("I2C read corto: addr=0x%02X, esperado=%u, recibido=%u\n",
                       addr, (unsigned int)len, (unsigned int)readCount);
@@ -599,7 +645,7 @@ public:
         for (size_t i = 0; i < len; i++)
             buffer[i] = Wire.read();
 
-        recordResult(addr, Result::Ok, elapsedMs, len, readCount);
+        recordResult(addr, Result::Ok, elapsedMs, len, readCount, Operation::Read);
         return Result::Ok;
     }
 
@@ -627,7 +673,7 @@ public:
         if (error != 0) {
             uint32_t elapsedMs = millis() - startMs;
             Result result = resultFromTransmissionError(error, elapsedMs);
-            recordResult(addr, result, elapsedMs);
+            recordResult(addr, result, elapsedMs, 0, 0, Operation::WriteRead);
             if (logError) {
                 LOG_F("I2C writeThenRead write fallo: addr=0x%02X, txLen=%u, error=%u\n",
                       addr, (unsigned int)txLen, error);
@@ -641,7 +687,7 @@ public:
             Result result = (elapsedMs >= TRANSACTION_TIMEOUT_MS && readCount == 0)
                                 ? Result::Timeout
                                 : (readCount == 0 ? Result::Nack : Result::ShortRead);
-            recordResult(addr, result, elapsedMs, rxLen, readCount);
+            recordResult(addr, result, elapsedMs, rxLen, readCount, Operation::WriteRead);
             if (logError) {
                 LOG_F("I2C writeThenRead read corto: addr=0x%02X, esperado=%u, recibido=%u\n",
                       addr, (unsigned int)rxLen, (unsigned int)readCount);
@@ -652,7 +698,7 @@ public:
         }
         for (size_t i = 0; i < rxLen; ++i)
             rx[i] = Wire.read();
-        recordResult(addr, Result::Ok, elapsedMs, rxLen, readCount);
+        recordResult(addr, Result::Ok, elapsedMs, rxLen, readCount, Operation::WriteRead);
         return Result::Ok;
     }
 };

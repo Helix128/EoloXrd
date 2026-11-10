@@ -142,11 +142,7 @@ private:
     bool rtcInitialized = false;
 
     auto maybeRecoverBus = [&]() {
-      I2CBus::Stats stats = bus.getStats();
-      bool transportFailure = stats.lastResult == I2CBus::Result::Timeout ||
-                              stats.lastResult == I2CBus::Result::ShortRead ||
-                              stats.lastResult == I2CBus::Result::Nack ||
-                              stats.lastResult == I2CBus::Result::BusError;
+      bool transportFailure = bus.recentTransportFailure();
       bool simultaneousFailures = bus.recentFailureCount(1000UL) >= 2;
       uint32_t current = millis();
       if (transportFailure || simultaneousFailures) {

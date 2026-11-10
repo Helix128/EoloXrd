@@ -104,7 +104,7 @@ public:
         } else if (args == "status") {
             I2CBus &bus = I2CBus::getInstance();
             I2CBus::Stats stats = bus.getStats();
-            out.printf("backend=%s timeout=%lu ms\n",
+            out.printf("backend=%s rtc=directo timeout=%lu ms\n",
                         EOLO_I2C_DIRECT_DRIVERS ? "directo" : "librerias",
                         (unsigned long)EoloConfig::i2cTransactionTimeoutMs);
             out.printf("Bus=%s warmup=%s restante=%lu ms\n",
@@ -119,11 +119,30 @@ public:
                         (unsigned long)stats.timeouts,
                         (unsigned long)stats.shortReads,
                         (unsigned long)stats.recoveries);
-            out.printf("ultima transaccion: addr=0x%02X resultado=%s duracion=%lu ms max=%lu ms\n",
+            out.printf("ultima transaccion: addr=0x%02X resultado=%s duracion=%lu ms max=%lu ms operacion=%s\n",
                         stats.lastAddress,
                         I2CBus::resultName(stats.lastResult),
                         (unsigned long)stats.lastTransactionMs,
-                        (unsigned long)stats.maxTransactionMs);
+                        (unsigned long)stats.maxTransactionMs,
+                        I2CBus::operationName(stats.lastOperation));
+            if (stats.failures != 0) {
+                out.printf("ultimo fallo: addr=0x%02X operacion=%s resultado=%s duracion=%lu ms; ",
+                           stats.lastFailureAddress,
+                           I2CBus::operationName(stats.lastFailureOperation),
+                           I2CBus::resultName(stats.lastFailureResult),
+                           (unsigned long)stats.lastFailureDurationMs);
+                printRelativeTime(out, "fecha", stats.lastFailureMs, true);
+                out.println();
+            }
+            if (stats.maxTransactionMs != 0) {
+                out.printf("mayor duracion: %lu ms addr=0x%02X operacion=%s resultado=%s; ",
+                           (unsigned long)stats.maxTransactionMs, stats.maxTransactionAddress,
+                           I2CBus::operationName(stats.maxTransactionOperation),
+                           I2CBus::resultName(stats.maxTransactionResult));
+                printRelativeTime(out, "fecha", stats.maxTransactionAtMs, true);
+                out.println();
+            }
+            out.println("Nota: short puede solaparse con nack o timeout; bibliotecas externas no siempre se contabilizan.");
             printRelativeTime(out, "ultimo exito", stats.lastSuccessMs,
                               stats.successes != 0);
             out.println();
@@ -141,7 +160,7 @@ public:
             }
             printLastScan(out, bus);
             out.println();
-            const uint8_t addresses[] = {EoloConfig::attinyAddress, 0x0A, 0x68, 0x76, 0x77};
+            const uint8_t addresses[] = {EoloConfig::attinyAddress, 0x0A, 0x28, 0x3C, 0x68, 0x76, 0x77};
             uint32_t now = millis();
             for (uint8_t address : addresses) {
                 I2CBus::AddressStats addressStats = bus.getAddressStats(address);

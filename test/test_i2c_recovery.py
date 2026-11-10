@@ -29,7 +29,8 @@ inline int digitalRead(int) { assert(lockDepth > 0); return lineLevel; }
 inline void digitalWrite(int, int) {}
 inline void pinMode(int, int) {}
 inline void delayMicroseconds(int) {}
-inline uint32_t millis() { return 10000; }
+inline uint32_t fakeNow = 10000;
+inline uint32_t millis() { return fakeNow; }
 struct Print {
     template<class... T> void printf(const char*, T...) {}
     template<class T> void print(T) {}
@@ -129,6 +130,26 @@ int main(int argc, char** argv) {
     lineLevel = HIGH;
     assert(bus.recoverBus());
     assert(Wire.ended == 2 && requestedWait == 20 && lockDepth == 0);
+
+    // Un éxito posterior no debe borrar la causa del fallo previo; una
+    // transferencia lenta conserva su propia dirección y resultado.
+    bus.recordResult(0x08, I2CBus::Result::Timeout, 25, 3, 0, I2CBus::Operation::Read);
+    bus.recordResult(0x3c, I2CBus::Result::Ok, 1006);
+    bus.recordResult(0x28, I2CBus::Result::Ok, 1, 0, 0, I2CBus::Operation::Probe);
+    const auto stats = bus.getStats();
+    assert(stats.failures == 1 && stats.timeouts == 1 && stats.shortReads == 1);
+    assert(stats.lastFailureAddress == 0x08 && stats.lastFailureResult == I2CBus::Result::Timeout);
+    assert(stats.lastFailureOperation == I2CBus::Operation::Read && stats.lastFailureDurationMs == 25);
+    assert(stats.maxTransactionMs == 1006 && stats.maxTransactionAddress == 0x3c);
+    assert(stats.maxTransactionResult == I2CBus::Result::Ok);
+    assert(stats.lastAddress == 0x28 && stats.lastOperation == I2CBus::Operation::Probe);
+    assert(bus.recentTransportFailure()); // El éxito posterior no oculta el timeout.
+    fakeNow += 1001;
+    assert(!bus.recentTransportFailure());
+    fakeNow = UINT32_MAX - 500;
+    bus.recordResult(0x08, I2CBus::Result::Nack, 2);
+    fakeNow = 200;
+    assert(bus.recentTransportFailure()); // Desbordamiento de millis().
 }
 """
 
