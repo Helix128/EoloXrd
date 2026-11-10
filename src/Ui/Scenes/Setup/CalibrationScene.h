@@ -57,6 +57,7 @@ private:
     int plateauCount = 0;
     bool pauseCancelSelected = false;
     bool introMeasureSelected = false;
+    bool introExplained = false;
     bool scanStarted = false;
     const char *failureMessage = "Curva no guardada";
     CalibrationManager previousCalibration;
@@ -355,19 +356,29 @@ private:
         Renderer::beginFrame(ctx.u8g2);
         GUI::displayHeader(ctx);
 
-        Renderer::centeredText(ctx.u8g2, "Control automatico", Layout::CenterX, 24, FONT_VALUE);
+        Renderer::centeredText(ctx.u8g2, EoloConfig::useCalibrationSeed ? "Medici\xF3n opcional" : "Control de flujo",
+                               Layout::CenterX, 24, FONT_TITLE);
+        if (EoloConfig::useCalibrationSeed && !introExplained)
+        {
+            Renderer::centeredText(ctx.u8g2, "Mide cada bomba a", Layout::CenterX, 33, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "distintas potencias para", Layout::CenterX, 42, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "ajustar el arranque", Layout::CenterX, 51, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Pulsar: continuar", Layout::CenterX, 60, FONT_VALUE);
+            Renderer::endFrame(ctx.u8g2);
+            return;
+        }
         if (!EoloConfig::useCalibrationSeed)
         {
-            Renderer::centeredText(ctx.u8g2,
-                                   EoloConfig::flowPid.feedForward.available() ? "Tabla del modelo" : "Ajuste por caudal",
-                                   Layout::CenterX, 38, FONT_VALUE);
-            Renderer::centeredText(ctx.u8g2, "Sin barrido manual", Layout::CenterX, 49, FONT_VALUE);
-            Renderer::centeredText(ctx.u8g2, "Volver", Layout::CenterX, Layout::FooterValueY, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "El flujo se regula", Layout::CenterX, 35, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "autom\xE1ticamente", Layout::CenterX, 44, FONT_VALUE);
+            ctx.u8g2.drawBox(Layout::CenterX - 24, 47, 48, 13);
+            ctx.u8g2.setDrawColor(0);
+            Renderer::centeredText(ctx.u8g2, "Volver", Layout::CenterX, 57, FONT_LABEL);
+            ctx.u8g2.setDrawColor(1);
         }
         else
         {
-            Renderer::centeredText(ctx.u8g2, "Curva opcional de arranque", Layout::CenterX, 35, FONT_VALUE);
-            Renderer::centeredText(ctx.u8g2, "Curva anterior intacta", Layout::CenterX, 44, FONT_VALUE);
+            Renderer::centeredText(ctx.u8g2, "Iniciar medici\xF3n?", Layout::CenterX, 38, FONT_VALUE);
 
             constexpr int boxY = 47;
             constexpr int boxH = 13;
@@ -402,7 +413,7 @@ private:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
         Renderer::yesNoChoice(ctx.u8g2, "Pausa segura", !pauseCancelSelected,
-                              "Curva anterior se conserva", "Seguir", "Salir");
+                              "Curva previa intacta", "Seguir", "Salir");
         ctx.u8g2.sendBuffer();
     }
 
@@ -469,6 +480,7 @@ public:
     {
         previousCalibration = ctx.calibration;
         introMeasureSelected = false;
+        introExplained = false;
         pauseCancelSelected = true;
         scanStarted = false;
         failureMessage = "Curva no guardada";
@@ -479,6 +491,12 @@ public:
     {
         if (state == INTRO)
         {
+            if (EoloConfig::useCalibrationSeed && !introExplained)
+            {
+                if (ctx.components.input.isButtonPressed()) introExplained = true;
+                renderIntro(ctx);
+                return;
+            }
             if (EoloConfig::useCalibrationSeed && ctx.components.input.getEncoderDelta() != 0)
                 introMeasureSelected = !introMeasureSelected;
             if (ctx.components.input.isButtonPressed())

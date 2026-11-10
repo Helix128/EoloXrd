@@ -67,8 +67,7 @@ namespace Layout
     {
         struct Slot { int x; int y; int w; int h; };
 
-        // Bateria = icono vertical 5x9 + porcentaje en FONT_VALUE, con 1px de
-        // margen a cada lado; el subrayado de bateria activa cubre el slot.
+        // Bateria = icono vertical 5x9 + 1px + porcentaje en FONT_VALUE.
         constexpr Slot Time = {2, 1, 29, 11};      // x=2..30
         constexpr Slot Sd = {32, 2, 10, 9};        // x=32..41
 #ifdef FEATURE_DUAL_BATTERY

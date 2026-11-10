@@ -65,7 +65,7 @@ private:
         ctx.components.motor.setMotorPwm(1 - index, 0);
         stateStartMs = millis();
         state = SETTLE;
-        LOG_F("Prueba de bombas: motor %d a tope\n", index);
+        LOG_F("Prueba de bombas: motor %d a tope\n", index + 1);
     }
 
     void finishMotor(Context &ctx)
@@ -76,7 +76,7 @@ private:
             return;
         }
         flow[motor] = sum / samples;
-        LOG_F("Prueba de bombas: motor %d = %.3f L/min (%d muestras)\n", motor, flow[motor], samples);
+        LOG_F("Prueba de bombas: motor %d = %.3f L/min (%d muestras)\n", motor + 1, flow[motor], samples);
         if (motor == 0)
         {
             startMotor(ctx, 1);
@@ -90,7 +90,7 @@ private:
             return;
         }
         saved = ctx.calibration.savePumpOrder(weak, flow[0], flow[1]);
-        LOG_F("Prueba de bombas: motor debil %d, fuerte %d (%s)\n", weak, 1 - weak,
+        LOG_F("Prueba de bombas: motor debil %d, fuerte %d (%s)\n", weak + 1, 2 - weak,
               saved ? "guardado" : "solo en RAM");
         // La semilla de la curva solo sirve si se midió con este mismo orden.
         if (ctx.calibration.isLoaded && ctx.calibration.weakMotor != weak)
@@ -107,9 +107,9 @@ private:
         if (state == RESULT)
         {
             Renderer::centeredText(ctx.u8g2, "Orden de bombas", Layout::CenterX, 24, FONT_TITLE);
-            snprintf(line, sizeof(line), "Debil: motor %d", weak);
+            snprintf(line, sizeof(line), "Debil: motor %d", weak + 1);
             Renderer::centeredText(ctx.u8g2, line, Layout::CenterX, 38, FONT_VALUE);
-            snprintf(line, sizeof(line), "M0 %.2f  M1 %.2f", flow[0], flow[1]);
+            snprintf(line, sizeof(line), "M1 %.2f  M2 %.2f", flow[0], flow[1]);
             Renderer::centeredText(ctx.u8g2, line, Layout::CenterX, 48, FONT_VALUE);
             if (!saved)
                 Renderer::centeredText(ctx.u8g2, "No se guardo", Layout::CenterX, 56, FONT_VALUE);
@@ -132,7 +132,7 @@ private:
             }
             else
             {
-                snprintf(line, sizeof(line), "Motor %d a tope", motor);
+                snprintf(line, sizeof(line), "Motor %d a tope", motor + 1);
                 Renderer::centeredText(ctx.u8g2, line, Layout::CenterX, 38, FONT_VALUE);
                 const uint32_t total = 2 * (SETTLE_MS + SAMPLE_MS);
                 const uint32_t done = motor * (SETTLE_MS + SAMPLE_MS) + (millis() - stateStartMs) +

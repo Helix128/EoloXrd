@@ -17,7 +17,7 @@ public:
     float targetFlow = 5.0f;
     void enter(Context &ctx) override
     {
-
+        targetFlow = ctx.session.targetFlow;
     }
 
     void update(Context &ctx) override

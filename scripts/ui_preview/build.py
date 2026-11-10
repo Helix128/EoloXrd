@@ -132,6 +132,8 @@ def main():
     ap.add_argument("--scale", type=int, default=4)
     ap.add_argument("--check-calibration", action="store_true",
                      help="ejecuta y renderiza solo la máquina real de CalibrationScene")
+    ap.add_argument("--render-only", action="store_true",
+                    help="renderiza sin ejecutar las verificaciones assert")
     args = ap.parse_args()
 
     features, motors = VARIANTS[args.variant]
@@ -146,10 +148,12 @@ def main():
               os.path.join(HERE, "preview.cpp"),
               "-I", os.path.join(HERE, "stubs"), "-I", HERE,
               "-I", os.path.join(ROOT, "src"),
+              "-I", os.path.join(ROOT, "include"),
               "-I", os.path.join(ROOT, "lib", "EoloCore", "include"),
               "-I", u8g2_src,
               "-include", os.path.join(HERE, "prelude.h"),
               "-DPREVIEW_MOTORS=%d" % motors,
+              *(["-DNDEBUG"] if args.render_only else []),
               *["-D" + f for f in features], *objs)
     run(cmd)
 

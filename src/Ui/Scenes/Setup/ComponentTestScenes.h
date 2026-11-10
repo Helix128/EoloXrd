@@ -73,7 +73,7 @@ public:
             if (ok)
             {
                 snprintf(v1, sizeof(v1), "%.1f " UNIT_TEMP, d.temperature);
-                snprintf(v2, sizeof(v2), "%.0f " UNIT_PCT, d.humidity);
+                snprintf(v2, sizeof(v2), "%.0f %s", d.humidity, UNIT_PCT);
                 snprintf(v3, sizeof(v3), "%.0f " UNIT_PRESSURE, d.pressure);
             }
             else { snprintf(v1, sizeof(v1), "--"); snprintf(v2, sizeof(v2), "--"); snprintf(v3, sizeof(v3), "--"); }
@@ -155,6 +155,10 @@ public:
 
 class ComponentMotorsScene : public IScene
 {
+public:
+    enum class ReturnTarget { ComponentMenu, Capture };
+
+private:
     // Los indices son los del MotorManager (el pinout de cada perfil define el
     // destino fisico). Foco: 0..Motors-1 = motor, Motors = volver.
     static constexpr int Motors = MotorManager::motorCount;
@@ -162,6 +166,17 @@ class ComponentMotorsScene : public IScene
 
     int focus = 0;
     int pwm[Motors] = {};
+    ReturnTarget returnTarget = ReturnTarget::ComponentMenu;
+
+    const char *returnScene() const
+    {
+        return returnTarget == ReturnTarget::Capture ? "captura" : "test_components";
+    }
+
+    const char *screenTitle() const
+    {
+        return returnTarget == ReturnTarget::Capture ? "Probar bombas" : "Prueba de motores";
+    }
 
     // Triangulo de foco a la izquierda de la fila.
     static void focusMarker(Context &ctx, int row)
@@ -172,6 +187,9 @@ class ComponentMotorsScene : public IScene
 
 public:
     static constexpr const char *Name = "test_motors";
+
+    explicit ComponentMotorsScene(ReturnTarget target = ReturnTarget::ComponentMenu) : returnTarget(target) {}
+
     uint16_t frameIntervalMs() const override { return 80; }
     void enter(Context &ctx) override { for (int i = 0; i < Motors; i++) pwm[i] = 0; focus = 0; ctx.components.motor.setPwmImmediate(0); }
     void exit(Context &ctx) override { ctx.components.motor.setPwmImmediate(0); }
@@ -184,14 +202,17 @@ public:
             ctx.components.motor.setMotorPwmImmediate(focus, pwm[focus]);
         }
         if (ctx.components.input.isButtonPressed()) {
-            if (focus == Motors) { SceneManager::setScene("test_components", ctx); return; }
+            if (focus == Motors) { ctx.components.motor.setPwmImmediate(0); SceneManager::setScene(returnScene(), ctx); return; }
             ++focus;
-            if (focus == Motors) ctx.components.motor.setPwmImmediate(0);
+            if (focus == Motors) {
+                ctx.components.motor.setPwmImmediate(0);
+                for (int i = 0; i < Motors; i++) pwm[i] = 0;
+            }
         }
 
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
-        Renderer::centeredText(ctx.u8g2, "Prueba de motores", Layout::CenterX, Layout::KvFirstY, FONT_TITLE);
+        Renderer::centeredText(ctx.u8g2, screenTitle(), Layout::CenterX, Layout::KvFirstY, FONT_TITLE);
 
         char labels[Motors][10];
         char values[Motors][16];

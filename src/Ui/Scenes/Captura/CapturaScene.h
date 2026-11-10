@@ -15,9 +15,9 @@ class CapturaScene : public IScene
 {
 private:
 #ifdef FEATURE_ANEMOMETER
-    static constexpr int FooterPageCount = 8;
-#else
     static constexpr int FooterPageCount = 7;
+#else
+    static constexpr int FooterPageCount = 6;
 #endif
 
 public:
@@ -101,7 +101,7 @@ public:
     // la página quedaba en blanco.
     static bool footerPageAvailable(Context &ctx, int page)
     {
-        return (page != 1 && page != 2) || ctx.getUiSnapshot().airQuality.enabled;
+        return page != 1 || ctx.getUiSnapshot().airQuality.enabled;
     }
 
     void footer(Context &ctx)
@@ -113,6 +113,13 @@ public:
         {
         case 0: // BME: temperatura, humedad y presion siempre juntas.
         {
+            if (!snapshot.environment.valid)
+            {
+                Renderer::metricRow(ctx.u8g2, "Temp " UNIT_TEMP, "--", nullptr,
+                                    "Hum " UNIT_PCT, "--", nullptr,
+                                    "P " UNIT_PRESSURE, "--", nullptr);
+                break;
+            }
             char tempStr[8];
             char humStr[8];
             char pressureStr[8];
@@ -125,29 +132,56 @@ public:
                                 "P " UNIT_PRESSURE, pressureStr, nullptr);
             break;
         }
-        case 1: // PM1.0 y PM2.5: dos columnas con unidades legibles
+        case 1: // Los tres valores PM juntos en columnas compactas.
         {
-            float pm1 = snapshot.airQuality.valid ? snapshot.airQuality.pm1 : 0.0f;
-            float pm25 = snapshot.airQuality.valid ? snapshot.airQuality.pm25 : 0.0f;
-
-
-            char pm1Str[5];
-            char pm25Str[5];
-
-            snprintf(pm1Str, sizeof(pm1Str), "%.0f", pm1);
-            snprintf(pm25Str, sizeof(pm25Str), "%.0f", pm25);
-            Renderer::metricRow(ctx.u8g2, "PM1.0", pm1Str, UNIT_PM, "PM2.5", pm25Str, UNIT_PM);
-            break;
-        }
-        case 2:
-        {
+            const bool valid = snapshot.airQuality.valid;
+            char pm1Str[8];
+            char pm25Str[8];
             char pm10Str[8];
-            snprintf(pm10Str, sizeof(pm10Str), "%.0f", snapshot.airQuality.valid ? snapshot.airQuality.pm10 : 0.0f);
-            Renderer::metricCell(ctx.u8g2, 0, Layout::ScreenW, "PM10", pm10Str, UNIT_PM,
-                                 Layout::FooterLabelY, Layout::FooterValueY);
+            if (valid)
+            {
+                snprintf(pm1Str, sizeof(pm1Str), "%.0f", snapshot.airQuality.pm1);
+                snprintf(pm25Str, sizeof(pm25Str), "%.0f", snapshot.airQuality.pm25);
+                snprintf(pm10Str, sizeof(pm10Str), "%.0f", snapshot.airQuality.pm10);
+            }
+            else
+            {
+                snprintf(pm1Str, sizeof(pm1Str), "--");
+                snprintf(pm25Str, sizeof(pm25Str), "--");
+                snprintf(pm10Str, sizeof(pm10Str), "--");
+            }
+            const int columns[] = {0, Layout::ThirdColumnW, 2 * Layout::ThirdColumnW};
+            const char *labels[] = {"PM1.0", "PM2.5", "PM10"};
+            const char *values[] = {pm1Str, pm25Str, pm10Str};
+            for (int i = 0; i < 3; ++i)
+            {
+                const int width = i == 2 ? Layout::ScreenW - columns[i] : Layout::ThirdColumnW;
+                ctx.u8g2.setFont(FONT_VALUE);
+                ctx.u8g2.drawStr(columns[i] + (width - ctx.u8g2.getStrWidth(labels[i])) / 2, 53, labels[i]);
+                const int valueWidth = ctx.u8g2.getStrWidth(values[i]);
+                const int unitWidth = ctx.u8g2.getStrWidth(UNIT_PM);
+                const int regularWidth = valueWidth + unitWidth + 1;
+                const uint8_t *valueFont = regularWidth <= width ? FONT_VALUE : u8g2_font_4x6_tf;
+                const uint8_t *unitFont = regularWidth <= width ? FONT_VALUE : u8g2_font_4x6_tf;
+                const char *unitText = regularWidth <= width ? UNIT_PM : "ug/m3";
+                ctx.u8g2.setFont(valueFont);
+                const int compactValueWidth = ctx.u8g2.getStrWidth(values[i]);
+                ctx.u8g2.setFont(unitFont);
+                const int compactUnitWidth = ctx.u8g2.getStrWidth(unitText);
+                const int totalWidth = compactValueWidth + compactUnitWidth + 1;
+                const int valueX = columns[i] + (width - totalWidth) / 2;
+                ctx.u8g2.setFont(valueFont);
+                ctx.u8g2.drawStr(valueX, 61, values[i]);
+                ctx.u8g2.setFont(unitFont);
+                ctx.u8g2.drawStr(valueX + compactValueWidth + 1, 61, unitText);
+            }
+            ctx.u8g2.drawVLine(Layout::ThirdColumnW, Layout::SeparatorY + 3,
+                               Layout::BodyBottom - 4 - (Layout::SeparatorY + 3) + 1);
+            ctx.u8g2.drawVLine(2 * Layout::ThirdColumnW, Layout::SeparatorY + 3,
+                               Layout::BodyBottom - 4 - (Layout::SeparatorY + 3) + 1);
             break;
         }
-        case 3: // flujo configurado
+        case 2: // flujo configurado
         {
             char targetFlowStr[10];
             snprintf(targetFlowStr, sizeof(targetFlowStr), "%.1f", snapshot.flow.targetFlow);
@@ -155,7 +189,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 4: // tiempo transcurrido
+        case 3: // tiempo transcurrido
         {
             char timeStr[12];
             formatHms(timeStr, sizeof(timeStr), ctx.session.elapsedTime);
@@ -163,7 +197,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 5: // tiempo restante
+        case 4: // tiempo restante
         {
             char remainingStr[12];
             formatHms(remainingStr, sizeof(remainingStr),
@@ -172,7 +206,7 @@ public:
                                  Layout::FooterLabelY, Layout::FooterValueY);
             break;
         }
-        case 6: // tiempos de inicio y fin
+        case 5: // tiempos de inicio y fin
         {
             DateTime start(ctx.session.startUnix);
             DateTime end = start + ctx.session.duration;
@@ -182,7 +216,7 @@ public:
             break;
         }
 #ifdef FEATURE_ANEMOMETER
-        case 7:
+        case 6:
         {
             if (!snapshot.wind.valid)
             {

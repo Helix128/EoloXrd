@@ -21,9 +21,20 @@ public:
         ctx.u8g2.clearBuffer();
         GUI::displayHeader(ctx);
 
-        const char* title = ctx.captureEndReason() == CaptureEndReason::PumpFailureZeroFlow
-                                ? "Falla bomba"
-                                : "Fin de captura";
+        const char *title = "Fin de captura";
+        switch (ctx.captureEndReason())
+        {
+        case CaptureEndReason::PumpFailureZeroFlow: title = "Falla bomba"; break;
+        case CaptureEndReason::SdUnavailable: title = "Falla tarjeta SD"; break;
+        case CaptureEndReason::AfmInvalid: title = "Falla sensor flujo"; break;
+        case CaptureEndReason::AfmStale: title = "Sensor sin datos"; break;
+        case CaptureEndReason::AfmDiagnostic: title = "Diagnostico sensor"; break;
+        case CaptureEndReason::NtcInvalid: title = "Falla sensor temp."; break;
+        case CaptureEndReason::Safety: title = "Falla de seguridad"; break;
+        case CaptureEndReason::None:
+        case CaptureEndReason::Completed:
+        default: break;
+        }
         Renderer::centeredText(ctx.u8g2, title, Layout::CenterX, Layout::KvFirstY, FONT_TITLE);
 
         DateTime startTime(ctx.session.startUnix);

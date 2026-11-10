@@ -12,6 +12,7 @@
 #include <Eolo/Types/Session.h>
 #include <RTClib.h>
 #include <Eolo/Core/Calibration/CalibrationModel.h>
+#include <Eolo/Core/Ui/DisplayPowerPolicy.h>
 
 unsigned long previewMillis = 0;
 
@@ -32,13 +33,14 @@ unsigned long previewMillis = 0;
 namespace EoloConfig
 {
 inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
+inline constexpr bool pumpOrderTest = Profile::kPumpOrderTest;
 inline constexpr auto flowPid = Profile::kFlowPid;
 }
 
 constexpr int MAX_PWM = (1 << EoloConfig::Profile::kMotorPwmResolutionBits) - 1;
 
 enum SDStatus { SD_OK, SD_MISSING, SD_ERROR, SD_WRITING };
-enum class CaptureEndReason : uint8_t { None, Completed, PumpFailureZeroFlow, SdUnavailable, AfmInvalid };
+enum class CaptureEndReason : uint8_t { None, Completed, PumpFailureZeroFlow, SdUnavailable, AfmInvalid, AfmStale, AfmDiagnostic, NtcInvalid, Safety };
 enum class RTCNetworkSyncStatus : uint8_t { Idle, Running, Success, Failed };
 
 #include "Common/Data/UiSnapshot.h"
@@ -52,7 +54,7 @@ struct PreviewInput
 {
     int delta = 0;
     bool pressed = false;
-    int getEncoderDelta() { int d = delta; delta = 0; return d; }
+    int getEncoderDelta(int = 0) { int d = delta; delta = 0; return d; }
     bool isButtonPressed() { bool p = pressed; pressed = false; return p; }
 };
 struct PreviewRtc
@@ -82,6 +84,8 @@ public:
     float flows[MAX_POINTS] = {};
     int weakMotor = 0;
     bool isLoaded = false;
+    bool pumpOrderKnown() const { return false; }
+    bool savePumpOrder(int, float, float) { return true; }
 
     void sortByFlow() { CalibrationModel::sortByFlow(numPoints, pwm0, pwm1, flows); }
     bool validate() const { return CalibrationModel::validate(numPoints, flows); }
@@ -164,6 +168,8 @@ struct Context
     Components components;
     Session session;
     CalibrationManager calibration;
+    DisplayPowerConfig displayPower;
+    void saveDisplayPower() {}
     UiSnapshot snapshot;
     std::atomic<BootPhase> bootPhase{BootPhase::Idle};
     std::atomic_bool bootInitComplete{false};
@@ -194,7 +200,8 @@ struct Context
     void updateCapture() {}
     void pauseCapture() {}
     void resumeCapture() {}
-    void endCapture() {}
+    unsigned endCaptureCalls = 0;
+    void endCapture() { ++endCaptureCalls; }
     void resetCapture() { ++resetCaptureCalls; session = Session(); }
     bool isCaptureActive() { return true; }
     bool isCapturePaused() { return false; }
@@ -228,8 +235,12 @@ public:
 #include "Ui/Scenes/Captura/FinScene.h"
 #include "Ui/Scenes/Captura/HoraFinScene.h"
 #include "Ui/Scenes/Captura/MenuCapturaScene.h"
+#include "Ui/Scenes/Captura/ConfirmarFinCapturaScene.h"
 #include "Ui/Scenes/Captura/MenuFinScene.h"
 #include "Ui/Scenes/Setup/CalibrationScene.h"
+#include "Ui/Scenes/Setup/PumpOrderScene.h"
+#include "Ui/Scenes/Setup/OpcionesScene.h"
+#include "Ui/Scenes/Setup/PantallaScene.h"
 
 static const char *outDir = ".";
 
@@ -302,7 +313,7 @@ static void headerShot(const char *name, void (*tweak)(UiSnapshot &))
 }
 
 // Prueba de navegacion real: el encoder alcanza todas las paginas y salta
-// ambas paginas PM cuando Plantower no esta habilitado en la sesion.
+// la pagina PM cuando Plantower no esta habilitado en la sesion.
 static void checkCapturePages()
 {
     Context ctx;
@@ -310,9 +321,9 @@ static void checkCapturePages()
     CapturaScene scene;
     scene.enter(ctx);
 #ifdef FEATURE_ANEMOMETER
-    constexpr int count = 8;
-#else
     constexpr int count = 7;
+#else
+    constexpr int count = 6;
 #endif
     for (bool pmEnabled : {true, false})
     {
@@ -321,7 +332,7 @@ static void checkCapturePages()
         {
             scene.cycleFooter = 0;
             bool seen[count] = {};
-            const int visible = count - (pmEnabled ? 0 : 2);
+            const int visible = count - (pmEnabled ? 0 : 1);
             for (int i = 0; i < visible; ++i)
             {
                 assert(!seen[scene.cycleFooter]);
@@ -347,14 +358,25 @@ static void checkCapturePages()
     assert(ctx.u8g2.getStrWidth("23:59") <= Layout::Header::Time.w);
     // Bateria: 1px + icono 5 + 2px + texto + 1px dentro del slot.
 #ifdef FEATURE_DUAL_BATTERY
-    assert(9 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery0.w);
-    assert(9 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery1.w);
+    assert(7 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery0.w);
+    assert(7 + ctx.u8g2.getStrWidth("100") <= Layout::Header::Battery1.w);
 #else
-    assert(9 + ctx.u8g2.getStrWidth("100%") <= Layout::Header::Battery.w);
-    ctx.u8g2.setFont(FONT_LABEL);
+    assert(7 + ctx.u8g2.getStrWidth("100%") <= Layout::Header::Battery.w);
+    ctx.u8g2.setFont(u8g2_font_6x10_tf);
     assert(ctx.u8g2.getStrWidth("EOLO") <= Layout::Header::Brand.w);
 #endif
 }
+
+class PreviewInicioScene : public InicioScene
+{
+public:
+    bool hasCalibration() const
+    {
+        for (int i = 0; i < _optionCount; ++i)
+            if (strcmp(_options[i].label, "Control de flujo") == 0) return true;
+        return false;
+    }
+};
 
 static bool sameSession(const Session &a, const Session &b)
 {
@@ -479,23 +501,25 @@ static void tickCalibration(CalibrationScene &scene, Context &ctx, unsigned long
 
 static void assertCalibrationIntroLayout(Context &ctx)
 {
+    ctx.u8g2.setFont(FONT_TITLE);
+    assert(ctx.u8g2.getStrWidth("Control de flujo") <= Layout::ScreenW - 4);
+    assert(ctx.u8g2.getStrWidth("Medici\xF3n opcional") <= Layout::ScreenW - 4);
     ctx.u8g2.setFont(FONT_VALUE);
-    for (const char *label : {"Control automatico", "Volver"})
-        assert(ctx.u8g2.getStrWidth(label) <= Layout::ScreenW - 4);
+    assert(ctx.u8g2.getStrWidth("Volver") <= Layout::ScreenW - 4);
     if (EoloConfig::useCalibrationSeed)
     {
-        assert(ctx.u8g2.getStrWidth("Curva opcional de arranque") <= Layout::ScreenW - 4);
-        assert(ctx.u8g2.getStrWidth("Curva anterior intacta") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Mide cada bomba a") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("distintas potencias para") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("ajustar el arranque") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Pulsar: continuar") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("Iniciar medici\xF3n?") <= Layout::ScreenW - 4);
         assert(ctx.u8g2.getStrWidth("Medir") <= 48);
         assert(ctx.u8g2.getStrWidth("Volver") <= 48);
     }
     else
     {
-        const char *mode = EoloConfig::flowPid.feedForward.available()
-                               ? "Tabla del modelo"
-                               : "Ajuste por caudal";
-        assert(ctx.u8g2.getStrWidth(mode) <= Layout::ScreenW - 4);
-        assert(ctx.u8g2.getStrWidth("Sin barrido manual") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("El flujo se regula") <= Layout::ScreenW - 4);
+        assert(ctx.u8g2.getStrWidth("autom\xE1ticamente") <= Layout::ScreenW - 4);
     }
 }
 
@@ -512,9 +536,13 @@ static void assertCalibrationSceneLayout(Context &ctx)
     ctx.u8g2.setFont(FONT_VALUE);
     for (const char *label : {"Descubrimiento", "Rampa motor debil", "Rampa motor fuerte",
                               "Guardando curva", "Bombas apagadas", "No apagues EOLO",
-                              "Pausa segura", "Curva anterior se conserva", "Curva anterior intacta",
+                              "Pausa segura", "Curva previa intacta", "Curva anterior intacta",
                               "Curva no guardada", "Sin dato de flujo", "Volver", "84 puntos"})
+    {
+        if (ctx.u8g2.getStrWidth(label) > Layout::ScreenW - 4)
+            fprintf(stderr, "Texto demasiado ancho: %s (%d px)\n", label, ctx.u8g2.getStrWidth(label));
         assert(ctx.u8g2.getStrWidth(label) <= Layout::ScreenW - 4);
+    }
 
     ctx.u8g2.setFont(FONT_MENU_SEL);
     assert(ctx.u8g2.getStrWidth("Pausa segura") <= Layout::ScreenW - 4);
@@ -539,6 +567,10 @@ static void enterCalibrationIntro(CalibrationScene &scene, Context &ctx, const c
 static void confirmCalibrationMeasure(CalibrationScene &scene, Context &ctx)
 {
     assert(EoloConfig::useCalibrationSeed);
+    ctx.components.input.pressed = true;
+    scene.update(ctx);
+    dump(ctx, "calibration_confirmar");
+    assert(ctx.components.motor.isOff());
     // Entra con Volver seleccionado; el encoder debe elegir Medir antes de
     // confirmar. No cambia la curva ni energiza bombas durante la navegación.
     ctx.components.input.delta = 1;
@@ -586,6 +618,9 @@ static void checkCalibrationSeedIntroCancel()
     enterCalibrationIntro(scene, ctx, "calibration_intro");
     assertCalibrationSceneLayout(ctx);
     SceneManager::destination = nullptr;
+    ctx.components.input.pressed = true;
+    scene.update(ctx); // explicación -> confirmación.
+    assert(ctx.components.motor.isOff());
     ctx.components.input.pressed = true; // default Volver.
     scene.update(ctx);
     assert(SceneManager::destination && strcmp(SceneManager::destination, "inicio") == 0);
@@ -774,6 +809,45 @@ int main(int argc, char **argv)
     checkCapturePages();
     checkFinishedCaptureReturn();
 
+    {
+        Context ctx;
+        PreviewInicioScene menu;
+        menu.enter(ctx);
+        assert(menu.hasCalibration() == EoloConfig::useCalibrationSeed);
+    }
+
+    {
+        Context ctx;
+        fillDefaults(ctx);
+        CapturaBombasScene scene;
+        scene.enter(ctx);
+        ctx.components.input.delta = 1;
+        scene.update(ctx);
+        assert(ctx.components.motor.pwmValues[0] > 0);
+        for (int i = 0; i < PREVIEW_MOTORS; ++i) {
+            ctx.components.input.pressed = true;
+            scene.update(ctx);
+        }
+        assert(ctx.components.motor.isOff());
+        ctx.components.input.pressed = true;
+        scene.update(ctx);
+        assert(SceneManager::destination && strcmp(SceneManager::destination, "captura") == 0);
+        scene.enter(ctx);
+        assert(ctx.components.motor.isOff());
+
+        ConfirmarFinCapturaScene confirm;
+        confirm.enter(ctx);
+        ctx.components.input.pressed = true;
+        confirm.update(ctx);
+        assert(ctx.endCaptureCalls == 0);
+        assert(strcmp(SceneManager::destination, "captura_menu") == 0);
+        confirm.enter(ctx);
+        ctx.components.input.delta = 1;
+        ctx.components.input.pressed = true;
+        confirm.update(ctx);
+        assert(ctx.endCaptureCalls == 1);
+    }
+
     headerShot("header_ok", nullptr);
     headerShot("header_sd_writing", [](UiSnapshot &s) { s.status.sdStatus = SD_WRITING; });
     headerShot("header_sd_error", [](UiSnapshot &s) { s.status.sdStatus = SD_ERROR; });
@@ -800,6 +874,12 @@ int main(int argc, char **argv)
     shot<PlantowerScene>("plantower_si");
     shot<PlantowerScene>("plantower_no", 1, 2);
     shot<FlujoScene>("flujo");
+    shot<InstantFlujoScene>("flujo_rapido");
+    shot<CapturaFlujoScene>("captura_flujo");
+    shot<OpcionesScene>("opciones");
+    shot<PantallaScene>("pantalla");
+    shot<PumpOrderScene>("orden_bombas");
+    shot<CalibrationScene>("calibracion");
     shot<TimeScene>("tiempo_inicio");
     shot<TimeEndScene>("hora_fin");
     shot<RTCAdjustMenuScene>("rtc_menu");
@@ -813,21 +893,23 @@ int main(int argc, char **argv)
         c.snapshot.environment.humidity = 100.0f;
         c.snapshot.environment.pressure = 1100.0f;
     });
+    shot<CapturaScene>("captura_bme_invalido", 0, 2, [](Context &c) { c.snapshot.environment.valid = false; });
     shot<CapturaScene>("captura_pm", 1, 2);
-    shot<CapturaScene>("captura_pm10", 2, 2);
-    shot<CapturaScene>("captura_objetivo", 3, 2);
-    shot<CapturaScene>("captura_transcurrido", 4, 2);
-    shot<CapturaScene>("captura_restante", 5, 2);
-    shot<CapturaScene>("captura_horarios", 6, 2);
+    shot<CapturaScene>("captura_objetivo", 2, 2);
+    shot<CapturaScene>("captura_transcurrido", 3, 2);
+    shot<CapturaScene>("captura_restante", 4, 2);
+    shot<CapturaScene>("captura_horarios", 5, 2);
 #ifdef FEATURE_ANEMOMETER
-    shot<CapturaScene>("captura_viento", 7, 2);
+    shot<CapturaScene>("captura_viento", 6, 2);
 #endif
-    shot<CapturaScene>("captura_pm_alto", 1, 2, [](Context &c) { c.snapshot.airQuality.pm1 = 9999; c.snapshot.airQuality.pm25 = 9999; });
+    shot<CapturaScene>("captura_pm_alto", 1, 2, [](Context &c) { c.snapshot.airQuality.pm1 = 9999; c.snapshot.airQuality.pm25 = 9999; c.snapshot.airQuality.pm10 = 9999; });
+    shot<CapturaScene>("captura_pm_invalido", 1, 2, [](Context &c) { c.snapshot.airQuality.valid = false; });
     shot<CapturaScene>("captura_sin_pm", 1, 2, [](Context &c) { c.snapshot.airQuality.enabled = false; });
     shot<CapturaBombasScene>("probar_bombas");
     shot<FinScene>("fin");
     shot<FinScene>("fin_falla_bomba", 0, 1, [](Context &c) { c.endReason = CaptureEndReason::PumpFailureZeroFlow; });
     shot<MenuCapturaScene>("menu_captura");
+    shot<ConfirmarFinCapturaScene>("confirmar_fin_captura");
     shot<MenuCapturaScene>("menu_captura_scroll", 3);
     shot<EndMenuScene>("menu_fin");
     shot<ComponentTestMenuScene>("test_menu");

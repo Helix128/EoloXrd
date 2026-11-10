@@ -16,5 +16,6 @@ del header), `sheet_screens.png` y `index.txt` con el orden.
 - Las variantes solo cambian `FEATURE_*` y numero de motores (ver `VARIANTS` en `build.py`).
 - Si no hay `ziglang`, usa `cc` y `c++` instalados. La variante `express_legacy` reproduce el perfil FS3000.
 - Para agregar una pantalla: incluir su header en `preview.cpp` y agregar un `shot<Escena>("nombre")`.
+- `--render-only` genera imágenes sin ejecutar las comprobaciones `assert`; sirve para inspeccionar una pantalla cuando una comprobación falla, pero no valida la UI.
 - `--check-calibration` ejecuta la `CalibrationScene` real con sensor y motores simulados, y renderiza intro, discovery, rampas, pausa y terminales. No escribe NVS; el mock usa `CalibrationModel` real y controla el resultado de guardado.
 - Si una escena usa algo nuevo de `Context`, agregarlo al mock de `preview.cpp`.

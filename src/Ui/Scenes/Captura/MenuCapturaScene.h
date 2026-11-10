@@ -20,7 +20,7 @@ public:
 
         clearOptions();
         addOption("Continuar", [](Context &ctx) { SceneManager::setScene("captura", ctx); });
-        addOption("Finalizar", [](Context &ctx) { ctx.endCapture(); });
+        addOption("Finalizar", [](Context &ctx) { SceneManager::setScene("confirmar_fin_captura", ctx); });
         addOption("Probar bombas", [](Context &ctx) { SceneManager::setScene("captura_bombas", ctx); });
         addOption("Ajustar hora fin", [](Context &ctx) { SceneManager::setScene("time_end", ctx); });
         addOption("Opciones", [](Context &ctx) {

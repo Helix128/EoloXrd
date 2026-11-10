@@ -48,7 +48,7 @@ public:
                             snapshot.status.modemSignalBars);
 #endif
 #else
-        ctx.u8g2.setFont(FONT_LABEL);
+        ctx.u8g2.setFont(u8g2_font_6x10_tf);
         constexpr const char *brand = "EOLO";
         ctx.u8g2.drawStr(Layout::CenterX - ctx.u8g2.getStrWidth(brand) / 2,
                           Layout::Header::Brand.y + 9, brand);
@@ -160,9 +160,9 @@ private:
             snprintf(text, sizeof(text), percentSign ? "%d%%" : "%d", pct);
 
         ctx.u8g2.setFont(FONT_VALUE);
-        const int x = slot.x + 1;
+        const int x = slot.x;
         const int y = slot.y + 1;
-        const int textX = x + iconW + 2;
+        const int textX = x + iconW + 1;
         const int contentW = textX + ctx.u8g2.getStrWidth(text) - x;
         ctx.u8g2.drawHLine(x + 1, y, iconW - 2);
         ctx.u8g2.drawFrame(x, y + 1, iconW, iconH - 1);
@@ -182,7 +182,7 @@ private:
         ctx.u8g2.drawStr(textX, y + 8, text);
 
         if (active)
-            ctx.u8g2.drawHLine(slot.x, Layout::Header::ActiveSourceY, contentW + 2);
+            ctx.u8g2.drawHLine(slot.x, Layout::Header::ActiveSourceY, contentW);
     }
 
     // Rayo (alimentacion externa) en 6x9.

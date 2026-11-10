@@ -18,6 +18,7 @@
 #include "../Scenes/Captura/WaitScene.h"
 #include "../Scenes/Captura/CapturaScene.h"
 #include "../Scenes/Captura/MenuCapturaScene.h"
+#include "../Scenes/Captura/ConfirmarFinCapturaScene.h"
 #include "../Scenes/Captura/CapturaFlujoScene.h"
 #include "../Scenes/Captura/HoraFinScene.h"
 #include "../Scenes/Captura/FinScene.h"
@@ -66,6 +67,7 @@ inline void registerAllScenes()
     static WaitScene s_wait;
     static CapturaScene s_captura;
     static MenuCapturaScene s_captura_menu;
+    static ConfirmarFinCapturaScene s_confirmar_fin_captura;
     static CapturaFlujoScene s_captura_flujo;
     static TimeEndScene s_time_end;
     static FinScene s_end;
@@ -90,6 +92,7 @@ inline void registerAllScenes()
         makeScene(s_wait),
         makeScene(s_captura),
         makeScene(s_captura_menu),
+        makeScene(s_confirmar_fin_captura),
         makeScene(s_captura_flujo),
         makeScene(s_time_end),
         makeScene(s_end),
