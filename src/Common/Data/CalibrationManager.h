@@ -5,6 +5,7 @@
 #include "../Effectors/Motor.h"
 #include "Components.h"
 #include "Profiler.h"
+#include "OptionalNvsReader.h"
 #include <Preferences.h>
 #include <math.h>
 #include <stddef.h>
@@ -74,12 +75,9 @@ public:
     void loadPumpOrder()
     {
         pumpWeak = -1;
-        Preferences preferences;
-        if (!preferences.begin("eolo_calib", true))
-            return;
+        OptionalNvsReader reader("eolo_calib");
         PumpOrderModel::Record record = {};
-        const bool read = preferences.getBytes("pumpOrder", &record, sizeof(record)) == sizeof(record);
-        preferences.end();
+        const bool read = reader.readBlob("pumpOrder", &record, sizeof(record)) == OptionalNvsReader::Result::Ok;
         if (read && PumpOrderModel::valid(record))
         {
             pumpWeak = record.weak;
@@ -149,12 +147,22 @@ public:
             return false;
         }
         Preferences preferences;
-        preferences.begin("eolo_calib", false);
+        if (!preferences.begin("eolo_calib", false)) {
+            LOG_LN("No se pudo abrir NVS para guardar calibración");
+            return false;
+        }
 
         CalibrationSlot a = {}, b = {};
-        preferences.getBytes("slot0", &a, sizeof(a));
-        preferences.getBytes("slot1", &b, sizeof(b));
-        const bool va = validSlot(a), vb = validSlot(b);
+        OptionalNvsReader reader("eolo_calib");
+        const auto readA = reader.readBlob("slot0", &a, sizeof(a));
+        const auto readB = reader.readBlob("slot1", &b, sizeof(b));
+        if (readA == OptionalNvsReader::Result::Error || readB == OptionalNvsReader::Result::Error) {
+            preferences.end();
+            LOG_LN("No se pudo evaluar la calibración anterior; guardado cancelado");
+            return false;
+        }
+        const bool va = readA == OptionalNvsReader::Result::Ok && validSlot(a);
+        const bool vb = readB == OptionalNvsReader::Result::Ok && validSlot(b);
         const uint32_t generation = va && vb ? (a.generation > b.generation ? a.generation : b.generation) + 1UL :
                                     va ? a.generation + 1UL : vb ? b.generation + 1UL : 1UL;
         const char *key = (!va || (vb && b.generation >= a.generation)) ? "slot0" : "slot1";
@@ -190,13 +198,16 @@ public:
 
     bool load()
     {
-        Preferences preferences;
-        preferences.begin("eolo_calib", true);
-
         CalibrationSlot a = {}, b = {};
-        preferences.getBytes("slot0", &a, sizeof(a));
-        preferences.getBytes("slot1", &b, sizeof(b));
-        const bool va = validSlot(a), vb = validSlot(b);
+        OptionalNvsReader reader("eolo_calib");
+        const auto readA = reader.readBlob("slot0", &a, sizeof(a));
+        const auto readB = reader.readBlob("slot1", &b, sizeof(b));
+        const bool va = readA == OptionalNvsReader::Result::Ok && validSlot(a);
+        const bool vb = readB == OptionalNvsReader::Result::Ok && validSlot(b);
+        if (readA == OptionalNvsReader::Result::Ok && !va)
+            LOG_LN("Calibración slot0 inválida; se buscará otra copia");
+        if (readB == OptionalNvsReader::Result::Ok && !vb)
+            LOG_LN("Calibración slot1 inválida; se buscará otra copia");
         if (va || vb)
         {
             const CalibrationSlot &best = (!vb || (va && a.generation >= b.generation)) ? a : b;
@@ -204,12 +215,26 @@ public:
             memcpy(pwm0, best.pwm0, numPoints * sizeof(int));
             memcpy(pwm1, best.pwm1, numPoints * sizeof(int));
             memcpy(flows, best.flow, numPoints * sizeof(float));
-            preferences.end();
             isLoaded = true;
             LOG_F("Calibración v4 cargada (generación %lu, %d puntos)\n", (unsigned long)best.generation, numPoints);
             return true;
         }
 
+        if (reader.status() == OptionalNvsReader::Result::Missing) {
+            LOG_LN("No hay calibración guardada en Flash");
+            isLoaded = false;
+            return false;
+        }
+        if (reader.status() == OptionalNvsReader::Result::Error) {
+            isLoaded = false;
+            return false;
+        }
+
+        Preferences preferences;
+        if (!preferences.begin("eolo_calib", true)) {
+            isLoaded = false;
+            return false;
+        }
         uint8_t calVersion = preferences.getUChar("calVersion", 0);
 
         if (calVersion != 3)
@@ -218,6 +243,13 @@ public:
             if (calVersion > 0)
             {
                 LOG_F("Calibración v%d encontrada — incompatible, se requiere recalibración.\n", calVersion);
+            }
+            else if (readA == OptionalNvsReader::Result::Error || readB == OptionalNvsReader::Result::Error ||
+                     readA == OptionalNvsReader::Result::Invalid || readB == OptionalNvsReader::Result::Invalid ||
+                     (readA == OptionalNvsReader::Result::Ok && !va) ||
+                     (readB == OptionalNvsReader::Result::Ok && !vb))
+            {
+                LOG_LN("No se pudo leer una calibración válida desde Flash");
             }
             else
             {

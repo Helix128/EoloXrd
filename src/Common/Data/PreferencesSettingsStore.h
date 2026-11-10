@@ -3,6 +3,7 @@
 
 #include <Preferences.h>
 #include <Eolo/Services/SettingsStore.h>
+#include "OptionalNvsReader.h"
 
 // Adaptador NVS para los contratos portables de SettingsStore.  Cada
 // operación abre/cierra el namespace para que el objeto pueda ser compartido
@@ -17,6 +18,11 @@ class PreferencesSettingsStore final : public SettingsStore
 
     bool open(bool readOnly)
     {
+        if (readOnly) {
+            OptionalNvsReader reader(_namespace);
+            if (reader.status() != OptionalNvsReader::Result::Ok)
+                return false;
+        }
         return _namespace != nullptr && _preferences.begin(_namespace, readOnly);
     }
 
@@ -33,11 +39,10 @@ public:
 
     bool getBytes(const char *key, void *data, size_t len) override
     {
-        if (key == nullptr || data == nullptr || !open(true))
+        if (key == nullptr || data == nullptr)
             return false;
-        const bool ok = _preferences.getBytes(key, data, len) == len;
-        _preferences.end();
-        return ok;
+        OptionalNvsReader reader(_namespace);
+        return reader.readBlob(key, data, len) == OptionalNvsReader::Result::Ok;
     }
 
     bool putBytes(const char *key, const void *data, size_t len) override
@@ -51,11 +56,11 @@ public:
 
     bool getBool(const char *key, bool defaultValue) override
     {
-        if (key == nullptr || !open(true))
+        if (key == nullptr)
             return defaultValue;
-        const bool result = _preferences.getBool(key, defaultValue);
-        _preferences.end();
-        return result;
+        OptionalNvsReader reader(_namespace);
+        uint8_t value = defaultValue ? 1 : 0;
+        return reader.readU8(key, value) == OptionalNvsReader::Result::Ok ? value == 1 : defaultValue;
     }
 
     bool putBool(const char *key, bool value) override
