@@ -206,7 +206,8 @@ struct Context
     bool isCaptureActive() { return true; }
     bool isCapturePaused() { return false; }
     void startBootInitTask() {}
-    void acknowledgeBootPhaseRendered() {}
+    uint32_t currentBootPhaseRevision() const { return 0; }
+    void acknowledgeBootPhaseRendered(uint32_t) {}
 };
 
 class SceneManager

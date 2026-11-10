@@ -142,7 +142,7 @@ public:
     // lectura, nunca congelar el equipo.
     bool lock(uint32_t timeoutMs = LOCK_TIMEOUT_MS) {
         if (!_mutex)
-            return true;
+            return false;
         return xSemaphoreTakeRecursive(_mutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
     }
 
@@ -384,9 +384,14 @@ public:
 
     // Recuperación conservadora del periférico y, si hace falta, de un
     // esclavo que dejó SDA retenida. Debe invocarse desde el worker I2C.
-    bool recoverBus() {
-        Guard guard(LOCK_TIMEOUT_MS);
+    bool recoverBus(bool requireStuckLines = false) {
+        // Una lectura de SDA/SCL durante una transacción normal puede ser LOW.
+        // La recuperación automática solo comprueba líneas con el bus libre;
+        // si está ocupado, el worker podrá intentarlo de nuevo más adelante.
+        Guard guard(requireStuckLines ? 0 : LOCK_TIMEOUT_MS);
         if (!guard.acquired())
+            return false;
+        if (requireStuckLines && !linesStuck())
             return false;
 
         Wire.end();

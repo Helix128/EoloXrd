@@ -71,7 +71,7 @@ typedef struct Context
     CaptureSafetyFault captureStartFault = CaptureSafetyFault::None;
 
     static constexpr int CAPTURE_INTERVAL = CaptureController::CAPTURE_INTERVAL;
-    bool uiDirty = true;
+    std::atomic_bool uiDirty{true};
 
     UiSnapshot uiSnapshot;
     TaskHandle_t bootTaskHandle = nullptr;
@@ -204,9 +204,9 @@ public:
         return bootPhaseRevision.load();
     }
 
-    void acknowledgeBootPhaseRendered()
+    void acknowledgeBootPhaseRendered(uint32_t revision)
     {
-        bootPhaseRenderedRevision = bootPhaseRevision.load();
+        bootPhaseRenderedRevision = revision;
     }
 
     void waitForBootPhaseRendered(uint32_t revision, uint32_t timeoutMs = 250UL)
@@ -466,11 +466,13 @@ public:
         if (!spiGuard.acquired())
             return false;
 #if !EOLO_DISPLAY_SPI
+        if (I2CDisplayTransport::lost)
+            return false;
         const uint32_t dropsBefore = I2CDisplayTransport::dropCount;
 #endif
         command();
 #if !EOLO_DISPLAY_SPI
-        return I2CDisplayTransport::dropCount == dropsBefore;
+        return !I2CDisplayTransport::lost && I2CDisplayTransport::dropCount == dropsBefore;
 #else
         return true;
 #endif
@@ -933,8 +935,8 @@ public:
             // La rutina de seguridad ya apagó el motor y marcó la captura como
             // terminada; no se permite que el ciclo vuelva a llamar al PID.
             bool statusChanged = updateUiSnapshot();
-            bool changed = inputChanged || statusChanged || uiDirty;
-            uiDirty = false;
+            bool dirty = uiDirty.exchange(false);
+            bool changed = inputChanged || statusChanged || dirty;
             return changed;
         }
 #endif
@@ -944,8 +946,8 @@ public:
 #endif
         updateCapture();
         bool statusChanged = updateUiSnapshot();
-        bool changed = inputChanged || statusChanged || uiDirty;
-        uiDirty = false;
+        bool dirty = uiDirty.exchange(false);
+        bool changed = inputChanged || statusChanged || dirty;
         return changed;
     }
 

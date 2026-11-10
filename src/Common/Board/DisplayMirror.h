@@ -6,6 +6,9 @@
 #ifndef FEATURE_HEADLESS
 #include <U8g2lib.h>
 #include "../../Variants/Legacy.h"
+#if !EOLO_DISPLAY_SPI
+#include "I2CDisplayTransport.h"
+#endif
 #endif
 
 // Espejo de la pantalla por serie para depurar sin OLED (ver
@@ -89,11 +92,20 @@ class MirroredDisplay : public Driver
 public:
     using Driver::Driver;
 
-    void sendBuffer()
+    bool sendBuffer()
     {
+#if !EOLO_DISPLAY_SPI
+        I2CDisplayTransport::beginFrame();
+#endif
         Driver::sendBuffer();
+#if !EOLO_DISPLAY_SPI
+        const bool delivered = I2CDisplayTransport::endFrame();
+#else
+        const bool delivered = true;
+#endif
         DisplayMirror::emit(this->getBufferPtr(), this->getBufferTileWidth(),
                             this->getBufferTileHeight());
+        return delivered;
     }
 };
 

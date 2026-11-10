@@ -30,9 +30,18 @@ public:
 
     bool begin() {
         _lastFailure = InitFailure::Nack7677;
-        if (I2CBus::getInstance().linesStuck()) {
-            _lastFailure = InitFailure::BusStuck;
-            return false;
+        {
+            // Una línea LOW durante una transferencia OLED es normal. Solo
+            // inspeccionar el bus mientras ninguna otra tarea lo está usando.
+            I2CBus::Guard guard;
+            if (!guard.acquired()) {
+                _lastFailure = InitFailure::BusBusy;
+                return false;
+            }
+            if (I2CBus::getInstance().linesStuck()) {
+                _lastFailure = InitFailure::BusStuck;
+                return false;
+            }
         }
         static constexpr uint8_t candidates[] = {0x76, 0x77};
         for (uint8_t candidate : candidates) {

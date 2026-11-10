@@ -149,10 +149,13 @@ private:
                               stats.lastResult == I2CBus::Result::BusError;
       bool simultaneousFailures = bus.recentFailureCount(1000UL) >= 2;
       uint32_t current = millis();
-      if ((transportFailure && bus.linesStuck()) || simultaneousFailures) {
+      if (transportFailure || simultaneousFailures) {
         if (current - lastRecoveryMs < 5000UL)
           return;
-        if (bus.recoverBus()) {
+        // La lectura de líneas y la recuperación deben ser atómicas respecto
+        // a otros usuarios del bus. Los fallos simultáneos conservan su
+        // recuperación aunque las líneas hayan quedado libres.
+        if (bus.recoverBus(!simultaneousFailures)) {
           lastRecoveryMs = current;
           seenRecoveries++;
           LOG_LN("I2C bus recuperado; se revalidarán los sensores");

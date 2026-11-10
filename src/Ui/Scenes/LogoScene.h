@@ -127,6 +127,7 @@ private:
     {
         ctx.u8g2.clearBuffer();
 
+        const uint32_t revision = ctx.currentBootPhaseRevision();
         const Context::BootPhase phase = ctx.bootPhase.load();
         const bool sdWarning = phase == Context::BootPhase::Ready &&
                                (ctx.sdStatus() == SD_MISSING || ctx.sdStatus() == SD_ERROR);
@@ -136,8 +137,8 @@ private:
         ctx.u8g2.setBitmapMode(1);
         drawLogo(ctx);
         drawBootStages(ctx, phase);
-        ctx.u8g2.sendBuffer();
-        ctx.acknowledgeBootPhaseRendered();
+        if (ctx.u8g2.sendBuffer())
+            ctx.acknowledgeBootPhaseRendered(revision);
     }
 
 public:

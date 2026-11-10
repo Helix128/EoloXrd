@@ -26,6 +26,9 @@ constexpr uint8_t LostAfterFailures = 3;
 // protección.
 inline bool skipping = false;
 inline bool dropReported = false;
+inline bool frameActive = false;
+inline bool frameFailed = false;
+inline bool shortWrite = false;
 // Transferencias descartadas por bus ocupado o fallidas en el panel. Quien
 // envía un comando que no admite perderse (encender, contraste) compara el
 // contador antes y después.
@@ -35,6 +38,20 @@ inline uint8_t consecutiveFailures = 0;
 // reinicializa cuando vuelve a responder.
 inline bool lost = false;
 inline uint32_t transferStartMs = 0;
+
+// El controlador muestra cada página al recibirla: un frame fallido se
+// abandona y se repinta completo en el siguiente turno de la escena.
+inline void beginFrame()
+{
+    frameActive = true;
+    frameFailed = lost;
+}
+
+inline bool endFrame()
+{
+    frameActive = false;
+    return !frameFailed;
+}
 
 inline void recordFailure()
 {
@@ -58,8 +75,10 @@ inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
     case U8X8_MSG_BYTE_SET_DC:
         return 1;
     case U8X8_MSG_BYTE_START_TRANSFER:
-        if (lost)
+        if (lost || (frameActive && frameFailed))
         {
+            if (frameActive)
+                frameFailed = true;
             skipping = true;
             return 1;
         }
@@ -68,6 +87,8 @@ inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
             // Se descarta la transferencia; el siguiente frame repinta todo.
             skipping = true;
             dropCount++;
+            if (frameActive)
+                frameFailed = true;
             if (!dropReported)
             {
                 dropReported = true;
@@ -76,12 +97,13 @@ inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
             return 1;
         }
         skipping = false;
+        shortWrite = false;
         transferStartMs = millis();
         Wire.beginTransmission(u8x8_GetI2CAddress(u8x8) >> 1);
         return 1;
     case U8X8_MSG_BYTE_SEND:
-        if (!skipping)
-            Wire.write(static_cast<const uint8_t *>(ptr), arg);
+        if (!skipping && Wire.write(static_cast<const uint8_t *>(ptr), arg) != arg)
+            shortWrite = true;
         return 1;
     case U8X8_MSG_BYTE_END_TRANSFER:
     {
@@ -93,13 +115,18 @@ inline uint8_t byteCallback(u8x8_t *u8x8, uint8_t msg, uint8_t arg, void *ptr)
         const uint8_t error = Wire.endTransmission();
         const uint32_t elapsedMs = millis() - transferStartMs;
         I2CBus &bus = I2CBus::getInstance();
-        const I2CBus::Result result = I2CBus::resultFromTransmissionError(error, elapsedMs);
+        const I2CBus::Result result = shortWrite ? I2CBus::Result::BusError :
+                                      I2CBus::resultFromTransmissionError(error, elapsedMs);
         bus.recordResult(u8x8_GetI2CAddress(u8x8) >> 1, result, elapsedMs);
         bus.unlock();
         if (result == I2CBus::Result::Ok)
             consecutiveFailures = 0;
         else
+        {
+            if (frameActive)
+                frameFailed = true;
             recordFailure();
+        }
         vTaskDelay(1);
         return 1;
     }

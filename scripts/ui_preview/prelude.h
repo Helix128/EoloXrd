@@ -22,6 +22,7 @@ struct PreviewDisplay : public U8G2
     {
         u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_byte_empty, u8x8_dummy_cb);
     }
+    bool sendBuffer() { U8G2::sendBuffer(); return true; }
 };
 #define EOLO_DISPLAY_MODEL PreviewDisplay
 // El espejo serie no existe en el PC: la pantalla de escenas es el stub tal cual.
