@@ -50,7 +50,7 @@ Los pines también están documentados en [docs/hardware/pinouts/](../hardware/p
 
 ## Backend I²C
 
-`EOLO_I2C_DIRECT_DRIVERS` elige el backend de todos los sensores I²C a la vez: `1` usa los drivers directos (`DirectDS3231`, `DirectBME280`) y `0` usa RTClib y Adafruit BME280. No se mezclan porque Adafruit BusIO puede reinicializar `Wire` durante un reintento y perturbar a los drivers directos. Express y Express Rev.1 usan `0`; los demás entornos, `1`.
+`EOLO_I2C_DIRECT_DRIVERS` elige el backend del BME280: `1` usa `DirectBME280` y `0` usa Adafruit BME280. El RTC usa siempre `DirectDS3231`, cuyas operaciones comprueban errores de transporte. Los sensores comparten el mutex del bus; la inicialización Adafruit restaura el reloj y timeout antes de liberarlo. Express y Express Rev.1 usan `0`; los demás entornos, `1`.
 
 ## Mini Rev.2 y Mini Rev.1
 

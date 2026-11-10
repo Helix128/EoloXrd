@@ -10,9 +10,17 @@ MODELS = {
     "standard": "EOLO_MODEL_STANDARD",
     "express": "EOLO_MODEL_EXPRESS",
     "express_legacy": "EOLO_MODEL_EXPRESS_LEGACY",
+    "express_legacy_spi": "EOLO_MODEL_EXPRESS_LEGACY_SPI",
 }
 
 DEMO_CONFIG = {
+    "SystemDiag": {
+        "models": list(MODELS),
+        "lib_deps": [
+            "adafruit/Adafruit Unified Sensor@^1.1.15",
+            "adafruit/Adafruit BME280 Library@^2.3.0",
+        ],
+    },
     "AFM07": {
         "models": ["dron_legacy", "standard", "express", "express_legacy"],
         "lib_deps": ["4-20ma/ModbusMaster@^2.0.1"],

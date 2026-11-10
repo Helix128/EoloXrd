@@ -9,8 +9,12 @@
 #define EOLO_TARGET_STANDARD
 #elif defined(EOLO_MODEL_EXPRESS)
 #define EOLO_TARGET_EXPRESS
-#elif defined(EOLO_MODEL_EXPRESS_LEGACY)
+#elif defined(EOLO_MODEL_EXPRESS_LEGACY) || defined(EOLO_MODEL_EXPRESS_LEGACY_SPI)
 #define EOLO_TARGET_EXPRESS_LEGACY
+#if defined(EOLO_MODEL_EXPRESS_LEGACY_SPI)
+#define EOLO_PINOUT EXPRESS_REV1_ALT
+#define EOLO_DISPLAY SSD1309_SW_SPI
+#endif
 #else
 #error "Define un EOLO_MODEL_* antes de incluir EoloDemoPinout.h"
 #endif

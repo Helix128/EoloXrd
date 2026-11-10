@@ -27,7 +27,11 @@ def resolve_demo(name):
     return demo
 
 
-def resolve_model(model):
+def resolve_model(model, demo_name=None):
+    if model is None:
+        if demo_name == "SystemDiag":
+            raise SystemExit("SystemDiag requiere indicar el modelo físico explícitamente.")
+        model = "dron_legacy"
     if model not in MODELS:
         known = ", ".join(MODELS.keys())
         raise SystemExit(f"Modelo desconocido: {model}. Disponibles: {known}")
@@ -69,7 +73,7 @@ def list_demos(_args):
 
 def build_or_upload(args, target=None):
     demo_name = resolve_demo(args.demo)
-    model = resolve_model(args.model)
+    model = resolve_model(args.model, demo_name)
     ensure_supported(demo_name, model)
     env = env_name(demo_name, model)
     pio_args = ["run", "-e", env]
@@ -83,7 +87,7 @@ def build_or_upload(args, target=None):
 
 def monitor(args):
     demo_name = resolve_demo(args.demo)
-    model = resolve_model(args.model)
+    model = resolve_model(args.model, demo_name)
     ensure_supported(demo_name, model)
     env = env_name(demo_name, model)
     return run_pio(["device", "monitor", "-e", env])
@@ -110,7 +114,7 @@ def main():
     for command in ("build", "upload"):
         p = sub.add_parser(command, help=f"{command} a demo environment.")
         p.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
-        p.add_argument("model", nargs="?", default="dron_legacy", help="Board model. Default: dron_legacy.")
+        p.add_argument("model", nargs="?", help="Board model. Default: dron_legacy, except SystemDiag (required).")
         p.add_argument("--tag", default="", help="Optional version tag for this build.")
         p.set_defaults(func={
             "build": lambda a: build_or_upload(a),
@@ -119,7 +123,7 @@ def main():
 
     p_mon = sub.add_parser("monitor", help="Monitor serial output for a demo environment.")
     p_mon.add_argument("demo", help="Demo name, for example AFM07 or BME280.")
-    p_mon.add_argument("model", nargs="?", default="dron_legacy", help="Board model. Default: dron_legacy.")
+    p_mon.add_argument("model", nargs="?", help="Board model. Default: dron_legacy, except SystemDiag (required).")
     p_mon.set_defaults(func=monitor)
 
     args = parser.parse_args()

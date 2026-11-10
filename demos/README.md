@@ -27,8 +27,9 @@ No son un segundo firmware: reutilizan los modelos de `EoloCore` y los pines de 
 | `MotorDirDiag` | Dirección del PWM de las bombas, con control por serial; arranca siempre en 0 | `express` |
 | `Plantower` | Sensor de partículas PMS por UART | `standard`, `express`, `express_legacy` |
 | `SPIStandardDisplayDiag` | Demo secuencial completo de EOLO-MP (v24): OLED SSD1309 por VSPI, bombas, AFM07, anemómetro, BME280, RTC y SD | `standard` |
+| `SystemDiag` | Inventario y diagnóstico serial por perfil de la placa | `dron`, `dron_legacy`, `standard`, `express`, `express_legacy`, `express_legacy_spi` |
 
-La tabla sale de `scripts/demo_config.py`; `./scripts/demo.py list` muestra lo mismo. Los modelos son `dron` (EOLO Mini Rev.2), `dron_legacy` (Mini Rev.1), `standard` (EOLO-MP Rev.1), `express` (Express Rev.2) y `express_legacy` (Express Rev.1). `DronFull` y `DynamicMotorCalibration` son herramientas de diagnóstico, no parte del flujo productivo.
+La tabla sale de `scripts/demo_config.py`; `./scripts/demo.py list` muestra lo mismo. Los modelos son `dron` (EOLO Mini Rev.2), `dron_legacy` (Mini Rev.1), `standard` (EOLO-MP Rev.1), `express` (Express Rev.2), `express_legacy` (Express Rev.1) y `express_legacy_spi` (Express Rev.1 con cableado alternativo). `DronFull` y `DynamicMotorCalibration` son herramientas de diagnóstico, no parte del flujo productivo.
 
 ## Compilar, subir y monitorear
 
@@ -50,6 +51,63 @@ pio run -e demo_afm07_dron_legacy -t demo_info       # resumen del entorno
 ```
 
 `scripts/check_all.sh --with-demos` compila todas.
+
+## Diagnóstico SystemDiag
+
+Selecciona explícitamente el modelo físico: no existe una identificación
+automática fiable y los mismos GPIO pueden tener funciones distintas entre
+placas. Cargar esta demo reemplaza el firmware de aplicación: conserva antes
+un respaldo verificable del firmware instalado y cómo restaurarlo. Un respaldo
+de una compilación local no demuestra que sea idéntica al firmware instalado.
+
+Para EOLO Express Rev.1, por ejemplo:
+
+```bash
+./scripts/demo.py build SystemDiag express_legacy
+./scripts/demo.py upload SystemDiag express_legacy
+./scripts/demo.py monitor SystemDiag express_legacy
+```
+
+La demo utiliza el pinout del perfil seleccionado; no valida automáticamente
+que corresponda a la placa conectada. `express_legacy_spi` selecciona el
+[cableado alternativo con OLED SPI](../docs/hardware/pinouts/eolo-express-legacy-alt.md),
+todavía sin validar físicamente. No lo selecciones si desconoces el cableado
+de la placa.
+
+En el monitor, escribe `r` para repetir la ronda o `p` para escuchar el
+Plantower hasta 30 segundos. Una trama válida con PM cero se distingue de la
+ausencia de datos válidos; en ese caso se muestran bytes, cabeceras y una muestra
+hexadecimal. Según las capacidades del perfil, comprueba:
+
+- Bus I²C y lectura de BME280, estado OSF del RTC, FS3000, encoder y batería
+  doble cuando corresponda.
+- Montaje y lectura de la raíz de la SD; existencia de claves NVS.
+- Entradas de batería ADC, NTC y DIP; comunicación Modbus con AFM07 y
+  anemómetro; recepción UART del Plantower, cuando el perfil los contempla.
+
+Las pruebas no verifican funcionamiento de motores, imagen de la pantalla,
+precisión de sensores, validez de los datos NVS, escritura en SD ni módem.
+Una respuesta I²C por sí sola no demuestra que el dispositivo funcione ni que
+la placa sea de un modelo determinado. El diagnóstico no solicita escritura en
+RTC, NVS ni archivos de la SD, ni ejecuta una prueba de motores. El BME280 se configura
+temporalmente para tomar la muestra. La demo ejecuta pruebas secuenciales y no
+reproduce la concurrencia del firmware productivo.
+
+Para pruebas adicionales, consulta las demos compatibles de la tabla: por
+ejemplo, `DronI2CDiag` y `DronSdDiag` para Mini Rev.2, `DronFull` para Mini
+Rev.1, `SPIStandardDisplayDiag` para EOLO-MP, `I2CDisplayDiag` y `MotorDirDiag`
+para Express Rev.2, y `FS3000FlowTune` para Express Rev.1. Algunas activan
+motores o realizan escrituras: revisa sus instrucciones antes de ejecutarlas.
+
+Para comprobar la compilación de todos los perfiles:
+
+```bash
+for modelo in dron dron_legacy standard express express_legacy express_legacy_spi; do
+    ./scripts/demo.py build SystemDiag "$modelo" || break
+done
+```
+
+La compilación no sustituye las pruebas físicas con cada placa.
 
 ## Pines
 
