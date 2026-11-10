@@ -17,6 +17,7 @@ private:
     TaskHandle_t _taskHandle = nullptr;
     SemaphoreHandle_t _mutex = nullptr;
     PlantowerData _data = {};
+    uint32_t _lastValidMs = 0;
     PlantowerParser _parser;
 
     static void taskWorker(void* arg) {
@@ -25,13 +26,38 @@ private:
         // Inicialización dinámica del bus inyectado
         self->_serial->begin(9600, SERIAL_8N1, self->_rxPin, self->_txPin);
 
+        const uint32_t startedMs = millis();
+        uint32_t lastExpiryCheckMs = startedMs;
+        bool receivedFrame = false;
+        bool unavailableReported = false;
         while (true) {
+            const uint32_t nowMs = millis();
+            if (static_cast<uint32_t>(nowMs - lastExpiryCheckMs) >= 1000UL) {
+                if (xSemaphoreTake(self->_mutex, 0) == pdTRUE) {
+                    self->_data.valid = self->_data.freshAt(nowMs, self->_lastValidMs);
+                    const uint32_t sinceMs = receivedFrame ? self->_lastValidMs : startedMs;
+                    const bool reportUnavailable = !self->_data.valid && !unavailableReported &&
+                        static_cast<uint32_t>(nowMs - sinceMs) > PlantowerData::StaleAfterMs;
+                    xSemaphoreGive(self->_mutex);
+                    if (reportUnavailable) {
+                        LOG_LN(receivedFrame ? "Plantower sin trama valida reciente" :
+                                               "Plantower no recibio una primera trama valida");
+                        unavailableReported = true;
+                    }
+                }
+                lastExpiryCheckMs = nowMs;
+            }
             if (self->_serial->available()) {
                 uint8_t ch = self->_serial->read();
                 if (self->_parser.processByte(ch)) {
                     if (xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
                         self->_data = self->_parser.getData();
+                        self->_lastValidMs = millis();
                         xSemaphoreGive(self->_mutex);
+                        if (unavailableReported)
+                            LOG_LN("Plantower recuperado; trama valida recibida");
+                        receivedFrame = true;
+                        unavailableReported = false;
                     }
                 }
             } else {
@@ -77,7 +103,9 @@ public:
 
     bool getData(PlantowerData& output) {
         bool success = false;
-        if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        output = {};
+        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            _data.valid = _data.freshAt(millis(), _lastValidMs);
             output = _data;
             success = _data.valid;
             xSemaphoreGive(_mutex);

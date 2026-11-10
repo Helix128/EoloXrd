@@ -669,6 +669,42 @@ static void test_plantower_frame_and_checksum()
     parsed = false;
     for (uint8_t byte : frame) parsed = invalid.processByte(byte) || parsed;
     TEST_ASSERT_FALSE(parsed);
+
+    // Un sensor sin tramas y una trama válida con concentración cero son
+    // estados distintos, aunque ambos DTO contengan números inicializados a 0.
+    PlantowerParser zero;
+    TEST_ASSERT_FALSE(zero.getData().valid);
+    uint8_t zeroFrame[32] = {0x42, 0x4d, 0x00, 0x1c};
+    uint16_t zeroChecksum = 0;
+    for (int i = 0; i < 30; ++i) zeroChecksum += zeroFrame[i];
+    zeroFrame[30] = static_cast<uint8_t>(zeroChecksum >> 8);
+    zeroFrame[31] = static_cast<uint8_t>(zeroChecksum);
+    parsed = false;
+    for (uint8_t byte : zeroFrame) parsed = zero.processByte(byte) || parsed;
+    TEST_ASSERT_TRUE(parsed);
+    TEST_ASSERT_TRUE(zero.getData().valid);
+    TEST_ASSERT_EQUAL_UINT16(0, zero.getData().pm2_5);
+}
+
+static void test_plantower_freshness_expires_and_recovers()
+{
+    PlantowerData reading;
+    TEST_ASSERT_FALSE(reading.freshAt(100, 100));
+
+    // Los valores cero son válidos si llegaron en una trama válida.
+    reading.valid = true;
+    TEST_ASSERT_TRUE(reading.freshAt(0, 0));
+    TEST_ASSERT_TRUE(reading.freshAt(PlantowerData::StaleAfterMs, 0));
+    reading.valid = reading.freshAt(PlantowerData::StaleAfterMs + 1, 0);
+    TEST_ASSERT_FALSE(reading.valid);
+    TEST_ASSERT_FALSE(reading.freshAt(PlantowerData::StaleAfterMs + 1, PlantowerData::StaleAfterMs + 1));
+
+    // Una trama nueva restaura la validez, incluso al desbordar millis().
+    reading.valid = true;
+    const uint32_t last = UINT32_MAX - 100;
+    TEST_ASSERT_TRUE(reading.freshAt(99, last));
+    TEST_ASSERT_FALSE(reading.freshAt(PlantowerData::StaleAfterMs, last));
+    TEST_ASSERT_TRUE(reading.freshAt(PlantowerData::StaleAfterMs, PlantowerData::StaleAfterMs));
 }
 
 static void test_capture_state_machine_actions()
@@ -2732,6 +2768,7 @@ int main(int, char **)
     RUN_TEST(test_afm_safety_retries_before_blocking);
     RUN_TEST(test_capture_safety_blocks_missing_prerequisites);
     RUN_TEST(test_plantower_frame_and_checksum);
+    RUN_TEST(test_plantower_freshness_expires_and_recovers);
     RUN_TEST(test_capture_state_machine_actions);
     RUN_TEST(test_motor_calibration_model);
     RUN_TEST(test_thermal_protection_dto);
