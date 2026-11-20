@@ -19,6 +19,9 @@ public:
             ctx.rtcAdjustReturnScene = OpcionesScene::Name;
             SceneManager::setScene("rtc_adjust", ctx);
         });
+#ifdef FEATURE_FLOW_AFM07
+        addOption("Factor AFM", [](Context &ctx) { SceneManager::setScene("afm_factor", ctx); });
+#endif
         addOption("Volver", [](Context &ctx) { SceneManager::setScene(ctx.optionsReturnScene, ctx); });
     }
 };

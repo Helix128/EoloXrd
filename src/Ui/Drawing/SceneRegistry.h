@@ -15,6 +15,7 @@
 #include "../Scenes/Setup/PlantowerScene.h"
 #include "../Scenes/Setup/OpcionesScene.h"
 #include "../Scenes/Setup/PantallaScene.h"
+#include "../Scenes/Setup/AfmFactorScene.h"
 #include "../Scenes/Captura/WaitScene.h"
 #include "../Scenes/Captura/CapturaScene.h"
 #include "../Scenes/Captura/MenuCapturaScene.h"
@@ -76,6 +77,9 @@ inline void registerAllScenes()
     static AcercaDeScene s_acerca_de;
     static OpcionesScene s_opciones;
     static PantallaScene s_pantalla;
+#ifdef FEATURE_FLOW_AFM07
+    static AfmFactorScene s_afm_factor;
+#endif
 
     static const SceneEntry scenes[] = {
         makeScene(s_splash),
@@ -101,6 +105,9 @@ inline void registerAllScenes()
         makeScene(s_acerca_de),
         makeScene(s_opciones),
         makeScene(s_pantalla),
+#ifdef FEATURE_FLOW_AFM07
+        makeScene(s_afm_factor),
+#endif
         makeScene(s_pump_order),
     };
 
