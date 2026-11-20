@@ -94,19 +94,26 @@ public:
 
     bool sendBuffer()
     {
+        bool delivered = true;
+        if (hardwareOutputEnabled_)
+        {
 #if !EOLO_DISPLAY_SPI
-        I2CDisplayTransport::beginFrame();
+            I2CDisplayTransport::beginFrame();
 #endif
-        Driver::sendBuffer();
+            Driver::sendBuffer();
 #if !EOLO_DISPLAY_SPI
-        const bool delivered = I2CDisplayTransport::endFrame();
-#else
-        const bool delivered = true;
+            delivered = I2CDisplayTransport::endFrame();
 #endif
+        }
         DisplayMirror::emit(this->getBufferPtr(), this->getBufferTileWidth(),
                             this->getBufferTileHeight());
         return delivered;
     }
+
+    void setHardwareOutputEnabled(bool enabled) { hardwareOutputEnabled_ = enabled; }
+
+private:
+    bool hardwareOutputEnabled_ = true;
 };
 
 using EoloDisplay = MirroredDisplay<EOLO_DISPLAY_MODEL>;

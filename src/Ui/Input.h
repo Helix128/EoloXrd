@@ -71,6 +71,18 @@ public:
     encoderDelta = 0;
   }
 
+  bool hasPendingInput() const
+  {
+    return encoderDelta.load() != 0 || buttonClick.load();
+  }
+
+  void consumePendingInput()
+  {
+    encoderDelta = 0;
+    buttonClick = false;
+    hasChanged = false;
+  }
+
   void begin()
   {
     if (isReady) {

@@ -113,7 +113,7 @@ public:
         }
 
         _frameStartMs = millis();
-        _lastFrameMs += kTargetMs;
+        _lastFrameMs = _frameStartMs;
 
         // Actualizar el contexto de la app y la escena actual
         const bool externalDirty = _context.update();

@@ -411,6 +411,7 @@ public:
 #endif
             ok = beginDisplayController();
             u8g2.setPowerSave(isDisplayOn ? 0 : 1);
+            u8g2.setHardwareOutputEnabled(isDisplayOn);
             u8g2.setContrast(appliedContrast);
         }
         markUiDirty();
@@ -462,9 +463,11 @@ public:
     bool tryDisplayCommand(Command &&command)
     {
 #ifndef FEATURE_HEADLESS
+#if EOLO_DISPLAY_SPI
         SPIBus::Guard spiGuard(pdMS_TO_TICKS(1));
         if (!spiGuard.acquired())
             return false;
+#endif
 #if !EOLO_DISPLAY_SPI
         if (I2CDisplayTransport::lost)
             return false;
@@ -488,6 +491,7 @@ public:
         if (!tryDisplayCommand([&] { u8g2.setPowerSave(on ? 0 : 1); }))
             return false;
         isDisplayOn = on;
+        u8g2.setHardwareOutputEnabled(on);
         return true;
 #else
         (void)on;
@@ -533,11 +537,11 @@ public:
             markUiDirty();
         // Subir (despertar) es inmediato; bajar se espacia. Si el comando no
         // llega, appliedContrast no cambia y se reintenta en el siguiente ciclo.
-        if (out.powerOn && out.contrast != appliedContrast &&
+        if (out.powerOn && isDisplayOn && out.contrast != appliedContrast &&
             (out.contrast > appliedContrast || millis() - lastContrastMs >= CONTRAST_STEP_MS))
             applyDisplayContrast(out.contrast);
-        if (!out.powerOn && isDisplayOn && setDisplayPower(false))
-            markUiDirty();
+        if (!out.powerOn && isDisplayOn)
+            setDisplayPower(false);
 #endif
     }
 
@@ -545,8 +549,9 @@ public:
     {
 #ifndef FEATURE_HEADLESS
         lastInputTime = millis();
-        components.input.hasChanged = false;
-        setDisplayPower(true);
+        (void)components.input.hasChanged.exchange(false);
+        if (setDisplayPower(true))
+            markUiDirty();
 #endif
     }
 
@@ -913,11 +918,14 @@ public:
 
         bool inputChanged = false;
 #ifndef FEATURE_HEADLESS
-        inputChanged = components.input.hasChanged;
-        if (components.input.hasChanged)
+        const bool wokeByInput =
+            components.input.hasChanged.exchange(false) || components.input.hasPendingInput();
+        if (wokeByInput)
         {
+            if (!isDisplayOn)
+                components.input.consumePendingInput();
+            inputChanged = true;
             lastInputTime = millis();
-            components.input.hasChanged = false;
             markUiDirty();
         }
         serviceDisplayLink();
