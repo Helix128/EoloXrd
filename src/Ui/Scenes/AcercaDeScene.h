@@ -1,6 +1,8 @@
 #ifndef ACERCA_DE_SCENE_H
 #define ACERCA_DE_SCENE_H
 
+#include <cstdio>
+#include <Eolo/Core/Version.h>
 #include "../Drawing/Fonts.h"
 #include "IScene.h"
 #include "../../Common/Data/Context.h"
@@ -32,21 +34,24 @@ public:
         ctx.u8g2.setBitmapMode(1);
 
         // Isotipo C+ a la izquierda
-        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 4, 22, 36, 32);
+        Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 4, 10, 36, 32);
 
         // Linea divisoria vertical
-        ctx.u8g2.drawVLine(46, 18, 42);
+        ctx.u8g2.drawVLine(46, 8, 36);
 
-        // Texto informativo a la derecha (Latin-1: \xF1 = n con tilde)
+        // Version del firmware a la derecha
+        char versionLabel[24];
+        std::snprintf(versionLabel, sizeof(versionLabel), "v%s", EoloCore::kFirmwareVersion);
+
         const int textX = 52;
         ctx.u8g2.setFont(FONT_LABEL);
-        ctx.u8g2.drawStr(textX, 26, "Firmware");
-        ctx.u8g2.setFont(FONT_VALUE);
-        ctx.u8g2.drawStr(textX, 36, "desarrollado por:");
-        ctx.u8g2.setFont(FONT_LABEL);
-        ctx.u8g2.drawStr(textX, 48, "Diego Mu\xF1oz");
-        ctx.u8g2.setFont(FONT_VALUE);
-        ctx.u8g2.drawStr(textX, 58, "| Helix128");
+        ctx.u8g2.drawStr(textX, 21, "Firmware");
+        ctx.u8g2.setFont(FONT_HERO);
+        ctx.u8g2.drawStr(textX, 39, versionLabel);
+
+        // Modelo centrado en la parte inferior
+        ctx.u8g2.drawHLine(4, 48, 120);
+        Renderer::centeredText(ctx.u8g2, EoloConfig::kModelName, Layout::CenterX, 60, FONT_VALUE);
 
         ctx.u8g2.sendBuffer();
     }

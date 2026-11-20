@@ -28,6 +28,7 @@
 #include <Eolo/Core/Time/RtcTimeParser.h>
 #include <Eolo/Types/HeadlessSetupTypes.h>
 #include <Eolo/Core/Power/BatteryMath.h>
+#include <Eolo/Core/Version.h>
 #include <Eolo/Core/Power/BatteryProtocol.h>
 #include <Eolo/Core/Communication/RS485Protocol.h>
 #include <Eolo/Core/Communication/RS485Stats.h>
@@ -456,6 +457,68 @@ static void test_afm07_fresh_stale_contract()
     TEST_ASSERT_TRUE(AFM07Model::refreshAge(data, lastSuccess, 2300, 1200, 15000));
     TEST_ASSERT_TRUE(data.stale);
     TEST_ASSERT_FALSE(AFM07Model::refreshAge(data, lastSuccess, 17001, 1200, 15000));
+}
+
+namespace
+{
+class MemorySettingsStore final : public SettingsStore
+{
+    uint32_t _value = 0;
+    bool _has = false;
+
+public:
+    bool getBytes(const char *, void *data, size_t len) override
+    {
+        if (!_has || len != sizeof(_value))
+            return false;
+        memcpy(data, &_value, len);
+        return true;
+    }
+    bool putBytes(const char *, const void *data, size_t len) override
+    {
+        if (len != sizeof(_value))
+            return false;
+        memcpy(&_value, data, len);
+        _has = true;
+        return true;
+    }
+    bool getBool(const char *, bool defaultValue) override { return defaultValue; }
+    bool putBool(const char *, bool) override { return false; }
+    void remove(const char *) override { _has = false; }
+};
+}
+
+static void test_afm07_detect_divisor_by_plausible_flow()
+{
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, AFM07Model::detectDivisor(40));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, AFM07Model::detectDivisor(400));
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, AFM07Model::detectDivisor(4000));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, AFM07Model::detectDivisor(150));
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, AFM07Model::detectDivisor(149));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, AFM07Model::detectDivisor(0));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, AFM07Model::detectDivisor(5));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, AFM07Model::detectDivisor(65000));
+}
+
+static void test_afm07_divisor_cycle_and_validation()
+{
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, AFM07Model::nextDivisor(10.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, AFM07Model::nextDivisor(100.0f));
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, AFM07Model::nextDivisor(1000.0f));
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, AFM07Model::nextDivisor(7.0f));
+    TEST_ASSERT_TRUE(AFM07Model::isSupportedDivisor(100.0f));
+    TEST_ASSERT_FALSE(AFM07Model::isSupportedDivisor(50.0f));
+}
+
+static void test_afm07_divisor_persists_and_rejects_invalid_store()
+{
+    MemorySettingsStore store;
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, AFM07Model::loadDivisor(store, 10.0f));
+    TEST_ASSERT_TRUE(AFM07Model::saveDivisor(store, 1000.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, AFM07Model::loadDivisor(store, 10.0f));
+    TEST_ASSERT_FALSE(AFM07Model::saveDivisor(store, 3.0f));
+    store.putUInt(AFM07Model::DivisorKey, 3);
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, AFM07Model::loadDivisor(store, 100.0f));
 }
 
 static void test_afm07_sample_at_millis_zero_and_wraparound()
@@ -2710,6 +2773,15 @@ static void test_fs3000_slow_start_does_not_latch_failure()
     TEST_ASSERT_EQUAL_UINT32(0, r.zeroFlowLatchMs);
 }
 
+static void test_firmware_version_is_injected_semver()
+{
+    TEST_ASSERT_NOT_NULL(EoloCore::kFirmwareVersion);
+    TEST_ASSERT_NOT_EQUAL(0, strcmp("dev", EoloCore::kFirmwareVersion));
+    int major = -1, minor = -1, patch = -1;
+    TEST_ASSERT_EQUAL_INT(3, sscanf(EoloCore::kFirmwareVersion, "%d.%d.%d", &major, &minor, &patch));
+    TEST_ASSERT_TRUE(major >= 1 && minor >= 0 && patch >= 0);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -2759,6 +2831,9 @@ int main(int, char **)
     RUN_TEST(test_fs3000_conversion_boundaries);
     RUN_TEST(test_fs3000_frame_separa_fallo_de_sin_flujo);
     RUN_TEST(test_afm07_fresh_stale_contract);
+    RUN_TEST(test_afm07_detect_divisor_by_plausible_flow);
+    RUN_TEST(test_afm07_divisor_cycle_and_validation);
+    RUN_TEST(test_afm07_divisor_persists_and_rejects_invalid_store);
     RUN_TEST(test_afm07_sample_at_millis_zero_and_wraparound);
     RUN_TEST(test_flow_volume_integrates_each_physical_sample);
     RUN_TEST(test_dron_pid_does_not_use_calibration_seed);
@@ -2809,5 +2884,6 @@ int main(int, char **)
     RUN_TEST(test_flow_smooth_law_low_target_starts_without_overshoot);
     RUN_TEST(test_flow_smooth_law_holds_pwm_when_flow_near_zero);
     RUN_TEST(test_flow_smooth_law_caps_single_motor_and_validates);
+    RUN_TEST(test_firmware_version_is_injected_semver);
     return UNITY_END();
 }

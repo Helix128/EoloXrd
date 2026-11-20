@@ -1,6 +1,8 @@
 #ifndef LOGO_SCENE_H
 #define LOGO_SCENE_H
 
+#include <cstdio>
+#include <Eolo/Core/Version.h>
 #include "../Drawing/Fonts.h"
 #include "IScene.h"
 #include "../../Common/Data/Context.h"
@@ -15,6 +17,7 @@ private:
     enum SceneState : uint8_t
     {
         PREPARING,
+        READY_PENDING,
         READY_HOLD,
         DONE
     };
@@ -25,6 +28,7 @@ private:
 
     static constexpr uint32_t MIN_VISIBLE_MS = 900UL;
     static constexpr uint32_t READY_HOLD_MS = 300UL;
+    static constexpr uint32_t READY_RETRY_MS = 900UL;
 
     static const char *bootPhaseText(Context::BootPhase phase)
     {
@@ -51,7 +55,12 @@ private:
         Renderer::scaledBitmap(ctx.u8g2, cmas, 128, 6, 7, 53, 48, 13, 4, 27, 25);
 
         ctx.u8g2.setFont(FONT_DISPLAY);
-        ctx.u8g2.drawStr(49, 25, "EOLO");
+        ctx.u8g2.drawStr(49, 20, "EOLO");
+
+        char versionLabel[24];
+        std::snprintf(versionLabel, sizeof(versionLabel), "v%s", EoloCore::kFirmwareVersion);
+        ctx.u8g2.setFont(FONT_VALUE);
+        ctx.u8g2.drawStr(49, 30, versionLabel);
     }
 
     void drawDetail(Context &ctx, Context::BootPhase phase)
@@ -123,7 +132,7 @@ private:
         }
     }
 
-    void drawBootScreen(Context &ctx)
+    bool drawBootScreen(Context &ctx)
     {
         ctx.u8g2.clearBuffer();
 
@@ -137,8 +146,17 @@ private:
         ctx.u8g2.setBitmapMode(1);
         drawLogo(ctx);
         drawBootStages(ctx, phase);
-        if (ctx.u8g2.sendBuffer())
-            ctx.acknowledgeBootPhaseRendered(revision);
+#if !EOLO_DISPLAY_SPI
+        // Si el bus está ocupado, esperar al siguiente cuadro antes de
+        // escribir una página. El transporte toma el mismo mutex recursivo.
+        I2CBus::Guard displayGuard(0);
+        if (!displayGuard.acquired())
+            return false;
+#endif
+        if (!ctx.u8g2.sendBuffer())
+            return false;
+        ctx.acknowledgeBootPhaseRendered(revision);
+        return true;
     }
 
 public:
@@ -160,11 +178,10 @@ public:
 
         if (currentState == PREPARING)
         {
-            drawBootScreen(ctx);
+            const bool delivered = drawBootScreen(ctx);
 
-            // Arrancar el worker después del primer frame permite que el
-            // usuario vea el estado inicial antes de que SD tome el SPI.
-            if (!bootTaskStarted)
+            // Dar prioridad al primer cuadro y arrancar igual si falta el OLED.
+            if (!bootTaskStarted && (delivered || elapsed >= MIN_VISIBLE_MS))
             {
                 ctx.startBootInitTask();
                 bootTaskStarted = true;
@@ -172,19 +189,26 @@ public:
 
             if (ctx.bootInitComplete.load() && elapsed >= MIN_VISIBLE_MS)
             {
-                currentState = READY_HOLD;
-                phaseStartTime = now;
+                currentState = READY_PENDING;
+                phaseStartTime = millis();
             }
             return;
         }
 
-        if (currentState == READY_HOLD)
+        if (currentState == READY_PENDING)
         {
-            drawBootScreen(ctx);
-            if ((uint32_t)(now - phaseStartTime) >= READY_HOLD_MS)
+            if (drawBootScreen(ctx))
+            {
+                currentState = READY_HOLD;
+                phaseStartTime = millis();
+            }
+            else if (millis() - phaseStartTime >= READY_RETRY_MS)
                 currentState = DONE;
             return;
         }
+
+        if (currentState == READY_HOLD && elapsed < READY_HOLD_MS)
+            return;
 
         // Sin orden de bombas definido (o con datos corruptos) se prueba una vez.
         const bool needsPumpTest = EoloConfig::pumpOrderTest && !ctx.calibration.pumpOrderKnown();

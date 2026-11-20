@@ -16,6 +16,7 @@ Los datos de sensores son ficticios; sirve para revisar layout, no mediciones.
 import argparse
 import glob
 import importlib.util
+import json
 import os
 import shutil
 import struct
@@ -144,6 +145,8 @@ def main():
 
     objs = compile_clib(u8g2_src, os.path.join(build, "u8g2_obj"))
     exe = os.path.join(build, "preview_%s.exe" % args.variant)
+    with open(os.path.join(ROOT, "lib", "EoloCore", "library.json"), "r", encoding="utf-8") as fh:
+        fw_version = str(json.load(fh)["version"]).strip()
     cmd = zig("c++", "-std=c++17", "-O1", "-w", "-o", exe,
               os.path.join(HERE, "preview.cpp"),
               "-I", os.path.join(HERE, "stubs"), "-I", HERE,
@@ -153,6 +156,7 @@ def main():
               "-I", u8g2_src,
               "-include", os.path.join(HERE, "prelude.h"),
               "-DPREVIEW_MOTORS=%d" % motors,
+              '-DEOLO_FIRMWARE_VERSION="%s"' % fw_version,
               *(["-DNDEBUG"] if args.render_only else []),
               *["-D" + f for f in features], *objs)
     run(cmd)

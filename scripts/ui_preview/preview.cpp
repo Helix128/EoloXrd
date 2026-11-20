@@ -32,6 +32,7 @@ unsigned long previewMillis = 0;
 
 namespace EoloConfig
 {
+inline constexpr const char *kModelName = Profile::kModelName;
 inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
 inline constexpr bool pumpOrderTest = Profile::kPumpOrderTest;
 inline constexpr auto flowPid = Profile::kFlowPid;
@@ -145,6 +146,11 @@ private:
 class I2CBus
 {
 public:
+    struct Guard
+    {
+        explicit Guard(uint32_t = 0) {}
+        bool acquired() const { return true; }
+    };
     static I2CBus &getInstance() { static I2CBus b; return b; }
     uint32_t warmupRemainingMs() { return 2000; }
 };
