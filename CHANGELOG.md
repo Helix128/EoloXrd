@@ -4,13 +4,27 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). L
 
 ## [Sin publicar]
 
+## [1.2.0] - 2026-11-20
+
 ### Agregado
 
 - Pantalla: «Atenuar» y «Apagar» pueden ponerse en «Nunca» (después de 5 min). Sin atenuar, la pantalla se apaga desde el brillo normal; sin apagar, queda atenuada; con ambos en «Nunca» no cambia. «Apagar» empieza en 10 s.
+- Pantalla de inicio y menú principal: la versión actual del firmware se muestra al arrancar (`LogoScene`) y en la opción «Acerca de» del menú principal junto al modelo del equipo.
+- Flujo AFM07: nueva opción en «Opciones» para ajustar y persistir en NVS el factor/divisor del sensor AFM07.
+- Express Rev.1: soporte para OLED SSD1309 por SPI por software (`eolo_express_legacy_spi`) y recuperación automática de OLED I2C tras un bus caído.
+- Herramientas y diagnóstico: espejo de pantalla por serial, extracción de tarjeta SD por CLI y demo `SystemDiag` por perfil.
 
 ### Cambiado
 
 - Pantalla: «Atenuar» y «Apagar» comparten los mismos tiempos (de 5 s a 1 min cada 5 s, y de 1 a 5 min cada minuto). Si «Atenuar» alcanza a «Apagar», este pasa al paso siguiente en vez de quedar unos segundos después. Los tiempos guardados fuera de esa lista se ajustan al paso inferior; el máximo baja de 10 a 5 min.
+- Control de flujo: EOLO-MP, Express Rev.1 y Express Rev.2 pasan al esquema PID moderno de bombas en serie con gestión unificada de AFM07 y FS3000.
+- Logs: el índice de capturas se reconstruye en segundo plano al arrancar.
+
+### Corregido
+
+- Pantalla OLED en ahorro de energía: al apagarse la pantalla por inactividad, evita enviar buffers al hardware mientras está apagada, elimina la contención innecesaria de SPI/I2C y consume de forma atómica el primer giro o clic del encoder para despertar la pantalla de inmediato.
+- Estabilidad de sensores y bus: recuperación del bus I2C tras fallos recientes, protecciones ante bloqueos del BME280, caducidad de lecturas antiguas en Plantower, preservación de hora válida en RTC sin escribir ante fallos de transporte y lectura silenciosa de claves NVS opcionales ausentes.
+- Captura: preservación de datos en fin de captura y mejoras de consistencia en la interfaz.
 
 ## [1.1.0] - 2026-10-27
 
