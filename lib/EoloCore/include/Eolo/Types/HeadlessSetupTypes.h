@@ -36,7 +36,9 @@ namespace HeadlessSetup
     return (waitCode & 0x03) == 0;
   }
 
-  inline bool validateConfig(const HeadlessSetupConfig &config)
+  inline bool validateConfig(const HeadlessSetupConfig &config,
+                             float minFlowLpm = kMinFlowLpm,
+                             float maxFlowLpm = kMaxFlowLpm)
   {
     if (config.waitSeconds > kMaxWaitSeconds)
       return false;
@@ -45,7 +47,7 @@ namespace HeadlessSetup
         (config.durationSeconds == 0 || config.durationSeconds > kMaxDurationSeconds))
       return false;
 
-    if (isnan(config.targetFlow) || config.targetFlow < kMinFlowLpm || config.targetFlow > kMaxFlowLpm)
+    if (isnan(config.targetFlow) || config.targetFlow < minFlowLpm || config.targetFlow > maxFlowLpm)
       return false;
 
     if (config.flowSectionCount > MaxFlowSections)
@@ -57,7 +59,7 @@ namespace HeadlessSetup
       const FlowSection &section = config.flowSections[i];
       if (section.durationSeconds == 0)
         return false;
-      if (isnan(section.targetFlow) || section.targetFlow < kMinFlowLpm || section.targetFlow > kMaxFlowLpm)
+      if (isnan(section.targetFlow) || section.targetFlow < minFlowLpm || section.targetFlow > maxFlowLpm)
         return false;
       sectionDuration += section.durationSeconds;
     }

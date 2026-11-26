@@ -44,6 +44,8 @@ inline constexpr bool kModemAllowHttpFallback = false;
 
 inline constexpr float kAfm07FlowDivisor = 10.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
+inline constexpr float kMinTargetFlowLpm = 1.0f;
+inline constexpr float kMaxTargetFlowLpm = 8.0f;
 
 // Dos bombas en serie con la ley continua del Dron, afinada para el FS3000
 // (ver DualPumpFlowConfig.h). La tabla PWM->caudal es la nominal de dos bombas.

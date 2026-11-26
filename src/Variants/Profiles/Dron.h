@@ -44,6 +44,8 @@ inline constexpr bool kModemAllowHttpFallback = false;
 
 inline constexpr float kAfm07FlowDivisor = 100.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
+inline constexpr float kMinTargetFlowLpm = 0.5f;
+inline constexpr float kMaxTargetFlowLpm = 5.5f;
 
 // Barrido de duty con tubo conectado (una bomba, 0..2047). Ver
 // docs/optimizacion-pid-flujo-dron.md, sección 2.1.

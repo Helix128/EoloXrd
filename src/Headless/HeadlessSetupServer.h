@@ -363,7 +363,7 @@ private:
       prefs.end();
     }
 
-    if (!HeadlessSetup::validateConfig(_defaults))
+    if (!HeadlessSetup::validateConfig(_defaults, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm))
       _defaults = HeadlessSetupConfig();
   }
 
@@ -442,7 +442,7 @@ private:
     if (!parseFlowSchedule(config))
       return false;
 
-    return HeadlessSetup::validateConfig(config);
+    return HeadlessSetup::validateConfig(config, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm);
   }
 
   void redirectToPortal()
@@ -920,6 +920,10 @@ private:
       doc["staIp"] = WiFi.localIP().toString();
     }
 
+    JsonObject limits = doc.createNestedObject("limits");
+    limits["minFlow"] = EoloConfig::minTargetFlowLpm;
+    limits["maxFlow"] = EoloConfig::maxTargetFlowLpm;
+
     JsonObject defaults = doc.createNestedObject("defaults");
     defaults["waitSeconds"] = _defaults.waitSeconds;
     defaults["durationSeconds"] = _defaults.durationSeconds;
@@ -1341,7 +1345,8 @@ private:
       {
         HeadlessSetupPreset preset;
         loadPresetSlot(prefs, i, preset);
-        if (!HeadlessSetup::isSafePresetName(preset.name) || !HeadlessSetup::validateConfig(preset.config))
+        if (!HeadlessSetup::isSafePresetName(preset.name) ||
+            !HeadlessSetup::validateConfig(preset.config, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm))
           continue;
         JsonObject obj = presets.createNestedObject();
         obj["name"] = preset.name;
@@ -1390,7 +1395,7 @@ private:
     loadPresetSlot(prefs, slot, preset);
     prefs.end();
 
-    if (!HeadlessSetup::validateConfig(preset.config))
+    if (!HeadlessSetup::validateConfig(preset.config, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm))
     {
       _server.send(500, "application/json", "{\"ok\":false,\"error\":\"stored_invalid\"}");
       return;

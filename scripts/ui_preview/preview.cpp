@@ -33,6 +33,8 @@ unsigned long previewMillis = 0;
 namespace EoloConfig
 {
 inline constexpr const char *kModelName = Profile::kModelName;
+inline constexpr float minTargetFlowLpm = Profile::kMinTargetFlowLpm;
+inline constexpr float maxTargetFlowLpm = Profile::kMaxTargetFlowLpm;
 inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;
 inline constexpr bool pumpOrderTest = Profile::kPumpOrderTest;
 inline constexpr auto flowPid = Profile::kFlowPid;

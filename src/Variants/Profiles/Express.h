@@ -43,6 +43,8 @@ inline constexpr bool kModemAllowHttpFallback = false;
 
 inline constexpr float kAfm07FlowDivisor = 10.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
+inline constexpr float kMinTargetFlowLpm = 1.0f;
+inline constexpr float kMaxTargetFlowLpm = 8.0f;
 
 // Dos bombas en serie con la ley continua del Dron (ver DualPumpFlowConfig.h).
 inline constexpr FlowPidConfig kFlowPid =

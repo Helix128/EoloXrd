@@ -55,6 +55,8 @@ inline constexpr bool modemAllowHttpFallback = Profile::kModemAllowHttpFallback;
 
 inline constexpr float afm07FlowDivisor = Profile::kAfm07FlowDivisor;
 inline constexpr float droneTargetFlowLpm = Profile::kDroneTargetFlowLpm;
+inline constexpr float minTargetFlowLpm = Profile::kMinTargetFlowLpm;
+inline constexpr float maxTargetFlowLpm = Profile::kMaxTargetFlowLpm;
 
 inline constexpr FlowPidConfig flowPid = Profile::kFlowPid;
 inline constexpr bool useCalibrationSeed = Profile::kUseCalibrationSeed;

@@ -17,7 +17,7 @@ public:
     float targetFlow = 5.0f;
     void enter(Context &ctx) override
     {
-        targetFlow = ctx.session.targetFlow;
+        targetFlow = constrain(ctx.session.targetFlow, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm);
     }
 
     void update(Context &ctx) override
@@ -27,7 +27,7 @@ public:
 
         float delta = ctx.components.input.getEncoderDelta();
         targetFlow += delta * 0.1f;
-        targetFlow = constrain(targetFlow, 0.0f, 8.0f);
+        targetFlow = constrain(targetFlow, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm);
 
         if(ctx.components.input.isButtonPressed()){
              

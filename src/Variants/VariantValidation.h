@@ -105,6 +105,12 @@ static_assert((ENCODER_SDA_PIN >= 0) == (EoloConfig::encoderBusClockHz != 0),
 
 static_assert(EoloConfig::motorOverheatLowC < EoloConfig::motorOverheatHighC,
               "El umbral NTC bajo debe ser menor al alto");
+static_assert(EoloConfig::minTargetFlowLpm >= 0.0f &&
+              EoloConfig::minTargetFlowLpm < EoloConfig::maxTargetFlowLpm,
+              "El rango de flujo objetivo del perfil debe ser válido");
+static_assert(EoloConfig::droneTargetFlowLpm >= EoloConfig::minTargetFlowLpm &&
+              EoloConfig::droneTargetFlowLpm <= EoloConfig::maxTargetFlowLpm,
+              "El flujo por defecto debe estar dentro del rango del perfil");
 static_assert(EoloConfig::motorPwmResolutionBits >= 1 &&
               EoloConfig::motorPwmResolutionBits <= 15,
               "La resolución PWM debe estar entre 1 y 15 bits");

@@ -12,6 +12,8 @@ let _debugActive = false;
 let _debugTimer = null;
 let _diagTimer = null;
 let _debugMaxPwm = 2047;
+let minFlowLpm = 0.5;
+let maxFlowLpm = 5.5;
 
 // Formateo de bytes
 function fmtBytes(bytes) {
@@ -405,13 +407,13 @@ function renderBlocks() {
           <div class="field-col">
             <label class="field-label">Caudal objetivo (L/min)</label>
             <div class="flow-input-group">
-              <input type="number" min="0" max="8" step="0.1" value="${flowVal}" placeholder="5.0" data-blk-flow="${idx}" class="text-input flow-num" aria-label="Caudal bloque ${idx + 1}">
+              <input type="number" min="${minFlowLpm}" max="${maxFlowLpm}" step="0.1" value="${flowVal}" placeholder="5.0" data-blk-flow="${idx}" class="text-input flow-num" aria-label="Caudal bloque ${idx + 1}">
               <div class="quick-chips">
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="1.0">1.0</button>
                 <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="2.0">2.0</button>
-                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="4.0">4.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="3.5">3.5</button>
                 <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="5.0">5.0</button>
-                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="6.0">6.0</button>
-                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="8.0">8.0</button>
+                <button type="button" class="chip flow-chip" data-blk-set-flow="${idx}" data-val="5.5">5.5</button>
               </div>
             </div>
           </div>
@@ -429,7 +431,7 @@ function renderBlocks() {
 function setBlocks(blocks) {
   flowBlocks = (blocks || []).slice(0, MAX_BLOCKS).map(b => ({
     durationSeconds: Math.max(1, Number(b.durationSeconds || 300)),
-    targetFlow: Math.max(0, Math.min(8.0, Number(b.targetFlow !== undefined ? b.targetFlow : 5.0)))
+    targetFlow: Math.max(minFlowLpm, Math.min(maxFlowLpm, Number(b.targetFlow !== undefined ? b.targetFlow : 5.0)))
   }));
   renderBlocks();
 }
@@ -475,14 +477,14 @@ function applyTemplate(name) {
   const templates = {
     constant: [{ durationSeconds: 300, targetFlow: currentFixedFlow }],
     stairs: [
-      { durationSeconds: 180, targetFlow: 2.0 },
-      { durationSeconds: 180, targetFlow: 4.0 },
-      { durationSeconds: 180, targetFlow: 6.0 }
+      { durationSeconds: 180, targetFlow: 1.5 },
+      { durationSeconds: 180, targetFlow: 3.5 },
+      { durationSeconds: 180, targetFlow: 5.0 }
     ],
     sample15: [
-      { durationSeconds: 300, targetFlow: 5.0 },
-      { durationSeconds: 300, targetFlow: 8.0 },
-      { durationSeconds: 300, targetFlow: 5.0 }
+      { durationSeconds: 300, targetFlow: 3.0 },
+      { durationSeconds: 300, targetFlow: 5.5 },
+      { durationSeconds: 300, targetFlow: 3.0 }
     ],
     empty: []
   };
@@ -498,8 +500,8 @@ function validateForm() {
 
   if (!isPeriods) {
     const flow = parseFloat($('targetFlow').value);
-    if (isNaN(flow) || flow < 0 || flow > 8) {
-      error = 'El caudal objetivo debe estar entre 0.0 y 8.0 L/min.';
+    if (isNaN(flow) || flow < minFlowLpm || flow > maxFlowLpm) {
+      error = `El caudal objetivo debe estar entre ${minFlowLpm.toFixed(1)} y ${maxFlowLpm.toFixed(1)} L/min.`;
     } else if ($('durationMode').value !== 'infinite' && getFixedDurationSeconds() <= 0) {
       error = 'La duración debe ser mayor a 0 segundos.';
     }
@@ -513,8 +515,8 @@ function validateForm() {
           error = `El bloque ${i + 1} debe tener una duración mayor a 0 s.`;
           break;
         }
-        if (isNaN(b.targetFlow) || b.targetFlow < 0 || b.targetFlow > 8) {
-          error = `El caudal del bloque ${i + 1} debe estar entre 0.0 y 8.0 L/min.`;
+        if (isNaN(b.targetFlow) || b.targetFlow < minFlowLpm || b.targetFlow > maxFlowLpm) {
+          error = `El caudal del bloque ${i + 1} debe estar entre ${minFlowLpm.toFixed(1)} y ${maxFlowLpm.toFixed(1)} L/min.`;
           break;
         }
       }
@@ -692,6 +694,17 @@ async function loadStatus() {
         staBadge.classList.remove('hidden');
       } else {
         staBadge.classList.add('hidden');
+      }
+    }
+
+    if (data.limits) {
+      const nextMin = Number(data.limits.minFlow);
+      const nextMax = Number(data.limits.maxFlow);
+      if (isFinite(nextMin) && isFinite(nextMax) && nextMin < nextMax) {
+        minFlowLpm = nextMin;
+        maxFlowLpm = nextMax;
+        $('targetFlow').min = minFlowLpm;
+        $('targetFlow').max = maxFlowLpm;
       }
     }
 

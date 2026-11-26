@@ -59,6 +59,9 @@ inline bool SessionStore::load(Session &session, RTCManager &rtc)
     uint32_t durationVal = settings.getUInt("duration", 0);
     unsigned long elapsedTime = settings.getUInt("elapsedTime", 0);
     float targetFlowVal = settings.getFloat("targetFlow", 5.0f);
+    if (!isfinite(targetFlowVal))
+        targetFlowVal = 5.0f;
+    targetFlowVal = constrain(targetFlowVal, EoloConfig::minTargetFlowLpm, EoloConfig::maxTargetFlowLpm);
     float capturedVolumeVal = settings.getFloat("capturedVol", 0.0f);
     bool usePlantowerVal = settings.getBool("usePlantower", true);
     uint8_t flowSectionCountVal = 0;

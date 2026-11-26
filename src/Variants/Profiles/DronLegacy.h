@@ -43,6 +43,8 @@ inline constexpr bool kModemAllowHttpFallback = false;
 
 inline constexpr float kAfm07FlowDivisor = 100.0f;
 inline constexpr float kDroneTargetFlowLpm = 5.0f;
+inline constexpr float kMinTargetFlowLpm = 0.5f;
+inline constexpr float kMaxTargetFlowLpm = 5.5f;
 
 constexpr FlowPidConfig makeFlowPidConfig()
 {
