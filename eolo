@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 SCRIPTS_DIR = ROOT_DIR / "scripts"
 BACKUP_SCRIPT = SCRIPTS_DIR / "firmware_backup.py"
+DEVICE_BACKUP_SCRIPT = SCRIPTS_DIR / "device_firmware_backup.py"
 DEMO_SCRIPT = SCRIPTS_DIR / "demo.py"
 MIRROR_SCRIPT = SCRIPTS_DIR / "eolo_mirror.py"
 SD_BACKUP_SCRIPT = SCRIPTS_DIR / "sd_backup.py"
@@ -29,6 +30,22 @@ def run_sd_backup(args):
     """Ejecuta el script de respaldo y extracción de la tarjeta SD."""
     python = get_python_runner()
     return subprocess.call([python, str(SD_BACKUP_SCRIPT), *args])
+
+
+def run_device_backup(args):
+    """Ejecuta el respaldo del firmware instalado en la placa y extrae metadata."""
+    python = get_python_runner()
+    return subprocess.call([python, str(DEVICE_BACKUP_SCRIPT), *args])
+
+
+def run_fw_info(args):
+    """Inspecciona metadata de un binario o dump de flash existente."""
+    if not args or args[0] in ("-h", "--help"):
+        return run_device_backup(["--help"])
+    forwarded = list(args)
+    if not forwarded[0].startswith("-"):
+        forwarded = ["--from-file", forwarded[0], *forwarded[1:]]
+    return run_device_backup(forwarded)
 
 
 def run_mirror(args):
@@ -58,9 +75,11 @@ Comandos de Compilación y Flasheo:
   ./eolo flash <target> [--port port] Flashear último respaldo de un dispositivo
   ./eolo demo <subcomando> [...]      Gestión de demos (list, build, upload, monitor)
 
-Depuración:
+Depuración y Dispositivo:
   ./eolo mirror [--port p] [--zoom n] Ver la pantalla del EOLO en una ventana del PC (por USB)
   ./eolo sd-backup [--port p] [--out d] Extraer todos los archivos de la SD del EOLO conectado
+  ./eolo fw-backup [--port p] [--out d] Respaldar firmware instalado en el EOLO y extraer metadata
+  ./eolo fw-info <archivo.bin> [--json]  Extraer modelo, versión, particiones y NVS de un .bin
 
 Ejemplos:
   ./eolo tag "calibracion_afm07"
@@ -69,6 +88,8 @@ Ejemplos:
   ./eolo backups
   ./eolo demo build AFM07 dron_legacy
   ./eolo flash express /dev/ttyUSB0
+  ./eolo fw-backup --port /dev/ttyUSB0
+  ./eolo fw-info flash_backups/eolo_full_backup_4MB.bin
 """)
 
 
@@ -85,6 +106,12 @@ def main():
 
     if command in ("sd-backup", "sd_backup", "data-backup", "sd"):
         return run_sd_backup(args)
+
+    if command in ("fw-backup", "device-backup", "dump", "pull"):
+        return run_device_backup(args)
+
+    if command in ("fw-info", "inspect"):
+        return run_fw_info(args)
 
     # Si es comando demo -> redirigir a demo.py
     if command == "demo":
