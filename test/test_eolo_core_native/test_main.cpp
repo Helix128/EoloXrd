@@ -2028,6 +2028,80 @@ static void test_rs485_stats_exceptions_and_timing()
     TEST_ASSERT_FALSE(RS485SlaveStats::isDeadlineMiss(480, 500));
 }
 
+static void test_rs485_transport_recovery_policy()
+{
+    RS485TransportRecoveryPolicy policy;
+
+    // 3 errores corruptos disparan recuperación al 3.º y resetean la racha.
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 100));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_MALFORMED, 200));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_BUS_BUSY, 300));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INCOMPLETE_FRAME, 400));
+    policy.reset();
+
+    // 4 timeouts consecutivos disparan recuperación al 4.º.
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 1000));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 1500));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 2000));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, 2500));
+
+    // Durante el cooldown (< 10000 ms), más timeouts (incluso >255) no disparan
+    // recuperación ni desbordan el contador uint8_t.
+    uint32_t t = 2600;
+    for (int i = 0; i < 300; ++i) {
+        if (t - 2500U >= RS485TransportRecoveryPolicy::kTimeoutRecoveryCooldownMs)
+            break;
+        TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, t));
+        t += 20;
+    }
+    // Con saturación >255 dentro del cooldown si se repite muy rápido:
+    policy.reset();
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 1000));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 1100));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 1200));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, 1300));
+    for (int i = 0; i < 300; ++i)
+        TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 2000 + static_cast<uint32_t>(i)));
+    // Al cumplirse >= 10000 ms vuelve a disparar recuperación.
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, 11300));
+
+    // Cruce de wraparound uint32_t cerca de 0xFFFFFFFFUL.
+    policy.reset();
+    const uint32_t base = 0xFFFFFF00UL;
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, base));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, base + 10));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, base + 20));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, base + 30));
+    const uint32_t wrappedBefore = base + 30 + RS485TransportRecoveryPolicy::kTimeoutRecoveryCooldownMs - 1;
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, wrappedBefore));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, wrappedBefore + 1)); // solo 2 timeouts desde reset de racha
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, wrappedBefore + 2));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, wrappedBefore + 3));
+
+    // Un éxito limpia rachas y cooldown: 4 timeouts seguidos disparan de inmediato.
+    TEST_ASSERT_FALSE(policy.shouldRecover(true, RS485_OK, 50000));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 50100));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 50200));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 50300));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_TIMEOUT, 50400));
+
+    // RS485_EXCEPTION limpia timeoutStreak pero preserva corruptStreak.
+    policy.reset();
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 60000));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 60100));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 60200));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_EXCEPTION, 60300));
+    TEST_ASSERT_TRUE(policy.shouldRecover(false, RS485_MALFORMED, 60400));
+
+    // RS485_UNEXPECTED_FRAME limpia ambas rachas y no dispara recuperación.
+    policy.reset();
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 70000));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_TIMEOUT, 70100));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_UNEXPECTED_FRAME, 70200));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 70300));
+    TEST_ASSERT_FALSE(policy.shouldRecover(false, RS485_INVALID_CRC, 70400));
+}
+
 // Configuración del prototipo medida en hardware (Dron V2, una bomba).
 static FlowPidConfig dron_v2_proto_config()
 {
@@ -2782,6 +2856,32 @@ static void test_firmware_version_is_injected_semver()
     TEST_ASSERT_TRUE(major >= 1 && minor >= 0 && patch >= 0);
 }
 
+static void test_headless_setup_validate_config_respects_custom_flow_limits()
+{
+    HeadlessSetupConfig config;
+    config.waitSeconds = 0;
+    config.durationSeconds = 300;
+
+    // Dron (0.5..5.5 L/min)
+    config.targetFlow = 0.5f;
+    TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+    config.targetFlow = 5.5f;
+    TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+    config.targetFlow = 0.4f;
+    TEST_ASSERT_FALSE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+    config.targetFlow = 5.6f;
+    TEST_ASSERT_FALSE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+
+    // Tramos también respetan los límites del modelo
+    config.targetFlow = 3.0f;
+    config.flowSectionCount = 1;
+    config.flowSections[0].durationSeconds = 120;
+    config.flowSections[0].targetFlow = 5.6f;
+    TEST_ASSERT_FALSE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+    config.flowSections[0].targetFlow = 5.5f;
+    TEST_ASSERT_TRUE(HeadlessSetup::validateConfig(config, 0.5f, 5.5f));
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -2827,6 +2927,7 @@ int main(int, char **)
     RUN_TEST(test_rtc_to_unix_calendar_boundaries);
     RUN_TEST(test_rs485_stats_state_transitions);
     RUN_TEST(test_rs485_stats_exceptions_and_timing);
+    RUN_TEST(test_rs485_transport_recovery_policy);
     RUN_TEST(test_i2c_retry_policy_matches_historical_backoff);
     RUN_TEST(test_fs3000_conversion_boundaries);
     RUN_TEST(test_fs3000_frame_separa_fallo_de_sin_flujo);
@@ -2885,5 +2986,6 @@ int main(int, char **)
     RUN_TEST(test_flow_smooth_law_holds_pwm_when_flow_near_zero);
     RUN_TEST(test_flow_smooth_law_caps_single_motor_and_validates);
     RUN_TEST(test_firmware_version_is_injected_semver);
+    RUN_TEST(test_headless_setup_validate_config_respects_custom_flow_limits);
     return UNITY_END();
 }

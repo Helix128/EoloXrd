@@ -57,7 +57,6 @@ private:
     static constexpr UBaseType_t BUS_TASK_PRIORITY = 3;
     static constexpr BaseType_t BUS_TASK_CORE = 0;
     static constexpr uint32_t BUS_STUCK_MAX_MS = EoloCore::RS485TimingModel::kBusQuietTimeoutMs;
-    static constexpr uint8_t RECOVER_AFTER_CORRUPT_FRAMES = 3;
     // Un fallo aislado del AFM07 puede ser ruido, arranque del transceptor o
     // una respuesta que llegó fuera de ventana. Sólo una racha persistente
     // debe bloquear la captura.
@@ -87,7 +86,7 @@ private:
     // no se limpia sólo porque vuelva una lectura de flujo.
     std::atomic<bool> _afmDiagnosticRegisterBlocked{false};
 
-    uint8_t _corruptFrameStreak = 0;
+    RS485TransportRecoveryPolicy _recoveryPolicy;
     // Estas métricas se leen desde la consola/UI mientras el scheduler corre
     // en el core 0. Mantenerlas atómicas evita diagnósticos inconsistentes.
     std::atomic<uint32_t> _busBusyDeferrals{0};
@@ -190,7 +189,8 @@ private:
         return false;
     }
 
-    void recoverTransport() {
+    void recoverTransport(const char* reason) {
+        pinMode(RS485_DE_RE_PIN, OUTPUT);
         setReceiveMode();
         uint32_t drained = 0;
         (void)waitForQuiet(EoloCore::RS485TimingModel::kBusQuietUs, 40, &drained);
@@ -200,9 +200,8 @@ private:
         _serial.setTransmitEnablePin(RS485_DE_RE_PIN);
         setReceiveMode();
         (void)waitForQuiet(EoloCore::RS485TimingModel::kBusQuietUs, 40, &drained);
-        _corruptFrameStreak = 0;
         _busRecoveries.fetch_add(1, std::memory_order_relaxed);
-        LOG_LN("RS485: transporte reiniciado tras ruido o bus ocupado");
+        LOG_F("RS485: transporte reiniciado tras %s\n", reason);
     }
 
     bool transact(const Endpoint& endpoint, uint16_t* result, uint8_t& error,
@@ -523,15 +522,13 @@ private:
         RS485Monitor::getInstance().recordRequestCompleted(success, error, endpoint.slaveId,
                                                            latency, exceptionCode, completed, started);
 
-        if (success) _corruptFrameStreak = 0;
-        else if (error == RS485_INVALID_CRC || error == RS485_MALFORMED ||
-                 error == RS485_INCOMPLETE_FRAME || error == RS485_BUS_BUSY) {
-            if (++_corruptFrameStreak >= RECOVER_AFTER_CORRUPT_FRAMES) recoverTransport();
-        } else if (error != RS485_TIMEOUT && error != RS485_EXCEPTION) {
-            _corruptFrameStreak = 0;
+        uint32_t scheduleBaseMs = completed;
+        if (_recoveryPolicy.shouldRecover(success, error, completed)) {
+            recoverTransport(error == RS485_TIMEOUT ? "timeouts consecutivos" : "ruido o bus ocupado");
+            scheduleBaseMs = millis();
         }
 
-        scheduleNext(index, endpoint, completed, success, error, exceptionCode);
+        scheduleNext(index, endpoint, scheduleBaseMs, success, error, exceptionCode);
         if (endpoint.callback) {
             endpoint.callback(endpoint.context, success, success ? registers : nullptr,
                                endpoint.count, error);

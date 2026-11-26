@@ -127,4 +127,68 @@ struct RS485SlaveStats {
     }
 };
 
+// Política de recuperación de transporte RS485: reinicia la UART tras rachas
+// sostenidas de tramas corruptas o de timeouts (con enfriamiento para evitar
+// reinicios continuos si el sensor está físicamente desconectado).
+struct RS485TransportRecoveryPolicy {
+    static constexpr uint8_t kCorruptStreakThreshold = 3;
+    static constexpr uint8_t kTimeoutStreakThreshold = 4;
+    static constexpr uint32_t kTimeoutRecoveryCooldownMs = 10000UL;
+
+    uint8_t corruptStreak = 0;
+    uint8_t timeoutStreak = 0;
+    uint32_t lastTimeoutRecoveryMs = 0;
+    bool hasTimeoutRecovery = false;
+
+    void reset()
+    {
+        corruptStreak = 0;
+        timeoutStreak = 0;
+        lastTimeoutRecoveryMs = 0;
+        hasTimeoutRecovery = false;
+    }
+
+    bool shouldRecover(bool success, uint8_t error, uint32_t nowMs)
+    {
+        if (success) {
+            reset();
+            return false;
+        }
+        if (error == RS485_INVALID_CRC || error == RS485_MALFORMED ||
+            error == RS485_INCOMPLETE_FRAME || error == RS485_BUS_BUSY) {
+            timeoutStreak = 0;
+            if (corruptStreak < 255)
+                ++corruptStreak;
+            if (corruptStreak >= kCorruptStreakThreshold) {
+                corruptStreak = 0;
+                return true;
+            }
+            return false;
+        }
+        if (error == RS485_TIMEOUT) {
+            if (timeoutStreak < 255)
+                ++timeoutStreak;
+            if (timeoutStreak >= kTimeoutStreakThreshold &&
+                (!hasTimeoutRecovery ||
+                 static_cast<uint32_t>(nowMs - lastTimeoutRecoveryMs) >= kTimeoutRecoveryCooldownMs)) {
+                timeoutStreak = 0;
+                corruptStreak = 0;
+                lastTimeoutRecoveryMs = nowMs;
+                hasTimeoutRecovery = true;
+                return true;
+            }
+            return false;
+        }
+        if (error == RS485_EXCEPTION) {
+            // El esclavo respondió en el bus; no es un timeout de transporte,
+            // pero tampoco borra una racha previa de tramas corruptas.
+            timeoutStreak = 0;
+            return false;
+        }
+        corruptStreak = 0;
+        timeoutStreak = 0;
+        return false;
+    }
+};
+
 #endif
