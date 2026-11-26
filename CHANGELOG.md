@@ -4,6 +4,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). L
 
 ## [Sin publicar]
 
+## [1.2.1] - 2026-11-26
+
+### Agregado
+
+- Herramientas CLI: comandos `./eolo fw-backup` y `./eolo fw-info` (`scripts/device_firmware_backup.py`) para respaldar firmware desde el dispositivo e inspeccionar modelo, versión, particiones y NVS de un binario.
+
+### Cambiado
+
+- Control de flujo y UI/portal: límites mínimo y máximo de caudal objetivo definidos por perfil (`minTargetFlowLpm` / `maxTargetFlowLpm`) y aplicados de forma consistente en escenas UI, `SessionStore` y portal de setup headless.
+
+### Corregido
+
+- Bus RS485 / AFM07: reinicio automático del transporte (`recoverTransport()`) tras 4 timeouts consecutivos con enfriamiento de 10 s y reaseguramiento del pin DE/RE, evitando bloqueos persistentes por `RS485_TIMEOUT`.
+
 ## [1.2.0] - 2026-11-20
 
 ### Agregado

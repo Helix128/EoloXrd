@@ -1,6 +1,6 @@
 {
   "name": "EoloCore",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Libreria principal para el sistema Eolo MP",
   "build": {
     "includeDir": "include"
